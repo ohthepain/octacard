@@ -1,12 +1,16 @@
 import { useState } from "react";
-import { SampleLibrary } from "@/components/SampleLibrary";
-import { ProjectWorkspace } from "@/components/ProjectWorkspace";
+import { FileBrowser } from "@/components/FileBrowser";
+import { CFCardView } from "@/components/CFCardView";
 import { Toolbar } from "@/components/Toolbar";
 import { AboutDialog } from "@/components/AboutDialog";
 
 const Index = () => {
-  const [selectedSample, setSelectedSample] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+
+  const handleFileTransfer = (sourcePath: string, destinationPath: string) => {
+    console.log("File transfer requested:", { sourcePath, destinationPath });
+    // TODO: Implement file conversion and transfer logic
+  };
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -31,14 +35,14 @@ const Index = () => {
 
       {/* Main Content - 2 Pane Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Pane - Sample Library */}
-        <div className="w-1/3 border-r border-border flex flex-col">
-          <SampleLibrary onSelectSample={setSelectedSample} selectedSample={selectedSample} />
+        {/* Left Pane - File Browser (Local) */}
+        <div className="w-1/2 border-r border-border flex flex-col">
+          <FileBrowser onFileTransfer={handleFileTransfer} />
         </div>
 
-        {/* Right Pane - Project Workspace */}
+        {/* Right Pane - CF Card View */}
         <div className="flex-1 flex flex-col">
-          <ProjectWorkspace />
+          <CFCardView onFileTransfer={handleFileTransfer} />
         </div>
       </div>
 
