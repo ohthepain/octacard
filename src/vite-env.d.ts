@@ -7,6 +7,8 @@ interface ElectronAPI {
     copyFolder: (sourcePath: string, destPath: string) => Promise<{ success: boolean; error?: string }>;
     getFileStats: (filePath: string) => Promise<{ success: boolean; data?: { size: number; isDirectory: boolean; isFile: boolean }; error?: string }>;
     getHomeDirectory: () => Promise<{ success: boolean; data?: string }>;
+    deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+    deleteFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
   };
 }
 

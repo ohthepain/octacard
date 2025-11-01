@@ -119,6 +119,39 @@ ipcMain.handle("fs:getHomeDirectory", () => {
   return { success: true, data: app.getPath("home") };
 });
 
+async function deleteFolderRecursive(folderPath: string): Promise<void> {
+  const entries = await fs.readdir(folderPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(folderPath, entry.name);
+    if (entry.isDirectory()) {
+      await deleteFolderRecursive(fullPath);
+    } else {
+      await fs.unlink(fullPath);
+    }
+  }
+
+  await fs.rmdir(folderPath);
+}
+
+ipcMain.handle("fs:deleteFile", async (_event, filePath: string) => {
+  try {
+    await fs.unlink(filePath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle("fs:deleteFolder", async (_event, folderPath: string) => {
+  try {
+    await deleteFolderRecursive(folderPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
   createWindow();

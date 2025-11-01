@@ -258,6 +258,58 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     }
   };
 
+  const handleDelete = async (node: CFNode) => {
+    if (!window.electron) return;
+
+    const itemType = node.type === "file" ? "file" : "folder";
+    const confirmMessage = `Are you sure you want to delete ${itemType} "${node.name}"?`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      let result;
+      if (node.type === "file") {
+        result = await window.electron.fs.deleteFile(node.path);
+      } else {
+        result = await window.electron.fs.deleteFolder(node.path);
+      }
+
+      if (result.success) {
+        // Find parent directory to refresh
+        const parentPath = node.path.split("/").slice(0, -1).join("/");
+        if (parentPath) {
+          // Find the parent node ID
+          const findParentNodeId = (nodes: CFNode[], targetPath: string): string | null => {
+            for (const n of nodes) {
+              if (n.path === targetPath) {
+                return n.id;
+              }
+              if (n.children) {
+                const found = findParentNodeId(n.children, targetPath);
+                if (found) return found;
+              }
+            }
+            return null;
+          };
+
+          const parentNodeId = findParentNodeId(cfStructure, parentPath) || "cf-root";
+          await loadDirectory(parentPath, parentNodeId);
+        } else {
+          // If it's the root, reload the root
+          await loadDirectory(cfCardPath, "cf-root");
+        }
+      } else {
+        console.error(`Failed to delete ${itemType}:`, result.error);
+        alert(`Failed to delete ${itemType}: ${result.error}`);
+      }
+    } catch (error) {
+      console.error(`Error deleting ${itemType}:`, error);
+      alert(`Error deleting ${itemType}: ${error}`);
+    }
+  };
+
   const renderCFTree = (nodes: CFNode[], depth: number = 0): React.ReactNode => {
     return nodes.map((node) => {
       const isExpanded = expandedFolders.has(node.id);
@@ -302,14 +354,14 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
             )}
             <span className="text-sm truncate flex-1">{node.name}</span>
             {node.size && <span className="text-xs text-muted-foreground font-mono">{node.size}</span>}
-            {node.type === "file" && (
+            {(node.type === "file" || node.type === "folder") && (
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log("Delete file:", node.path);
+                  handleDelete(node);
                 }}
               >
                 <Trash2 className="w-3 h-3" />
