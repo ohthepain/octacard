@@ -59,10 +59,54 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Electron (for desktop app)
+
+## Running as Electron Desktop App
+
+This project can run as a desktop application using Electron.
+
+### Development Mode
+
+To run the app in Electron development mode:
+
+```sh
+npm run dev:electron
+```
+
+This will:
+1. Start the Vite dev server on http://localhost:8080
+2. Wait for the server to be ready
+3. Launch Electron with hot-reload support
+
+### Building for Production
+
+To build the Electron app for distribution:
+
+```sh
+# Build the app (creates distributable packages)
+npm run electron:dist
+
+# Or build without packaging
+npm run build:electron
+```
+
+The built applications will be in the `release` directory:
+- **macOS**: `.dmg` file
+- **Windows**: `.exe` installer
+- **Linux**: `.AppImage` file
+
+### Available Scripts
+
+- `npm run dev:electron` - Run in Electron development mode
+- `npm run build:electron` - Build the React app and Electron main process
+- `npm run electron:dist` - Build and package for distribution
+- `npm run electron:pack` - Build and create distributable packages
 
 ## How can I deploy this project?
 
-Simply open [Lovable](https://lovable.dev/projects/a087aa7f-0d83-445e-ae56-08153c41bbcf) and click on Share -> Publish.
+For web deployment, simply open [Lovable](https://lovable.dev/projects/a087aa7f-0d83-445e-ae56-08153c41bbcf) and click on Share -> Publish.
+
+For desktop distribution, use `npm run electron:dist` and distribute the files from the `release` directory.
 
 ## Can I connect a custom domain to my Lovable project?
 

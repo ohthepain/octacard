@@ -1,12 +1,19 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "octacard",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
+    "dev:electron": "concurrently \"npm run dev\" \"wait-on http://localhost:8080 && tsx electron/dev.ts\"",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "build:electron": "cross-env ELECTRON=true npm run build && npm run build:electron:main",
+    "build:electron:main": "tsx electron/build.ts",
+    "electron": "tsx electron/dev.ts",
+    "electron:pack": "npm run build:electron && electron-builder",
+    "electron:dist": "npm run build:electron && electron-builder --publish=never",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -64,11 +71,16 @@
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
-    "@types/node": "^22.16.5",
+    "@types/node": "^22.18.13",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.11",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -76,8 +88,39 @@
     "lovable-tagger": "^1.1.11",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vite": "^5.4.19"
+    "vite": "^5.4.19",
+    "wait-on": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.octacard.app",
+    "productName": "OctaCard",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/main.js",
+      "electron/preload.js",
+      "electron/main.js.map",
+      "electron/preload.js.map",
+      "node_modules/**/*",
+      "!electron/*.ts",
+      "!electron/build.ts",
+      "!electron/dev.ts",
+      "!electron/vite.config.ts"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }
