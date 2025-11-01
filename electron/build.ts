@@ -27,7 +27,7 @@ async function buildElectron() {
     bundle: true,
     platform: 'node',
     target: 'node18',
-    format: 'esm',
+    format: 'cjs', // Preload scripts must be CommonJS
     outfile: path.join(outDir, 'preload.js'),
     external: ['electron'],
     sourcemap: true,

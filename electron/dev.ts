@@ -29,7 +29,7 @@ async function dev() {
     bundle: true,
     platform: 'node',
     target: 'node18',
-    format: 'esm',
+    format: 'cjs', // Preload scripts must be CommonJS
     outfile: path.join(electronDir, 'preload.js'),
     external: ['electron'],
     sourcemap: true,

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Folder, File, ChevronRight, ChevronDown, Search, HardDrive } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Folder, File, ChevronRight, ChevronDown, Search, HardDrive, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -12,65 +12,16 @@ interface FileNode {
   children?: FileNode[];
   size?: string;
   format?: string;
+  isLoading?: boolean;
+  loaded?: boolean;
 }
 
-// Mock file system structure
-const mockFileSystem: FileNode[] = [
-  {
-    id: "1",
-    name: "My Computer",
-    type: "folder",
-    path: "/",
-    children: [
-      {
-        id: "2",
-        name: "Music",
-        type: "folder",
-        path: "/Music",
-        children: [
-          {
-            id: "3",
-            name: "Samples",
-            type: "folder",
-            path: "/Music/Samples",
-            children: [
-              { id: "4", name: "Kick_01.wav", type: "file", path: "/Music/Samples/Kick_01.wav", size: "60KB", format: "WAV" },
-              { id: "5", name: "Snare_Acoustic.wav", type: "file", path: "/Music/Samples/Snare_Acoustic.wav", size: "289KB", format: "WAV" },
-              { id: "6", name: "HiHat_Closed.aiff", type: "file", path: "/Music/Samples/HiHat_Closed.aiff", size: "22KB", format: "AIFF" },
-            ],
-          },
-          {
-            id: "7",
-            name: "Loops",
-            type: "folder",
-            path: "/Music/Loops",
-            children: [
-              { id: "8", name: "Bass_Loop_120BPM.wav", type: "file", path: "/Music/Loops/Bass_Loop_120BPM.wav", size: "1.4MB", format: "WAV" },
-              { id: "9", name: "Drum_Loop.wav", type: "file", path: "/Music/Loops/Drum_Loop.wav", size: "980KB", format: "WAV" },
-            ],
-          },
-        ],
-      },
-      {
-        id: "10",
-        name: "Documents",
-        type: "folder",
-        path: "/Documents",
-        children: [
-          {
-            id: "11",
-            name: "Audio Projects",
-            type: "folder",
-            path: "/Documents/Audio Projects",
-            children: [
-              { id: "12", name: "Synth_Lead_C.wav", type: "file", path: "/Documents/Audio Projects/Synth_Lead_C.wav", size: "440KB", format: "WAV" },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-];
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 interface FileBrowserProps {
   onFileTransfer: (sourcePath: string, destinationPath: string) => void;
@@ -78,14 +29,124 @@ interface FileBrowserProps {
 
 export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["1", "2", "3"]));
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [rootPath, setRootPath] = useState<string>("");
 
-  const toggleFolder = (folderId: string) => {
+  useEffect(() => {
+    // Get home directory and load it
+    const loadRootDirectory = async () => {
+      // Wait a bit for preload script to load
+      let retries = 0;
+      while (!window.electron && retries < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retries++;
+      }
+      
+      if (!window.electron) {
+        console.error("Electron API not available after waiting");
+        console.log("window.electron:", window.electron);
+        setLoading(false);
+        return;
+      }
+      
+      console.log("Electron API available:", window.electron);
+
+      try {
+        const homeResult = await window.electron.fs.getHomeDirectory();
+        console.log("Home directory result:", homeResult);
+        if (homeResult.success && homeResult.data) {
+          setRootPath(homeResult.data);
+          await loadDirectory(homeResult.data, "root");
+        } else {
+          console.error("Failed to get home directory:", homeResult.error);
+        }
+      } catch (error) {
+        console.error("Failed to load root directory:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRootDirectory();
+  }, []);
+
+  const loadDirectory = async (dirPath: string, nodeId: string) => {
+    if (!window.electron) return;
+
+    try {
+      console.log("Loading directory:", dirPath);
+      const result = await window.electron.fs.readDirectory(dirPath);
+      console.log("Directory read result:", result);
+      if (result.success && result.data) {
+        const children: FileNode[] = result.data.map((entry) => ({
+          id: `${nodeId}-${entry.path}`,
+          name: entry.name,
+          type: entry.type,
+          path: entry.path,
+          size: entry.type === "file" ? formatFileSize(entry.size) : undefined,
+          loaded: false,
+        }));
+
+        // Sort: folders first, then files, both alphabetically
+        children.sort((a, b) => {
+          if (a.type !== b.type) {
+            return a.type === "folder" ? -1 : 1;
+          }
+          return a.name.localeCompare(b.name);
+        });
+
+        setFileTree((prev) => {
+          const updateNode = (nodes: FileNode[]): FileNode[] => {
+            return nodes.map((node) => {
+              if (node.id === nodeId) {
+                return { ...node, children, loaded: true, isLoading: false };
+              }
+              if (node.children) {
+                return { ...node, children: updateNode(node.children) };
+              }
+              return node;
+            });
+          };
+
+          if (nodeId === "root") {
+            return children.map((child) => ({ ...child, id: `root-${child.path}` }));
+          }
+          return updateNode(prev);
+        });
+      } else {
+        console.error("Failed to read directory:", result.error);
+      }
+    } catch (error) {
+      console.error("Failed to load directory:", error);
+    }
+  };
+
+  const toggleFolder = async (node: FileNode) => {
     const newExpanded = new Set(expandedFolders);
-    if (newExpanded.has(folderId)) {
-      newExpanded.delete(folderId);
+    if (newExpanded.has(node.id)) {
+      newExpanded.delete(node.id);
     } else {
-      newExpanded.add(folderId);
+      newExpanded.add(node.id);
+      // Load directory if not already loaded
+      if (!node.loaded && node.type === "folder") {
+        setFileTree((prev) => {
+          const updateNode = (nodes: FileNode[]): FileNode[] => {
+            return nodes.map((n) => {
+              if (n.id === node.id) {
+                return { ...n, isLoading: true };
+              }
+              if (n.children) {
+                return { ...n, children: updateNode(n.children) };
+              }
+              return n;
+            });
+          };
+          return updateNode(prev);
+        });
+        await loadDirectory(node.path, node.id);
+      }
     }
     setExpandedFolders(newExpanded);
   };
@@ -122,24 +183,27 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
       return (
         <div key={node.id}>
           <div
-            draggable
+            draggable={node.type === "file" || node.type === "folder"}
             onDragStart={(e) => handleDragStart(e, node)}
             className="flex items-center gap-2 py-1.5 px-2 hover:bg-secondary/50 rounded cursor-pointer group"
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
-            onClick={() => node.type === "folder" && toggleFolder(node.id)}
+            onClick={() => node.type === "folder" && toggleFolder(node)}
           >
             {node.type === "folder" ? (
               <>
-                {hasChildren && (
-                  <span className="w-4 h-4 flex items-center justify-center">
-                    {isExpanded ? (
-                      <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                    )}
-                  </span>
-                )}
-                {!hasChildren && <span className="w-4" />}
+                <span className="w-4 h-4 flex items-center justify-center">
+                  {node.isLoading ? (
+                    <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
+                  ) : (
+                    (hasChildren || !node.loaded) && (
+                      isExpanded ? (
+                        <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                      )
+                    )
+                  )}
+                </span>
                 <Folder className="w-4 h-4 text-primary flex-shrink-0" />
               </>
             ) : (
@@ -163,7 +227,7 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
     });
   };
 
-  const filteredFileSystem = filterNodes(mockFileSystem, searchQuery);
+  const filteredFileSystem = filterNodes(fileTree, searchQuery);
 
   return (
     <div className="flex flex-col h-full">
@@ -188,7 +252,23 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
 
       {/* File Tree */}
       <ScrollArea className="flex-1">
-        <div className="p-2">{renderFileTree(filteredFileSystem)}</div>
+        <div className="p-2">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : !window.electron ? (
+            <div className="text-center py-8 text-sm text-red-500">
+              Electron API not available. Please run in Electron environment.
+            </div>
+          ) : filteredFileSystem.length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              No files found
+            </div>
+          ) : (
+            renderFileTree(filteredFileSystem)
+          )}
+        </div>
       </ScrollArea>
 
       {/* Status */}
