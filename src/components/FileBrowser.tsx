@@ -40,17 +40,17 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
       // Wait a bit for preload script to load
       let retries = 0;
       while (!window.electron && retries < 10) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
         retries++;
       }
-      
+
       if (!window.electron) {
         console.error("Electron API not available after waiting");
         console.log("window.electron:", window.electron);
         setLoading(false);
         return;
       }
-      
+
       console.log("Electron API available:", window.electron);
 
       try {
@@ -60,7 +60,7 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
           setRootPath(homeResult.data);
           await loadDirectory(homeResult.data, "root");
         } else {
-          console.error("Failed to get home directory:", homeResult.error);
+          console.error("Failed to get home directory");
         }
       } catch (error) {
         console.error("Failed to load root directory:", error);
@@ -80,7 +80,12 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
       const result = await window.electron.fs.readDirectory(dirPath);
       console.log("Directory read result:", result);
       if (result.success && result.data) {
-        const children: FileNode[] = result.data.map((entry) => ({
+        // Filter out hidden files/folders (starting with '.' or '~')
+        const filteredEntries = result.data.filter(
+          (entry) => !entry.name.startsWith(".") && !entry.name.startsWith("~")
+        );
+
+        const children: FileNode[] = filteredEntries.map((entry) => ({
           id: `${nodeId}-${entry.path}`,
           name: entry.name,
           type: entry.type,
@@ -159,18 +164,18 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
 
   const filterNodes = (nodes: FileNode[], query: string): FileNode[] => {
     if (!query) return nodes;
-    
+
     return nodes.reduce<FileNode[]>((acc, node) => {
       const matches = node.name.toLowerCase().includes(query.toLowerCase());
       const filteredChildren = node.children ? filterNodes(node.children, query) : [];
-      
+
       if (matches || filteredChildren.length > 0) {
         acc.push({
           ...node,
           children: filteredChildren.length > 0 ? filteredChildren : node.children,
         });
       }
-      
+
       return acc;
     }, []);
   };
@@ -195,13 +200,12 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
                   {node.isLoading ? (
                     <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
                   ) : (
-                    (hasChildren || !node.loaded) && (
-                      isExpanded ? (
-                        <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                      )
-                    )
+                    (hasChildren || !node.loaded) &&
+                    (isExpanded ? (
+                      <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                    ))
                   )}
                 </span>
                 <Folder className="w-4 h-4 text-primary flex-shrink-0" />
@@ -235,9 +239,7 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-2 mb-3">
           <HardDrive className="w-4 h-4 text-primary" />
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Local Files
-          </h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Local Files</h2>
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -262,9 +264,7 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
               Electron API not available. Please run in Electron environment.
             </div>
           ) : filteredFileSystem.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">
-              No files found
-            </div>
+            <div className="text-center py-8 text-sm text-muted-foreground">No files found</div>
           ) : (
             renderFileTree(filteredFileSystem)
           )}

@@ -60,7 +60,12 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
       const result = await window.electron.fs.readDirectory(dirPath);
       console.log("CF Card - Directory read result:", result);
       if (result.success && result.data) {
-        const children: CFNode[] = result.data.map((entry) => ({
+        // Filter out hidden files/folders (starting with '.' or '~')
+        const filteredEntries = result.data.filter(
+          (entry) => !entry.name.startsWith(".") && !entry.name.startsWith("~")
+        );
+
+        const children: CFNode[] = filteredEntries.map((entry) => ({
           id: `${nodeId}-${entry.path}`,
           name: entry.name,
           type: entry.type,
