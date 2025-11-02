@@ -15,7 +15,7 @@ const Index = () => {
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
-      <header className="h-14 border-b border-border bg-card flex items-center px-4 justify-between">
+      <header className="h-14 border-b border-border bg-card flex items-center px-4 justify-between" style={{ WebkitAppRegion: 'drag' }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
             <span className="text-primary-foreground font-bold text-sm">O</span>
@@ -25,6 +25,7 @@ const Index = () => {
         <button
           onClick={() => setAboutOpen(true)}
           className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+          style={{ WebkitAppRegion: 'no-drag' }}
         >
           About
         </button>
