@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Folder, File, ChevronRight, ChevronDown, Trash2, FolderPlus, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,19 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [cfCardPath, setCfCardPath] = useState<string>("");
+  const [currentRootPath, setCurrentRootPath] = useState<string>("");
   const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
+  const currentRootPathRef = useRef<string>("");
+  const cfCardPathRef = useRef<string>("");
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    currentRootPathRef.current = currentRootPath;
+  }, [currentRootPath]);
+
+  useEffect(() => {
+    cfCardPathRef.current = cfCardPath;
+  }, [cfCardPath]);
 
   const loadDirectory = useCallback(async (dirPath: string, nodeId: string) => {
     if (!window.electron) return;
@@ -106,6 +118,8 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
           const parentPath = dirPath.split("/").slice(0, -1).join("/");
           if (parentPath) {
             console.log("CF_Card doesn't exist, trying parent:", parentPath);
+            setCurrentRootPath(parentPath);
+            currentRootPathRef.current = parentPath;
             await loadDirectory(parentPath, "cf-root");
           } else {
             // Fallback to empty array
@@ -147,6 +161,22 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
       console.log("Electron API available:", window.electron);
 
       try {
+        // Check for existing SD/CF cards first
+        const cardsResult = await window.electron.fs.getSDCFCards();
+        if (cardsResult.success && cardsResult.data && cardsResult.data.length > 0) {
+          // Navigate to the first detected card
+          console.log("SD/CF card already mounted:", cardsResult.data[0]);
+          const cardPath = cardsResult.data[0];
+          setCfCardPath(cardPath);
+          setCurrentRootPath(cardPath);
+          cfCardPathRef.current = cardPath;
+          currentRootPathRef.current = cardPath;
+          await loadDirectory(cardPath, "cf-root");
+          setLoading(false);
+          return;
+        }
+
+        // Fallback to Documents/CF_Card if no card detected
         const homeResult = await window.electron.fs.getHomeDirectory();
         console.log("CF Card - Home directory result:", homeResult);
         if (homeResult.success && homeResult.data) {
@@ -154,6 +184,9 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
           const documentsPath = joinPath(homeResult.data, "Documents");
           const cfPath = joinPath(documentsPath, "CF_Card");
           setCfCardPath(cfPath);
+          setCurrentRootPath(cfPath);
+          cfCardPathRef.current = cfPath;
+          currentRootPathRef.current = cfPath;
           // Try to load CF_Card first, fallback to Documents if it doesn't exist
           await loadDirectory(cfPath, "cf-root");
         } else {
@@ -167,6 +200,54 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     };
 
     initializeCFCard();
+
+    // Listen for SD card detection events
+    if (window.electron?.on) {
+      const handleCardDetected = (cardPath: string) => {
+        console.log("SD/CF card detected, navigating to:", cardPath);
+        setCfCardPath(cardPath);
+        setCurrentRootPath(cardPath);
+        cfCardPathRef.current = cardPath;
+        currentRootPathRef.current = cardPath;
+        setExpandedFolders(new Set());
+        setCFStructure([]);
+        loadDirectory(cardPath, "cf-root");
+      };
+
+      const handleCardRemoved = async (cardPath: string) => {
+        console.log("SD/CF card removed:", cardPath);
+        // Check if we need to navigate away using refs
+        if (cfCardPathRef.current === cardPath || currentRootPathRef.current === cardPath) {
+          try {
+            const homeResult = await window.electron?.fs.getHomeDirectory();
+            if (homeResult?.success && homeResult.data) {
+              const documentsPath = joinPath(homeResult.data, "Documents");
+              const cfPath = joinPath(documentsPath, "CF_Card");
+              setCfCardPath(cfPath);
+              setCurrentRootPath(cfPath);
+              cfCardPathRef.current = cfPath;
+              currentRootPathRef.current = cfPath;
+              setExpandedFolders(new Set());
+              setCFStructure([]);
+              await loadDirectory(cfPath, "cf-root");
+            }
+          } catch (error) {
+            console.error("Error handling card removal:", error);
+          }
+        }
+      };
+
+      window.electron.on.sdCardDetected(handleCardDetected);
+      window.electron.on.sdCardRemoved(handleCardRemoved);
+
+      // Cleanup listeners on unmount
+      return () => {
+        if (window.electron?.removeListener) {
+          window.electron.removeListener("sd-card-detected");
+          window.electron.removeListener("sd-card-removed");
+        }
+      };
+    }
   }, [loadDirectory]);
 
   const toggleFolder = async (node: CFNode) => {
@@ -197,6 +278,26 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     setExpandedFolders(newExpanded);
   };
 
+  const navigateToFolder = async (folderPath: string) => {
+    setCurrentRootPath(folderPath);
+    currentRootPathRef.current = folderPath;
+    setExpandedFolders(new Set());
+    setCFStructure([]);
+    await loadDirectory(folderPath, "cf-root");
+  };
+
+  const navigateToParent = async () => {
+    if (!currentRootPath || currentRootPath === cfCardPath) return;
+
+    const parts = currentRootPath.split("/").filter(Boolean);
+    if (parts.length <= 1) return; // Already at root
+
+    const parentPath = currentRootPath.startsWith("/")
+      ? "/" + parts.slice(0, -1).join("/")
+      : parts.slice(0, -1).join("/");
+    await navigateToFolder(parentPath);
+  };
+
   const handleDragOver = (e: React.DragEvent, node: CFNode) => {
     e.preventDefault();
     e.stopPropagation();
@@ -217,7 +318,7 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     setDragOverPath(null);
     setIsDraggingOverRoot(false);
 
-    const destinationPath = destinationNode ? destinationNode.path : cfCardPath;
+    const destinationPath = destinationNode ? destinationNode.path : currentRootPath || cfCardPath;
     if (!destinationPath || (destinationNode && destinationNode.type !== "folder")) return;
 
     const sourcePath = e.dataTransfer.getData("sourcePath");
@@ -311,29 +412,65 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
   };
 
   const renderCFTree = (nodes: CFNode[], depth: number = 0): React.ReactNode => {
-    return nodes.map((node) => {
+    // Add ".." entry if not at root
+    const showParentLink = currentRootPath && currentRootPath !== cfCardPath;
+    const itemsToRender =
+      showParentLink && depth === 0
+        ? [
+            {
+              id: "parent-link",
+              name: "..",
+              type: "folder" as const,
+              path: (() => {
+                const parts = currentRootPath.split("/").filter(Boolean);
+                return currentRootPath.startsWith("/")
+                  ? "/" + parts.slice(0, -1).join("/")
+                  : parts.slice(0, -1).join("/") || "/";
+              })(),
+              loaded: false,
+            },
+            ...nodes,
+          ]
+        : nodes;
+
+    return itemsToRender.map((node) => {
       const isExpanded = expandedFolders.has(node.id);
       const hasChildren = node.children && node.children.length > 0;
       const isDragOver = dragOverPath === node.path;
+      const isParentLink = node.id === "parent-link";
 
       return (
         <div key={node.id}>
           <div
-            onDragOver={(e) => handleDragOver(e, node)}
+            draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
+            onDragOver={(e) => !isParentLink && handleDragOver(e, node)}
             onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, node)}
+            onDrop={(e) => !isParentLink && handleDrop(e, node)}
             className={`flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
               node.type === "folder" ? "cursor-pointer" : ""
             } ${
-              isDragOver && node.type === "folder" ? "bg-primary/20 border border-primary" : "hover:bg-secondary/50"
+              isDragOver && node.type === "folder" && !isParentLink
+                ? "bg-primary/20 border border-primary"
+                : "hover:bg-secondary/50"
             }`}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
-            onClick={() => node.type === "folder" && toggleFolder(node)}
+            onClick={() => {
+              if (isParentLink) {
+                navigateToParent();
+              } else if (node.type === "folder") {
+                toggleFolder(node);
+              }
+            }}
+            onDoubleClick={() => {
+              if (!isParentLink && node.type === "folder") {
+                navigateToFolder(node.path);
+              }
+            }}
           >
             {node.type === "folder" ? (
               <>
                 <span className="w-4 h-4 flex items-center justify-center">
-                  {node.isLoading ? (
+                  {isParentLink ? null : node.isLoading ? (
                     <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
                   ) : (
                     (hasChildren || !node.loaded) &&
@@ -344,7 +481,9 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
                     ))
                   )}
                 </span>
-                <Folder className="w-4 h-4 text-primary flex-shrink-0" />
+                <Folder
+                  className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
+                />
               </>
             ) : (
               <>
@@ -352,9 +491,11 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
                 <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
               </>
             )}
-            <span className="text-sm truncate flex-1">{node.name}</span>
+            <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
+              {node.name}
+            </span>
             {node.size && <span className="text-xs text-muted-foreground font-mono">{node.size}</span>}
-            {(node.type === "file" || node.type === "folder") && (
+            {(node.type === "file" || node.type === "folder") && !isParentLink && (
               <Button
                 size="sm"
                 variant="ghost"

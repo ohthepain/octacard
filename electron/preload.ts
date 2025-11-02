@@ -11,6 +11,18 @@ contextBridge.exposeInMainWorld("electron", {
     getHomeDirectory: () => ipcRenderer.invoke("fs:getHomeDirectory"),
     deleteFile: (filePath: string) => ipcRenderer.invoke("fs:deleteFile", filePath),
     deleteFolder: (folderPath: string) => ipcRenderer.invoke("fs:deleteFolder", folderPath),
+    getSDCFCards: () => ipcRenderer.invoke("fs:getSDCFCards"),
+  },
+  on: {
+    sdCardDetected: (callback: (cardPath: string) => void) => {
+      ipcRenderer.on("sd-card-detected", (_event, cardPath: string) => callback(cardPath));
+    },
+    sdCardRemoved: (callback: (cardPath: string) => void) => {
+      ipcRenderer.on("sd-card-removed", (_event, cardPath: string) => callback(cardPath));
+    },
+  },
+  removeListener: (channel: string) => {
+    ipcRenderer.removeAllListeners(channel);
   },
 });
 

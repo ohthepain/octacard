@@ -9,7 +9,13 @@ interface ElectronAPI {
     getHomeDirectory: () => Promise<{ success: boolean; data?: string }>;
     deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
     deleteFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
+    getSDCFCards: () => Promise<{ success: boolean; data?: string[]; error?: string }>;
   };
+  on: {
+    sdCardDetected: (callback: (cardPath: string) => void) => void;
+    sdCardRemoved: (callback: (cardPath: string) => void) => void;
+  };
+  removeListener: (channel: string) => void;
 }
 
 declare global {

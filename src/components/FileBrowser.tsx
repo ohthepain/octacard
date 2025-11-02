@@ -33,6 +33,7 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [rootPath, setRootPath] = useState<string>("");
+  const [currentRootPath, setCurrentRootPath] = useState<string>("");
 
   useEffect(() => {
     // Get home directory and load it
@@ -58,6 +59,7 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
         console.log("Home directory result:", homeResult);
         if (homeResult.success && homeResult.data) {
           setRootPath(homeResult.data);
+          setCurrentRootPath(homeResult.data);
           await loadDirectory(homeResult.data, "root");
         } else {
           console.error("Failed to get home directory");
@@ -156,6 +158,25 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
     setExpandedFolders(newExpanded);
   };
 
+  const navigateToFolder = async (folderPath: string) => {
+    setCurrentRootPath(folderPath);
+    setExpandedFolders(new Set());
+    setFileTree([]);
+    await loadDirectory(folderPath, "root");
+  };
+
+  const navigateToParent = async () => {
+    if (!currentRootPath || currentRootPath === rootPath) return;
+
+    const parts = currentRootPath.split("/").filter(Boolean);
+    if (parts.length <= 1) return; // Already at root
+
+    const parentPath = currentRootPath.startsWith("/")
+      ? "/" + parts.slice(0, -1).join("/")
+      : parts.slice(0, -1).join("/");
+    await navigateToFolder(parentPath);
+  };
+
   const handleDragStart = (e: React.DragEvent, node: FileNode) => {
     e.dataTransfer.setData("sourcePath", node.path);
     e.dataTransfer.setData("sourceType", node.type);
@@ -181,23 +202,56 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
   };
 
   const renderFileTree = (nodes: FileNode[], depth: number = 0): React.ReactNode => {
-    return nodes.map((node) => {
+    // Add ".." entry if not at root
+    const showParentLink = currentRootPath && currentRootPath !== rootPath;
+    const itemsToRender =
+      showParentLink && depth === 0
+        ? [
+            {
+              id: "parent-link",
+              name: "..",
+              type: "folder" as const,
+              path: (() => {
+                const parts = currentRootPath.split("/").filter(Boolean);
+                return currentRootPath.startsWith("/")
+                  ? "/" + parts.slice(0, -1).join("/")
+                  : parts.slice(0, -1).join("/") || "/";
+              })(),
+              loaded: false,
+            },
+            ...nodes,
+          ]
+        : nodes;
+
+    return itemsToRender.map((node) => {
       const isExpanded = expandedFolders.has(node.id);
       const hasChildren = node.children && node.children.length > 0;
+      const isParentLink = node.id === "parent-link";
 
       return (
         <div key={node.id}>
           <div
-            draggable={node.type === "file" || node.type === "folder"}
-            onDragStart={(e) => handleDragStart(e, node)}
+            draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
+            onDragStart={(e) => !isParentLink && handleDragStart(e, node)}
             className="flex items-center gap-2 py-1.5 px-2 hover:bg-secondary/50 rounded cursor-pointer group"
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
-            onClick={() => node.type === "folder" && toggleFolder(node)}
+            onClick={() => {
+              if (isParentLink) {
+                navigateToParent();
+              } else if (node.type === "folder") {
+                toggleFolder(node);
+              }
+            }}
+            onDoubleClick={() => {
+              if (!isParentLink && node.type === "folder") {
+                navigateToFolder(node.path);
+              }
+            }}
           >
             {node.type === "folder" ? (
               <>
                 <span className="w-4 h-4 flex items-center justify-center">
-                  {node.isLoading ? (
+                  {isParentLink ? null : node.isLoading ? (
                     <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
                   ) : (
                     (hasChildren || !node.loaded) &&
@@ -208,7 +262,9 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
                     ))
                   )}
                 </span>
-                <Folder className="w-4 h-4 text-primary flex-shrink-0" />
+                <Folder
+                  className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
+                />
               </>
             ) : (
               <>
@@ -216,7 +272,9 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
                 <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
               </>
             )}
-            <span className="text-sm truncate flex-1">{node.name}</span>
+            <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
+              {node.name}
+            </span>
             {node.size && (
               <span className="text-xs text-muted-foreground font-mono opacity-0 group-hover:opacity-100 transition-opacity">
                 {node.size}
