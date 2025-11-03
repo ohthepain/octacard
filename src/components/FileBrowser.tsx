@@ -3,6 +3,7 @@ import { Folder, File, ChevronRight, ChevronDown, Search, HardDrive, Loader2 } f
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 
 interface FileNode {
   id: string;
@@ -25,15 +26,20 @@ function formatFileSize(bytes: number): string {
 
 interface FileBrowserProps {
   onFileTransfer: (sourcePath: string, destinationPath: string) => void;
+  sampleRate: string;
+  mono: boolean;
+  normalize: boolean;
 }
 
-export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
+export const FileBrowser = ({ onFileTransfer, sampleRate, mono, normalize }: FileBrowserProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [rootPath, setRootPath] = useState<string>("");
   const [currentRootPath, setCurrentRootPath] = useState<string>("");
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
 
   useEffect(() => {
     // Get home directory and load it
@@ -183,6 +189,149 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
     e.dataTransfer.effectAllowed = "copy";
   };
 
+  const handleDragOver = (e: React.DragEvent, node?: FileNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (node && node.type === "folder") {
+      setDragOverPath(node.path);
+      setIsDraggingOverRoot(false);
+    }
+  };
+
+  const handleContainerDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    // Clear any folder drag state when dragging over empty space
+    if (dragOverPath) {
+      setDragOverPath(null);
+    }
+    setIsDraggingOverRoot(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only clear if we're actually leaving the element (not just moving to child)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setDragOverPath(null);
+    }
+  };
+
+  const handleContainerDragLeave = (e: React.DragEvent) => {
+    // Check if we're actually leaving the container
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDraggingOverRoot(false);
+      setDragOverPath(null);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent, destinationNode?: FileNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPath(null);
+    setIsDraggingOverRoot(false);
+
+    // Determine destination path
+    let destinationPath: string;
+    if (destinationNode && destinationNode.type === "folder") {
+      destinationPath = destinationNode.path;
+    } else {
+      // Drop on empty space - use current root path
+      destinationPath = currentRootPath || rootPath;
+    }
+
+    if (!destinationPath) {
+      console.error("No destination path available");
+      return;
+    }
+
+    const sourcePath = e.dataTransfer.getData("sourcePath");
+    const sourceType = e.dataTransfer.getData("sourceType");
+
+    if (!sourcePath || !sourceType) {
+      console.error("No source path or type in drag data");
+      return;
+    }
+
+    if (!window.electron) {
+      console.error("Electron API not available");
+      return;
+    }
+
+    try {
+      // Simple path join utility
+      const joinPath = (...parts: string[]): string => {
+        if (parts.length === 0) return "";
+        const normalized = parts.filter(Boolean).map((p) => p.replace(/\\/g, "/"));
+        let result = normalized[0];
+        for (let i = 1; i < normalized.length; i++) {
+          if (!result.endsWith("/")) result += "/";
+          result += normalized[i].replace(/^\//, "");
+        }
+        return result.replace(/\/+/g, "/");
+      };
+
+      const basename = (path: string): string => {
+        const parts = path.split("/").filter(Boolean);
+        return parts[parts.length - 1] || path;
+      };
+
+      const fileName = basename(sourcePath);
+      const destFilePath = joinPath(destinationPath, fileName);
+
+      if (sourceType === "file") {
+        // Check if file needs conversion (audio file and sample rate setting is not "dont-change")
+        const needsConversion =
+          sampleRate !== "dont-change" && /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
+
+        let result;
+        if (needsConversion) {
+          result = await window.electron.fs.convertAndCopyFile(
+            sourcePath,
+            destFilePath,
+            sampleRate === "44.1" ? 44100 : undefined,
+            mono,
+            normalize
+          );
+        } else {
+          result = await window.electron.fs.copyFile(sourcePath, destFilePath);
+        }
+
+        if (result.success) {
+          // Refresh the destination folder
+          const nodeId = destinationNode ? destinationNode.id : "root";
+          await loadDirectory(destinationPath, nodeId);
+          onFileTransfer(sourcePath, destinationPath);
+        } else {
+          console.error("Failed to copy file:", result.error);
+          alert(`Failed to copy file: ${result.error}`);
+        }
+      } else if (sourceType === "folder") {
+        const result = await window.electron.fs.copyFolder(sourcePath, destFilePath);
+        if (result.success) {
+          // Refresh the destination folder
+          const nodeId = destinationNode ? destinationNode.id : "root";
+          await loadDirectory(destinationPath, nodeId);
+          onFileTransfer(sourcePath, destinationPath);
+        } else {
+          console.error("Failed to copy folder:", result.error);
+          alert(`Failed to copy folder: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error copying file/folder:", error);
+      alert(`Error copying: ${error}`);
+    }
+  };
+
   const filterNodes = (nodes: FileNode[], query: string): FileNode[] => {
     if (!query) return nodes;
 
@@ -226,61 +375,105 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
     return itemsToRender.map((node) => {
       const isExpanded = expandedFolders.has(node.id);
       const hasChildren = node.children && node.children.length > 0;
+      const isDragOver = dragOverPath === node.path;
       const isParentLink = node.id === "parent-link";
+
+      const handleRevealInFinder = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!window.electron || isParentLink) return;
+
+        try {
+          const result = await window.electron.fs.revealInFinder(node.path);
+          if (!result.success) {
+            console.error("Failed to reveal in finder:", result.error);
+          }
+        } catch (error) {
+          console.error("Error revealing in finder:", error);
+        }
+      };
 
       return (
         <div key={node.id}>
-          <div
-            draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
-            onDragStart={(e) => !isParentLink && handleDragStart(e, node)}
-            className="flex items-center gap-2 py-1.5 px-2 hover:bg-secondary/50 rounded cursor-pointer group"
-            style={{ paddingLeft: `${depth * 16 + 8}px` }}
-            onClick={() => {
-              if (isParentLink) {
-                navigateToParent();
-              } else if (node.type === "folder") {
-                toggleFolder(node);
-              }
-            }}
-            onDoubleClick={() => {
-              if (!isParentLink && node.type === "folder") {
-                navigateToFolder(node.path);
-              }
-            }}
-          >
-            {node.type === "folder" ? (
-              <>
-                <span className="w-4 h-4 flex items-center justify-center">
-                  {isParentLink ? null : node.isLoading ? (
-                    <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
-                  ) : (
-                    (hasChildren || !node.loaded) &&
-                    (isExpanded ? (
-                      <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                    ))
-                  )}
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div
+                draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
+                onDragStart={(e) => !isParentLink && handleDragStart(e, node)}
+                onDragOver={(e) => {
+                  if (!isParentLink && node.type === "folder") {
+                    handleDragOver(e, node);
+                  }
+                }}
+                onDragLeave={(e) => {
+                  e.stopPropagation();
+                  handleDragLeave(e);
+                }}
+                onDrop={(e) => {
+                  if (!isParentLink && node.type === "folder") {
+                    handleDrop(e, node);
+                  }
+                }}
+                className={`flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
+                  node.type === "folder" ? "cursor-pointer" : ""
+                } ${
+                  isDragOver && node.type === "folder" && !isParentLink
+                    ? "bg-primary/20 border border-primary"
+                    : "hover:bg-secondary/50"
+                }`}
+                style={{ paddingLeft: `${depth * 16 + 8}px` }}
+                onClick={() => {
+                  if (isParentLink) {
+                    navigateToParent();
+                  } else if (node.type === "folder") {
+                    toggleFolder(node);
+                  }
+                }}
+                onDoubleClick={() => {
+                  if (!isParentLink && node.type === "folder") {
+                    navigateToFolder(node.path);
+                  }
+                }}
+              >
+                {node.type === "folder" ? (
+                  <>
+                    <span className="w-4 h-4 flex items-center justify-center">
+                      {isParentLink ? null : node.isLoading ? (
+                        <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
+                      ) : (
+                        (hasChildren || !node.loaded) &&
+                        (isExpanded ? (
+                          <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                        ))
+                      )}
+                    </span>
+                    <Folder
+                      className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <span className="w-4" />
+                    <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  </>
+                )}
+                <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
+                  {node.name}
                 </span>
-                <Folder
-                  className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
-                />
-              </>
-            ) : (
-              <>
-                <span className="w-4" />
-                <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              </>
+                {node.size && (
+                  <span className="text-xs text-muted-foreground font-mono opacity-0 group-hover:opacity-100 transition-opacity">
+                    {node.size}
+                  </span>
+                )}
+              </div>
+            </ContextMenuTrigger>
+            {!isParentLink && (
+              <ContextMenuContent>
+                <ContextMenuItem onClick={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
+              </ContextMenuContent>
             )}
-            <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
-              {node.name}
-            </span>
-            {node.size && (
-              <span className="text-xs text-muted-foreground font-mono opacity-0 group-hover:opacity-100 transition-opacity">
-                {node.size}
-              </span>
-            )}
-          </div>
+          </ContextMenu>
           {node.type === "folder" && isExpanded && hasChildren && (
             <div>{renderFileTree(node.children!, depth + 1)}</div>
           )}
@@ -312,7 +505,19 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
 
       {/* File Tree */}
       <ScrollArea className="flex-1">
-        <div className="p-2">
+        <div
+          className={`p-2 h-full min-h-full ${isDraggingOverRoot ? "bg-primary/5" : ""}`}
+          onDragOver={handleContainerDragOver}
+          onDragLeave={handleContainerDragLeave}
+          onDrop={(e) => {
+            // Only handle drop on empty space if we're not dropping on a folder
+            // The folder's drop handler will stop propagation if it handles the drop
+            if (!dragOverPath) {
+              e.stopPropagation();
+              handleDrop(e);
+            }
+          }}
+        >
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -322,7 +527,20 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
               Electron API not available. Please run in Electron environment.
             </div>
           ) : filteredFileSystem.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">No files found</div>
+            <div
+              className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
+                isDraggingOverRoot ? "border-primary bg-primary/10" : "border-muted text-muted-foreground"
+              }`}
+            >
+              {currentRootPath ? (
+                <div>
+                  <div>Directory: {currentRootPath}</div>
+                  <div className="text-xs mt-2 text-muted-foreground">Drop files here to copy</div>
+                </div>
+              ) : (
+                "Drop files here to copy"
+              )}
+            </div>
           ) : (
             renderFileTree(filteredFileSystem)
           )}
@@ -331,7 +549,7 @@ export const FileBrowser = ({ onFileTransfer }: FileBrowserProps) => {
 
       {/* Status */}
       <div className="h-8 bg-toolbar border-t border-border px-4 flex items-center text-xs text-muted-foreground">
-        <span className="font-mono">Drag files or folders to CF card →</span>
+        <span className="font-mono">Drag files or folders to copy ↔</span>
       </div>
     </div>
   );

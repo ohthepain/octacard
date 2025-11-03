@@ -1,7 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Folder, File, ChevronRight, ChevronDown, Trash2, FolderPlus, Loader2 } from "lucide-react";
+import { Folder, File, ChevronRight, ChevronDown, Trash2, FolderPlus, Loader2, XCircle } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 
 // Simple path join utility for cross-platform compatibility
 function joinPath(...parts: string[]): string {
@@ -41,9 +52,12 @@ function formatFileSize(bytes: number): string {
 
 interface CFCardViewProps {
   onFileTransfer: (sourcePath: string, destinationPath: string) => void;
+  sampleRate: string;
+  mono: boolean;
+  normalize: boolean;
 }
 
-export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
+export const CFCardView = ({ onFileTransfer, sampleRate, mono, normalize }: CFCardViewProps) => {
   const [cfStructure, setCFStructure] = useState<CFNode[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
@@ -51,6 +65,9 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
   const [cfCardPath, setCfCardPath] = useState<string>("");
   const [currentRootPath, setCurrentRootPath] = useState<string>("");
   const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
+  const [isCardMounted, setIsCardMounted] = useState(false);
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
   const currentRootPathRef = useRef<string>("");
   const cfCardPathRef = useRef<string>("");
 
@@ -169,6 +186,7 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
           const cardPath = cardsResult.data[0];
           setCfCardPath(cardPath);
           setCurrentRootPath(cardPath);
+          setIsCardMounted(true);
           cfCardPathRef.current = cardPath;
           currentRootPathRef.current = cardPath;
           await loadDirectory(cardPath, "cf-root");
@@ -176,19 +194,18 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
           return;
         }
 
-        // Fallback to Documents/CF_Card if no card detected
+        // Fallback to same folder as left pane (home directory) if no card detected
         const homeResult = await window.electron.fs.getHomeDirectory();
         console.log("CF Card - Home directory result:", homeResult);
         if (homeResult.success && homeResult.data) {
-          // Use Documents/CF_Card as the default destination, or Documents if CF_Card doesn't exist
-          const documentsPath = joinPath(homeResult.data, "Documents");
-          const cfPath = joinPath(documentsPath, "CF_Card");
-          setCfCardPath(cfPath);
-          setCurrentRootPath(cfPath);
-          cfCardPathRef.current = cfPath;
-          currentRootPathRef.current = cfPath;
-          // Try to load CF_Card first, fallback to Documents if it doesn't exist
-          await loadDirectory(cfPath, "cf-root");
+          // Use home directory as the default destination (same as left pane)
+          const homePath = homeResult.data;
+          setCfCardPath(homePath);
+          setCurrentRootPath(homePath);
+          setIsCardMounted(false);
+          cfCardPathRef.current = homePath;
+          currentRootPathRef.current = homePath;
+          await loadDirectory(homePath, "cf-root");
         } else {
           console.error("Failed to get home directory");
         }
@@ -207,6 +224,7 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
         console.log("SD/CF card detected, navigating to:", cardPath);
         setCfCardPath(cardPath);
         setCurrentRootPath(cardPath);
+        setIsCardMounted(true);
         cfCardPathRef.current = cardPath;
         currentRootPathRef.current = cardPath;
         setExpandedFolders(new Set());
@@ -221,15 +239,16 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
           try {
             const homeResult = await window.electron?.fs.getHomeDirectory();
             if (homeResult?.success && homeResult.data) {
-              const documentsPath = joinPath(homeResult.data, "Documents");
-              const cfPath = joinPath(documentsPath, "CF_Card");
-              setCfCardPath(cfPath);
-              setCurrentRootPath(cfPath);
-              cfCardPathRef.current = cfPath;
-              currentRootPathRef.current = cfPath;
+              // Fallback to home directory (same as left pane)
+              const homePath = homeResult.data;
+              setCfCardPath(homePath);
+              setCurrentRootPath(homePath);
+              setIsCardMounted(false);
+              cfCardPathRef.current = homePath;
+              currentRootPathRef.current = homePath;
               setExpandedFolders(new Set());
               setCFStructure([]);
-              await loadDirectory(cfPath, "cf-root");
+              await loadDirectory(homePath, "cf-root");
             }
           } catch (error) {
             console.error("Error handling card removal:", error);
@@ -298,18 +317,54 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     await navigateToFolder(parentPath);
   };
 
-  const handleDragOver = (e: React.DragEvent, node: CFNode) => {
+  const handleDragStart = (e: React.DragEvent, node: CFNode) => {
+    e.dataTransfer.setData("sourcePath", node.path);
+    e.dataTransfer.setData("sourceType", node.type);
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  const handleDragOver = (e: React.DragEvent, node?: CFNode) => {
     e.preventDefault();
     e.stopPropagation();
-    if (node.type === "folder") {
+    e.dataTransfer.dropEffect = "copy";
+    if (node && node.type === "folder") {
       setDragOverPath(node.path);
+      setIsDraggingOverRoot(false);
     }
+  };
+
+  const handleContainerDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    // Clear any folder drag state when dragging over empty space
+    if (dragOverPath) {
+      setDragOverPath(null);
+    }
+    setIsDraggingOverRoot(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragOverPath(null);
+    // Only clear if we're actually leaving the element (not just moving to child)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setDragOverPath(null);
+    }
+  };
+
+  const handleContainerDragLeave = (e: React.DragEvent) => {
+    // Check if we're actually leaving the container
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDraggingOverRoot(false);
+      setDragOverPath(null);
+    }
   };
 
   const handleDrop = async (e: React.DragEvent, destinationNode?: CFNode) => {
@@ -318,44 +373,79 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     setDragOverPath(null);
     setIsDraggingOverRoot(false);
 
-    const destinationPath = destinationNode ? destinationNode.path : currentRootPath || cfCardPath;
-    if (!destinationPath || (destinationNode && destinationNode.type !== "folder")) return;
+    // Determine destination path
+    let destinationPath: string;
+    if (destinationNode && destinationNode.type === "folder") {
+      destinationPath = destinationNode.path;
+    } else {
+      // Drop on empty space - use current root path
+      destinationPath = currentRootPath || cfCardPath;
+    }
+
+    if (!destinationPath) {
+      console.error("No destination path available");
+      return;
+    }
 
     const sourcePath = e.dataTransfer.getData("sourcePath");
     const sourceType = e.dataTransfer.getData("sourceType");
 
-    if (sourcePath && destinationPath && window.electron) {
-      try {
-        const fileName = basename(sourcePath);
-        const destFilePath = joinPath(destinationPath, fileName);
+    if (!sourcePath || !sourceType) {
+      console.error("No source path or type in drag data");
+      return;
+    }
 
-        if (sourceType === "file") {
-          const result = await window.electron.fs.copyFile(sourcePath, destFilePath);
-          if (result.success) {
-            // Refresh the destination folder
-            const nodeId = destinationNode ? destinationNode.id : "cf-root";
-            await loadDirectory(destinationPath, nodeId);
-            onFileTransfer(sourcePath, destinationPath);
-          } else {
-            console.error("Failed to copy file:", result.error);
-            alert(`Failed to copy file: ${result.error}`);
-          }
-        } else if (sourceType === "folder") {
-          const result = await window.electron.fs.copyFolder(sourcePath, destFilePath);
-          if (result.success) {
-            // Refresh the destination folder
-            const nodeId = destinationNode ? destinationNode.id : "cf-root";
-            await loadDirectory(destinationPath, nodeId);
-            onFileTransfer(sourcePath, destinationPath);
-          } else {
-            console.error("Failed to copy folder:", result.error);
-            alert(`Failed to copy folder: ${result.error}`);
-          }
+    if (!window.electron) {
+      console.error("Electron API not available");
+      return;
+    }
+
+    try {
+      const fileName = basename(sourcePath);
+      const destFilePath = joinPath(destinationPath, fileName);
+
+      if (sourceType === "file") {
+        // Check if file needs conversion (audio file and sample rate setting is not "dont-change")
+        const needsConversion =
+          sampleRate !== "dont-change" && /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
+
+        let result;
+        if (needsConversion) {
+          result = await window.electron.fs.convertAndCopyFile(
+            sourcePath,
+            destFilePath,
+            sampleRate === "44.1" ? 44100 : undefined,
+            mono,
+            normalize
+          );
+        } else {
+          result = await window.electron.fs.copyFile(sourcePath, destFilePath);
         }
-      } catch (error) {
-        console.error("Error copying file/folder:", error);
-        alert(`Error copying: ${error}`);
+
+        if (result.success) {
+          // Refresh the destination folder
+          const nodeId = destinationNode ? destinationNode.id : "cf-root";
+          await loadDirectory(destinationPath, nodeId);
+          onFileTransfer(sourcePath, destinationPath);
+        } else {
+          console.error("Failed to copy file:", result.error);
+          alert(`Failed to copy file: ${result.error}`);
+        }
+      } else if (sourceType === "folder") {
+        const result = await window.electron.fs.copyFolder(sourcePath, destFilePath);
+        if (result.success) {
+          // Refresh the destination folder
+          const nodeId = destinationNode ? destinationNode.id : "cf-root";
+          await loadDirectory(destinationPath, nodeId);
+          onFileTransfer(sourcePath, destinationPath);
+        } else {
+          console.error("Failed to copy folder:", result.error);
+          alert(`Failed to copy folder: ${result.error}`);
+        }
       }
+    } catch (error) {
+      console.error("Error copying file/folder:", error);
+      alert(`Error copying: ${error}`);
     }
   };
 
@@ -411,6 +501,50 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     }
   };
 
+  const handleEject = async () => {
+    if (!isCardMounted || !window.electron) return;
+
+    try {
+      // Navigate back to home directory (same as left pane)
+      const homeResult = await window.electron.fs.getHomeDirectory();
+      if (homeResult?.success && homeResult.data) {
+        const homePath = homeResult.data;
+        setCfCardPath(homePath);
+        setCurrentRootPath(homePath);
+        setIsCardMounted(false);
+        cfCardPathRef.current = homePath;
+        currentRootPathRef.current = homePath;
+        setExpandedFolders(new Set());
+        setCFStructure([]);
+        await loadDirectory(homePath, "cf-root");
+      }
+    } catch (error) {
+      console.error("Error ejecting card:", error);
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim() || !window.electron) return;
+
+    try {
+      const folderPath = joinPath(currentRootPath || cfCardPath, newFolderName.trim());
+      const result = await window.electron.fs.createFolder(folderPath);
+
+      if (result.success) {
+        // Refresh the current directory
+        await loadDirectory(currentRootPath || cfCardPath, "cf-root");
+        setNewFolderDialogOpen(false);
+        setNewFolderName("");
+      } else {
+        console.error("Failed to create folder:", result.error);
+        alert(`Failed to create folder: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("Error creating folder:", error);
+      alert(`Error creating folder: ${error}`);
+    }
+  };
+
   const renderCFTree = (nodes: CFNode[], depth: number = 0): React.ReactNode => {
     // Add ".." entry if not at root
     const showParentLink = currentRootPath && currentRootPath !== cfCardPath;
@@ -439,76 +573,111 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
       const isDragOver = dragOverPath === node.path;
       const isParentLink = node.id === "parent-link";
 
+      const handleRevealInFinder = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!window.electron || isParentLink) return;
+
+        try {
+          const result = await window.electron.fs.revealInFinder(node.path);
+          if (!result.success) {
+            console.error("Failed to reveal in finder:", result.error);
+          }
+        } catch (error) {
+          console.error("Error revealing in finder:", error);
+        }
+      };
+
       return (
         <div key={node.id}>
-          <div
-            draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
-            onDragOver={(e) => !isParentLink && handleDragOver(e, node)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => !isParentLink && handleDrop(e, node)}
-            className={`flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
-              node.type === "folder" ? "cursor-pointer" : ""
-            } ${
-              isDragOver && node.type === "folder" && !isParentLink
-                ? "bg-primary/20 border border-primary"
-                : "hover:bg-secondary/50"
-            }`}
-            style={{ paddingLeft: `${depth * 16 + 8}px` }}
-            onClick={() => {
-              if (isParentLink) {
-                navigateToParent();
-              } else if (node.type === "folder") {
-                toggleFolder(node);
-              }
-            }}
-            onDoubleClick={() => {
-              if (!isParentLink && node.type === "folder") {
-                navigateToFolder(node.path);
-              }
-            }}
-          >
-            {node.type === "folder" ? (
-              <>
-                <span className="w-4 h-4 flex items-center justify-center">
-                  {isParentLink ? null : node.isLoading ? (
-                    <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
-                  ) : (
-                    (hasChildren || !node.loaded) &&
-                    (isExpanded ? (
-                      <ChevronDown className="w-3 h-3 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                    ))
-                  )}
-                </span>
-                <Folder
-                  className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
-                />
-              </>
-            ) : (
-              <>
-                <span className="w-4" />
-                <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              </>
-            )}
-            <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
-              {node.name}
-            </span>
-            {node.size && <span className="text-xs text-muted-foreground font-mono">{node.size}</span>}
-            {(node.type === "file" || node.type === "folder") && !isParentLink && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive"
-                onClick={(e) => {
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div
+                draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
+                onDragStart={(e) => !isParentLink && handleDragStart(e, node)}
+                onDragOver={(e) => {
+                  if (!isParentLink && node.type === "folder") {
+                    handleDragOver(e, node);
+                  }
+                }}
+                onDragLeave={(e) => {
                   e.stopPropagation();
-                  handleDelete(node);
+                  handleDragLeave(e);
+                }}
+                onDrop={(e) => {
+                  if (!isParentLink && node.type === "folder") {
+                    handleDrop(e, node);
+                  }
+                }}
+                className={`flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
+                  node.type === "folder" ? "cursor-pointer" : ""
+                } ${
+                  isDragOver && node.type === "folder" && !isParentLink
+                    ? "bg-primary/20 border border-primary"
+                    : "hover:bg-secondary/50"
+                }`}
+                style={{ paddingLeft: `${depth * 16 + 8}px` }}
+                onClick={() => {
+                  if (isParentLink) {
+                    navigateToParent();
+                  } else if (node.type === "folder") {
+                    toggleFolder(node);
+                  }
+                }}
+                onDoubleClick={() => {
+                  if (!isParentLink && node.type === "folder") {
+                    navigateToFolder(node.path);
+                  }
                 }}
               >
-                <Trash2 className="w-3 h-3" />
-              </Button>
+                {node.type === "folder" ? (
+                  <>
+                    <span className="w-4 h-4 flex items-center justify-center">
+                      {isParentLink ? null : node.isLoading ? (
+                        <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />
+                      ) : (
+                        (hasChildren || !node.loaded) &&
+                        (isExpanded ? (
+                          <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                        ))
+                      )}
+                    </span>
+                    <Folder
+                      className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <span className="w-4" />
+                    <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  </>
+                )}
+                <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
+                  {node.name}
+                </span>
+                {node.size && <span className="text-xs text-muted-foreground font-mono">{node.size}</span>}
+                {(node.type === "file" || node.type === "folder") && !isParentLink && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(node);
+                    }}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+            </ContextMenuTrigger>
+            {!isParentLink && (
+              <ContextMenuContent>
+                <ContextMenuItem onClick={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
+              </ContextMenuContent>
             )}
-          </div>
+          </ContextMenu>
           {node.type === "folder" && isExpanded && hasChildren && <div>{renderCFTree(node.children!, depth + 1)}</div>}
         </div>
       );
@@ -519,8 +688,24 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">CF Card Structure</h2>
-        <Button size="sm" variant="secondary" className="gap-2">
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">CF Card Structure</h2>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0"
+            onClick={handleEject}
+            disabled={!isCardMounted}
+            title={isCardMounted ? "Eject card" : "No card mounted"}
+          >
+            <XCircle
+              className={`w-4 h-4 ${
+                isCardMounted ? "text-muted-foreground hover:text-foreground" : "text-muted-foreground/50"
+              }`}
+            />
+          </Button>
+        </div>
+        <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
           <FolderPlus className="w-4 h-4" />
           New Folder
         </Button>
@@ -529,20 +714,14 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
       {/* CF Tree */}
       <ScrollArea className="flex-1">
         <div
-          className="p-2 h-full"
-          onDragOver={(e) => {
-            if (cfStructure.length === 0) {
-              e.preventDefault();
-              setIsDraggingOverRoot(true);
-            }
-          }}
-          onDragLeave={(e) => {
-            if (cfStructure.length === 0) {
-              setIsDraggingOverRoot(false);
-            }
-          }}
+          className={`p-2 h-full min-h-full ${isDraggingOverRoot ? "bg-primary/5" : ""}`}
+          onDragOver={handleContainerDragOver}
+          onDragLeave={handleContainerDragLeave}
           onDrop={(e) => {
-            if (cfStructure.length === 0) {
+            // Only handle drop on empty space if we're not dropping on a folder
+            // The folder's drop handler will stop propagation if it handles the drop
+            if (!dragOverPath) {
+              e.stopPropagation();
               handleDrop(e);
             }
           }}
@@ -583,6 +762,55 @@ export const CFCardView = ({ onFileTransfer }: CFCardViewProps) => {
         <span className="font-mono">Drop files here to copy</span>
         <span>CF Card: 4.2 GB free</span>
       </div>
+
+      {/* New Folder Dialog */}
+      <Dialog
+        open={newFolderDialogOpen}
+        onOpenChange={(open) => {
+          setNewFolderDialogOpen(open);
+          if (!open) {
+            setNewFolderName("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Folder</DialogTitle>
+            <DialogDescription>Enter a name for the new folder.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="folder-name">Folder Name</Label>
+              <Input
+                id="folder-name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleCreateFolder();
+                  }
+                }}
+                placeholder="My New Folder"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNewFolderDialogOpen(false);
+                setNewFolderName("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

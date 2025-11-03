@@ -314,6 +314,144 @@ ipcMain.handle("fs:deleteFolder", async (_event, folderPath: string) => {
   }
 });
 
+ipcMain.handle("fs:createFolder", async (_event, folderPath: string) => {
+  try {
+    await fs.mkdir(folderPath, { recursive: true });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle("fs:revealInFinder", async (_event, filePath: string) => {
+  try {
+    if (process.platform === "darwin") {
+      // macOS: Use 'open -R' to reveal file in Finder
+      await execAsync(`open -R "${filePath}"`);
+    } else if (process.platform === "win32") {
+      // Windows: Use explorer to select the file
+      await execAsync(`explorer /select,"${filePath.replace(/\//g, "\\")}"`);
+    } else {
+      // Linux: Use xdg-open to open parent directory
+      const parentDir = path.dirname(filePath);
+      await execAsync(`xdg-open "${parentDir}"`);
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+// Helper function to check if ffmpeg is available
+async function checkFFmpegAvailable(): Promise<boolean> {
+  try {
+    await execAsync("ffmpeg -version");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Helper function to get audio file sample rate using ffprobe
+async function getAudioSampleRate(filePath: string): Promise<number | null> {
+  try {
+    const { stdout } = await execAsync(
+      `ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 "${filePath}"`
+    );
+    const rate = parseFloat(stdout.trim());
+    return isNaN(rate) ? null : rate;
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle(
+  "fs:convertAndCopyFile",
+  async (
+    _event,
+    sourcePath: string,
+    destPath: string,
+    targetSampleRate?: number,
+    mono?: boolean,
+    normalize?: boolean
+  ) => {
+    try {
+      // Ensure destination directory exists
+      const destDir = path.dirname(destPath);
+      await fs.mkdir(destDir, { recursive: true });
+
+      // Check if ffmpeg is available
+      const ffmpegAvailable = await checkFFmpegAvailable();
+      if (!ffmpegAvailable) {
+        // Fallback: just copy the file if ffmpeg is not available
+        console.warn("ffmpeg not available, copying file without conversion");
+        await fs.copyFile(sourcePath, destPath);
+        return { success: true };
+      }
+
+      // Check if conversion is needed
+      // If targetSampleRate is set, we'll always convert (even if sample rate matches, to apply mono/normalize)
+      // If no targetSampleRate and no other conversions needed, just copy
+      if (!targetSampleRate && !mono && !normalize) {
+        await fs.copyFile(sourcePath, destPath);
+        return { success: true };
+      }
+
+      // Build ffmpeg command arguments
+      const ffmpegArgs: string[] = [
+        "-i",
+        sourcePath,
+        "-y", // Overwrite output file
+      ];
+
+      // Add sample rate conversion (always apply if targetSampleRate is set)
+      if (targetSampleRate) {
+        ffmpegArgs.push("-ar", targetSampleRate.toString());
+      }
+
+      // Add mono conversion
+      if (mono) {
+        ffmpegArgs.push("-ac", "1");
+      }
+
+      // Add normalization (loudnorm filter)
+      if (normalize) {
+        ffmpegArgs.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11");
+      }
+
+      // Ensure output is WAV format (16-bit PCM for Octatrack compatibility)
+      const destExt = path.extname(destPath).toLowerCase();
+      let finalDestPath = destPath;
+      if (destExt !== ".wav") {
+        // Change extension to .wav for audio conversion
+        finalDestPath = destPath.replace(/\.\w+$/i, ".wav");
+      }
+
+      ffmpegArgs.push("-acodec", "pcm_s16le", finalDestPath);
+
+      // Escape paths with spaces for shell execution
+      const escapedArgs = ffmpegArgs.map((arg) => {
+        if (arg.includes(" ") || arg.includes('"')) {
+          return `"${arg.replace(/"/g, '\\"')}"`;
+        }
+        return arg;
+      });
+
+      const command = `ffmpeg ${escapedArgs.join(" ")}`;
+      await execAsync(command);
+
+      // Update destPath if it was changed
+      if (finalDestPath !== destPath) {
+        destPath = finalDestPath;
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+);
+
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
   createWindow();
