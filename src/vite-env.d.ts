@@ -18,8 +18,10 @@ interface ElectronAPI {
     deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
     deleteFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
     createFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
-    getSDCFCards: () => Promise<{ success: boolean; data?: string[]; error?: string }>;
+    getSDCFCards: () => Promise<{ success: boolean; data?: Array<{ path: string; uuid: string }>; error?: string }>;
+    getVolumeInfo: (volumePath: string) => Promise<{ success: boolean; data?: { path: string; uuid: string }; error?: string }>;
     revealInFinder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+    ejectVolume: (volumePath: string) => Promise<{ success: boolean; error?: string }>;
     convertAndCopyFile: (
       sourcePath: string,
       destPath: string,
@@ -31,8 +33,8 @@ interface ElectronAPI {
     ) => Promise<{ success: boolean; error?: string }>;
   };
   on: {
-    sdCardDetected: (callback: (cardPath: string) => void) => void;
-    sdCardRemoved: (callback: (cardPath: string) => void) => void;
+    sdCardDetected: (callback: (cardPath: string, cardUUID: string) => void) => void;
+    sdCardRemoved: (callback: (cardPath: string, cardUUID: string) => void) => void;
   };
   removeListener: (channel: string) => void;
 }

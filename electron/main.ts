@@ -121,14 +121,76 @@ async function isRemovableMedia(volumePath: string): Promise<boolean> {
   }
 }
 
-// Function to detect SD/CF cards
-async function detectSDCFCards(): Promise<string[]> {
+// Function to get volume UUID/serial number
+async function getVolumeUUID(volumePath: string): Promise<string | null> {
+  try {
+    if (process.platform === "darwin") {
+      // macOS: Use diskutil to get UUID
+      const volumeName = path.basename(volumePath);
+      try {
+        const { stdout } = await execAsync(`diskutil info "${volumeName}"`);
+        // Look for Volume UUID or Disk / Partition UUID
+        const uuidMatch = stdout.match(/Volume UUID:\s*([A-F0-9-]+)/i) || stdout.match(/Disk \/ Partition UUID:\s*([A-F0-9-]+)/i);
+        if (uuidMatch && uuidMatch[1]) {
+          return uuidMatch[1];
+        }
+        // Fallback: use volume name as identifier
+        return volumeName;
+      } catch {
+        // Fallback: use volume name as identifier
+        return volumeName;
+      }
+    } else if (process.platform === "linux") {
+      // Linux: Use findmnt to get UUID
+      try {
+        const { stdout } = await execAsync(`findmnt -n -o UUID --target "${volumePath}"`);
+        const uuid = stdout.trim();
+        if (uuid && uuid !== "unknown") {
+          return uuid;
+        }
+      } catch {
+        // Fallback: use volume name
+      }
+      return path.basename(volumePath);
+    } else if (process.platform === "win32") {
+      // Windows: Use wmic to get volume serial number
+      const drive = volumePath[0];
+      try {
+        const { stdout } = await execAsync(`wmic logicaldisk where "name='${drive}:'" get VolumeSerialNumber`);
+        const serialMatch = stdout.match(/VolumeSerialNumber\s+([A-F0-9]+)/i);
+        if (serialMatch && serialMatch[1]) {
+          return serialMatch[1];
+        }
+      } catch {
+        // Fallback: use drive letter
+      }
+      return drive;
+    }
+    return path.basename(volumePath);
+  } catch (error) {
+    console.error(`Error getting UUID for ${volumePath}:`, error);
+    return path.basename(volumePath);
+  }
+}
+
+// Function to get volume info (path and UUID)
+async function getVolumeInfo(volumePath: string): Promise<{ path: string; uuid: string } | null> {
+  const uuid = await getVolumeUUID(volumePath);
+  if (!uuid) return null;
+  return { path: volumePath, uuid };
+}
+
+// Function to detect SD/CF cards with volume info
+async function detectSDCFCards(): Promise<Array<{ path: string; uuid: string }>> {
   const volumes = await getMountedVolumes();
-  const cards: string[] = [];
+  const cards: Array<{ path: string; uuid: string }> = [];
 
   for (const volume of volumes) {
     if (await isRemovableMedia(volume)) {
-      cards.push(volume);
+      const info = await getVolumeInfo(volume);
+      if (info) {
+        cards.push(info);
+      }
     }
   }
 
@@ -136,27 +198,27 @@ async function detectSDCFCards(): Promise<string[]> {
 }
 
 // Poll for SD/CF card insertion
-let lastDetectedCards: string[] = [];
+let lastDetectedCards: Array<{ path: string; uuid: string }> = [];
 let pollInterval: NodeJS.Timeout | null = null;
 
 async function pollForCards() {
   try {
     const cards = await detectSDCFCards();
 
-    // Check for newly inserted cards
-    const newCards = cards.filter((card) => !lastDetectedCards.includes(card));
+    // Check for newly inserted cards (compare by UUID)
+    const newCards = cards.filter((card) => !lastDetectedCards.some((lc) => lc.uuid === card.uuid));
 
     if (newCards.length > 0 && mainWindow) {
       console.log("SD/CF card detected:", newCards);
-      // Send event to renderer
-      mainWindow.webContents.send("sd-card-detected", newCards[0]);
+      // Send event to renderer with both path and UUID
+      mainWindow.webContents.send("sd-card-detected", newCards[0].path, newCards[0].uuid);
     }
 
-    // Check for removed cards
-    const removedCards = lastDetectedCards.filter((card) => !cards.includes(card));
+    // Check for removed cards (compare by UUID)
+    const removedCards = lastDetectedCards.filter((lc) => !cards.some((card) => card.uuid === lc.uuid));
     if (removedCards.length > 0 && mainWindow) {
       console.log("SD/CF card removed:", removedCards);
-      mainWindow.webContents.send("sd-card-removed", removedCards[0]);
+      mainWindow.webContents.send("sd-card-removed", removedCards[0].path, removedCards[0].uuid);
     }
 
     lastDetectedCards = cards;
@@ -231,7 +293,15 @@ ipcMain.handle("fs:copyFile", async (_event, sourcePath: string, destPath: strin
   }
 });
 
-async function copyFolderRecursive(sourcePath: string, destPath: string): Promise<void> {
+// Helper function to check if a path is inside another path
+function isPathInside(parentPath: string, childPath: string): boolean {
+  const parent = path.resolve(parentPath);
+  const child = path.resolve(childPath);
+  const relative = path.relative(parent, child);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+async function copyFolderRecursive(sourcePath: string, destPath: string, rootSourcePath: string): Promise<void> {
   await fs.mkdir(destPath, { recursive: true });
   const entries = await fs.readdir(sourcePath, { withFileTypes: true });
 
@@ -239,8 +309,13 @@ async function copyFolderRecursive(sourcePath: string, destPath: string): Promis
     const sourceEntryPath = path.join(sourcePath, entry.name);
     const destEntryPath = path.join(destPath, entry.name);
 
+    // Skip if destination would be inside the source tree (prevents recursive copying)
+    if (isPathInside(rootSourcePath, destEntryPath)) {
+      continue;
+    }
+
     if (entry.isDirectory()) {
-      await copyFolderRecursive(sourceEntryPath, destEntryPath);
+      await copyFolderRecursive(sourceEntryPath, destEntryPath, rootSourcePath);
     } else {
       await fs.copyFile(sourceEntryPath, destEntryPath);
     }
@@ -249,7 +324,12 @@ async function copyFolderRecursive(sourcePath: string, destPath: string): Promis
 
 ipcMain.handle("fs:copyFolder", async (_event, sourcePath: string, destPath: string) => {
   try {
-    await copyFolderRecursive(sourcePath, destPath);
+    // Check if destination is inside source (prevent copying folder into itself)
+    if (isPathInside(sourcePath, destPath)) {
+      return { success: false, error: "Cannot copy folder into itself or its subdirectories" };
+    }
+
+    await copyFolderRecursive(sourcePath, destPath, sourcePath);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -280,6 +360,18 @@ ipcMain.handle("fs:getSDCFCards", async () => {
   try {
     const cards = await detectSDCFCards();
     return { success: true, data: cards };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle("fs:getVolumeInfo", async (_event, volumePath: string) => {
+  try {
+    const info = await getVolumeInfo(volumePath);
+    if (!info) {
+      return { success: false, error: "Could not get volume info" };
+    }
+    return { success: true, data: info };
   } catch (error) {
     return { success: false, error: String(error) };
   }
@@ -341,6 +433,30 @@ ipcMain.handle("fs:revealInFinder", async (_event, filePath: string) => {
       await execAsync(`xdg-open "${parentDir}"`);
     }
     return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle("fs:ejectVolume", async (_event, volumePath: string) => {
+  try {
+    if (process.platform === "darwin") {
+      // macOS: Use diskutil to eject the volume
+      const volumeName = path.basename(volumePath);
+      // Use diskutil eject with the volume name
+      await execAsync(`diskutil eject "${volumeName}"`);
+      return { success: true };
+    } else if (process.platform === "win32") {
+      // Windows: Use PowerShell to eject the volume
+      const drive = volumePath[0];
+      await execAsync(`powershell -Command "(New-Object -comObject Shell.Application).Namespace(17).ParseName('${drive}:').InvokeVerb('Eject')"`);
+      return { success: true };
+    } else if (process.platform === "linux") {
+      // Linux: Use umount to unmount the volume
+      await execAsync(`umount "${volumePath}"`);
+      return { success: true };
+    }
+    return { success: false, error: "Platform not supported" };
   } catch (error) {
     return { success: false, error: String(error) };
   }
@@ -518,17 +634,58 @@ app.whenReady().then(() => {
   });
 });
 
-// Clean up polling interval on app quit
+// Clean up polling interval and ensure clean exit
 app.on("will-quit", () => {
   if (pollInterval) {
     clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  // In development mode, force exit after cleanup to help debugger detach properly
+  if (process.env.NODE_ENV === "development") {
+    setTimeout(() => process.exit(0), 100);
   }
 });
 
 // Quit when all windows are closed
 app.on("window-all-closed", () => {
-  // On macOS, keep app running even when all windows are closed
-  if (process.platform !== "darwin") {
+  // Clean up polling interval
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  
+  // On macOS, keep app running even when all windows are closed (unless debugging)
+  // In debug mode, quit to allow debugger to detach properly
+  if (process.platform !== "darwin" || process.env.NODE_ENV === "development") {
     app.quit();
   }
+});
+
+// Ensure clean exit when debugging
+app.on("before-quit", () => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+});
+
+// Handle process signals for clean shutdown
+process.on("SIGINT", () => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  app.quit();
+  // Force exit after a short delay to ensure clean shutdown
+  setTimeout(() => process.exit(0), 100);
+});
+
+process.on("SIGTERM", () => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  app.quit();
+  // Force exit after a short delay to ensure clean shutdown
+  setTimeout(() => process.exit(0), 100);
 });

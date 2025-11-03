@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Folder, File, ChevronRight, ChevronDown, Search, HardDrive, Loader2 } from "lucide-react";
+import { Folder, File, ChevronRight, ChevronDown, Search, HardDrive, Loader2, ArrowUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { useNavigationState } from "@/hooks/use-navigation-state";
 
 interface FileNode {
   id: string;
@@ -41,6 +42,23 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
   const [currentRootPath, setCurrentRootPath] = useState<string>("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
+  const [currentVolumeUUID, setCurrentVolumeUUID] = useState<string | null>(null);
+  const [pathDoesNotExist, setPathDoesNotExist] = useState(false);
+  const { saveNavigationState, getNavigationState } = useNavigationState();
+
+  // Helper function to get volume UUID for a path
+  const getVolumeUUIDForPath = async (path: string): Promise<string | null> => {
+    if (!window.electron) return null;
+    try {
+      const result = await window.electron.fs.getVolumeInfo(path);
+      if (result.success && result.data) {
+        return result.data.uuid;
+      }
+    } catch (error) {
+      console.error("Failed to get volume UUID:", error);
+    }
+    return null;
+  };
 
   useEffect(() => {
     // Get home directory and load it
@@ -65,9 +83,43 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
         const homeResult = await window.electron.fs.getHomeDirectory();
         console.log("Home directory result:", homeResult);
         if (homeResult.success && homeResult.data) {
-          setRootPath(homeResult.data);
-          setCurrentRootPath(homeResult.data);
-          await loadDirectory(homeResult.data, "root");
+          const homePath = homeResult.data;
+          setRootPath(homePath);
+
+          // Get volume UUID for home directory
+          const volumeUUID = await getVolumeUUIDForPath(homePath);
+          setCurrentVolumeUUID(volumeUUID);
+
+          // Try to restore saved navigation state
+          let initialPath = homePath;
+          if (volumeUUID) {
+            const savedPath = getNavigationState(volumeUUID);
+            if (savedPath) {
+              // Verify the saved path still exists and is accessible
+              try {
+                const statsResult = await window.electron.fs.getFileStats(savedPath);
+                if (statsResult.success && statsResult.data?.isDirectory) {
+                  initialPath = savedPath;
+                  console.log("Restored navigation state for volume:", volumeUUID, "to:", savedPath);
+                } else {
+                  console.log("Saved path exists but is not a directory, using home directory");
+                }
+              } catch {
+                // Saved path doesn't exist, use home directory
+                console.log("Saved path no longer exists, using home directory");
+              }
+            } else {
+              console.log("No saved navigation state found for volume:", volumeUUID);
+            }
+          } else {
+            console.log("Could not get volume UUID for home directory");
+          }
+
+          // Navigate to the initial path (saved or home)
+          setCurrentRootPath(initialPath);
+          setExpandedFolders(new Set());
+          setFileTree([]);
+          await loadDirectory(initialPath, "root");
         } else {
           console.error("Failed to get home directory");
         }
@@ -79,7 +131,44 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
     };
 
     loadRootDirectory();
-  }, []);
+  }, [getNavigationState]);
+
+  // Find the nearest existing parent folder
+  const findNearestExistingParent = async (dirPath: string): Promise<string | null> => {
+    if (!window.electron) return null;
+
+    const parts = dirPath.split("/").filter(Boolean);
+    if (parts.length === 0) return null;
+
+    // Try each parent directory starting from the immediate parent
+    for (let i = parts.length - 1; i > 0; i--) {
+      const parentPath = dirPath.startsWith("/") ? "/" + parts.slice(0, i).join("/") : parts.slice(0, i).join("/");
+
+      try {
+        const statsResult = await window.electron.fs.getFileStats(parentPath);
+        if (statsResult.success && statsResult.data?.isDirectory) {
+          return parentPath;
+        }
+      } catch {
+        // Continue to next parent
+        continue;
+      }
+    }
+
+    // If no parent found, try root path
+    if (rootPath) {
+      try {
+        const statsResult = await window.electron.fs.getFileStats(rootPath);
+        if (statsResult.success && statsResult.data?.isDirectory) {
+          return rootPath;
+        }
+      } catch {
+        // Root path doesn't exist either
+      }
+    }
+
+    return null;
+  };
 
   const loadDirectory = async (dirPath: string, nodeId: string) => {
     if (!window.electron) return;
@@ -89,6 +178,9 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
       const result = await window.electron.fs.readDirectory(dirPath);
       console.log("Directory read result:", result);
       if (result.success && result.data) {
+        // Directory exists, clear the error state
+        setPathDoesNotExist(false);
+
         // Filter out hidden files/folders (starting with '.' or '~')
         const filteredEntries = result.data.filter(
           (entry) => !entry.name.startsWith(".") && !entry.name.startsWith("~")
@@ -130,10 +222,19 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
           return updateNode(prev);
         });
       } else {
+        // Directory doesn't exist
         console.error("Failed to read directory:", result.error);
+        if (nodeId === "root") {
+          setPathDoesNotExist(true);
+          setFileTree([]);
+        }
       }
     } catch (error) {
       console.error("Failed to load directory:", error);
+      if (nodeId === "root") {
+        setPathDoesNotExist(true);
+        setFileTree([]);
+      }
     }
   };
 
@@ -166,11 +267,56 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
   };
 
   const navigateToFolder = async (folderPath: string) => {
+    console.log("Navigating to folder:", folderPath);
     setCurrentRootPath(folderPath);
     setExpandedFolders(new Set());
     setFileTree([]);
+    setPathDoesNotExist(false);
+
+    // Get volume UUID for the new path and save navigation state
+    const volumeUUID = await getVolumeUUIDForPath(folderPath);
+    if (volumeUUID) {
+      setCurrentVolumeUUID(volumeUUID);
+      saveNavigationState(volumeUUID, folderPath);
+      console.log("Saved navigation state for volume:", volumeUUID, "path:", folderPath);
+    } else {
+      // Even if UUID is null, save the path (fallback for edge cases)
+      saveNavigationState("unknown", folderPath);
+      console.log("Saved navigation state for unknown volume, path:", folderPath);
+    }
+
     await loadDirectory(folderPath, "root");
   };
+
+  const navigateToNearestExistingParent = async () => {
+    if (!currentRootPath) return;
+
+    const nearestParent = await findNearestExistingParent(currentRootPath);
+    if (nearestParent) {
+      console.log("Navigating to nearest existing parent:", nearestParent);
+      await navigateToFolder(nearestParent);
+    } else {
+      // Fallback to root path
+      if (rootPath) {
+        await navigateToFolder(rootPath);
+      }
+    }
+  };
+
+  // Save navigation state whenever currentRootPath changes (for any reason)
+  useEffect(() => {
+    const saveCurrentPath = async () => {
+      if (!currentRootPath || !currentVolumeUUID) return;
+
+      // Only save if we have a valid UUID
+      if (currentVolumeUUID && currentVolumeUUID !== "unknown") {
+        saveNavigationState(currentVolumeUUID, currentRootPath);
+        console.log("Auto-saved navigation state for volume:", currentVolumeUUID, "path:", currentRootPath);
+      }
+    };
+
+    saveCurrentPath();
+  }, [currentRootPath, currentVolumeUUID, saveNavigationState]);
 
   const navigateToParent = async () => {
     if (!currentRootPath || currentRootPath === rootPath) return;
@@ -181,6 +327,8 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
     const parentPath = currentRootPath.startsWith("/")
       ? "/" + parts.slice(0, -1).join("/")
       : parts.slice(0, -1).join("/");
+
+    // Navigate to parent - navigateToFolder will handle UUID and saving
     await navigateToFolder(parentPath);
   };
 
@@ -522,9 +670,24 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, nor
               }`}
             >
               {currentRootPath ? (
-                <div>
-                  <div>Directory: {currentRootPath}</div>
-                  <div className="text-xs mt-2 text-muted-foreground">Drop files here to copy</div>
+                <div className="space-y-3">
+                  <div>
+                    {pathDoesNotExist ? (
+                      <div className="text-amber-600 dark:text-amber-500">
+                        Directory does not exist: {currentRootPath}
+                      </div>
+                    ) : (
+                      <div>Directory: {currentRootPath}</div>
+                    )}
+                  </div>
+                  {pathDoesNotExist ? (
+                    <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
+                      <ArrowUp className="w-4 h-4" />
+                      Navigate to Nearest Existing Parent
+                    </Button>
+                  ) : (
+                    <div className="text-xs mt-2 text-muted-foreground">Drop files here to copy</div>
+                  )}
                 </div>
               ) : (
                 "Drop files here to copy"

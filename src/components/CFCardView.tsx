@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Folder, File, ChevronRight, ChevronDown, Trash2, FolderPlus, Loader2, XCircle } from "lucide-react";
+import { Folder, File, ChevronRight, ChevronDown, Trash2, FolderPlus, Loader2, XCircle, ArrowUp } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { useNavigationState } from "@/hooks/use-navigation-state";
 
 // Simple path join utility for cross-platform compatibility
 function joinPath(...parts: string[]): string {
@@ -59,7 +60,14 @@ interface CFCardViewProps {
   normalize: boolean;
 }
 
-export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat, mono, normalize }: CFCardViewProps) => {
+export const CFCardView = ({
+  onFileTransfer,
+  sampleRate,
+  sampleDepth,
+  fileFormat,
+  mono,
+  normalize,
+}: CFCardViewProps) => {
   const [cfStructure, setCFStructure] = useState<CFNode[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
@@ -70,8 +78,11 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
   const [isCardMounted, setIsCardMounted] = useState(false);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [currentCardUUID, setCurrentCardUUID] = useState<string | null>(null);
+  const [pathDoesNotExist, setPathDoesNotExist] = useState(false);
   const currentRootPathRef = useRef<string>("");
   const cfCardPathRef = useRef<string>("");
+  const { saveNavigationState, getNavigationState } = useNavigationState();
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -82,8 +93,54 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
     cfCardPathRef.current = cfCardPath;
   }, [cfCardPath]);
 
+  // Find the nearest existing parent folder
+  const findNearestExistingParent = useCallback(
+    async (dirPath: string): Promise<string | null> => {
+      if (!window.electron) return null;
+
+      const parts = dirPath.split("/").filter(Boolean);
+      if (parts.length === 0) return null;
+
+      // Try each parent directory starting from the immediate parent
+      for (let i = parts.length - 1; i > 0; i--) {
+        const parentPath = dirPath.startsWith("/") ? "/" + parts.slice(0, i).join("/") : parts.slice(0, i).join("/");
+
+        try {
+          const statsResult = await window.electron.fs.getFileStats(parentPath);
+          if (statsResult.success && statsResult.data?.isDirectory) {
+            return parentPath;
+          }
+        } catch {
+          // Continue to next parent
+          continue;
+        }
+      }
+
+      // If no parent found, try card path
+      if (cfCardPath) {
+        try {
+          const statsResult = await window.electron.fs.getFileStats(cfCardPath);
+          if (statsResult.success && statsResult.data?.isDirectory) {
+            return cfCardPath;
+          }
+        } catch {
+          // Card path doesn't exist either
+        }
+      }
+
+      return null;
+    },
+    [cfCardPath]
+  );
+
   const loadDirectory = useCallback(async (dirPath: string, nodeId: string) => {
     if (!window.electron) return;
+
+    // Validate that dirPath is a valid string
+    if (!dirPath || typeof dirPath !== "string" || dirPath.trim() === "") {
+      console.error("Invalid directory path provided to loadDirectory:", dirPath);
+      return;
+    }
 
     try {
       console.log("CF Card - Loading directory:", dirPath);
@@ -91,6 +148,9 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
       const result = await window.electron.fs.readDirectory(dirPath);
       console.log("CF Card - Directory read result:", result);
       if (result.success && result.data) {
+        // Directory exists, clear the error state
+        setPathDoesNotExist(false);
+
         // Filter out hidden files/folders (starting with '.' or '~')
         const filteredEntries = result.data.filter(
           (entry) => !entry.name.startsWith(".") && !entry.name.startsWith("~")
@@ -132,31 +192,24 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
           return updateNode(prev);
         });
       } else if (result.error && result.error.includes("ENOENT")) {
-        // Directory doesn't exist, try loading parent directory (Documents)
+        // Directory doesn't exist
         if (nodeId === "cf-root") {
-          const parentPath = dirPath.split("/").slice(0, -1).join("/");
-          if (parentPath) {
-            console.log("CF_Card doesn't exist, trying parent:", parentPath);
-            setCurrentRootPath(parentPath);
-            currentRootPathRef.current = parentPath;
-            await loadDirectory(parentPath, "cf-root");
-          } else {
-            // Fallback to empty array
-            setCFStructure([]);
-          }
-        } else {
-          setCFStructure((prev) => {
-            if (nodeId === "cf-root") {
-              return [];
-            }
-            return prev;
-          });
+          setPathDoesNotExist(true);
+          setCFStructure([]);
         }
       } else {
         console.error("Failed to read directory:", result.error);
+        if (nodeId === "cf-root") {
+          setPathDoesNotExist(true);
+          setCFStructure([]);
+        }
       }
     } catch (error) {
       console.error("Failed to load directory:", error);
+      if (nodeId === "cf-root") {
+        setPathDoesNotExist(true);
+        setCFStructure([]);
+      }
     }
   }, []);
 
@@ -185,14 +238,43 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
         console.log("CF Card - Cards detection result:", cardsResult);
         if (cardsResult.success && cardsResult.data && cardsResult.data.length > 0) {
           // Navigate to the first detected card
-          console.log("SD/CF card already mounted at startup, navigating to:", cardsResult.data[0]);
-          const cardPath = cardsResult.data[0];
+          const cardInfo = cardsResult.data[0];
+          const cardPath = cardInfo.path;
+          const cardUUID = cardInfo.uuid;
+          console.log("SD/CF card already mounted at startup, navigating to:", cardPath, "UUID:", cardUUID);
+
           setCfCardPath(cardPath);
-          setCurrentRootPath(cardPath);
           setIsCardMounted(true);
+          setCurrentCardUUID(cardUUID);
           cfCardPathRef.current = cardPath;
-          currentRootPathRef.current = cardPath;
-          await loadDirectory(cardPath, "cf-root");
+
+          // Try to restore saved navigation state
+          let initialPath = cardPath;
+          const savedPath = getNavigationState(cardUUID);
+          if (savedPath) {
+            // Verify the saved path still exists and is accessible
+            try {
+              const statsResult = await window.electron.fs.getFileStats(savedPath);
+              if (statsResult.success && statsResult.data?.isDirectory) {
+                initialPath = savedPath;
+                console.log("Restored navigation state for card UUID:", cardUUID, "to:", savedPath);
+              } else {
+                console.log("Saved path exists but is not a directory, using card root");
+              }
+            } catch {
+              // Saved path doesn't exist, use card root
+              console.log("Saved path no longer exists, using card root");
+            }
+          } else {
+            console.log("No saved navigation state found for card UUID:", cardUUID);
+          }
+
+          // Navigate to the initial path (saved or card root)
+          setCurrentRootPath(initialPath);
+          currentRootPathRef.current = initialPath;
+          setExpandedFolders(new Set());
+          setCFStructure([]);
+          await loadDirectory(initialPath, "cf-root");
           setLoading(false);
           return;
         }
@@ -204,12 +286,46 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
         if (homeResult.success && homeResult.data) {
           // Use home directory as the default destination (same as left pane)
           const homePath = homeResult.data;
+
+          // Get volume UUID for home directory and try to restore saved navigation state
+          let initialPath = homePath;
+          try {
+            const volumeResult = await window.electron.fs.getVolumeInfo(homePath);
+            if (volumeResult.success && volumeResult.data?.uuid) {
+              const volumeUUID = volumeResult.data.uuid;
+              setCurrentCardUUID(volumeUUID);
+
+              const savedPath = getNavigationState(volumeUUID);
+              if (savedPath) {
+                // Verify the saved path still exists and is accessible
+                try {
+                  const statsResult = await window.electron.fs.getFileStats(savedPath);
+                  if (statsResult.success && statsResult.data?.isDirectory) {
+                    initialPath = savedPath;
+                    console.log("Restored navigation state for home volume UUID:", volumeUUID, "to:", savedPath);
+                  } else {
+                    console.log("Saved path exists but is not a directory, using home directory");
+                  }
+                } catch {
+                  console.log("Saved path no longer exists, using home directory");
+                }
+              } else {
+                console.log("No saved navigation state found for home volume UUID:", volumeUUID);
+              }
+            }
+          } catch (error) {
+            console.error("Failed to get volume UUID for home directory:", error);
+          }
+
+          // Navigate to the initial path (saved or home)
           setCfCardPath(homePath);
-          setCurrentRootPath(homePath);
+          setCurrentRootPath(initialPath);
           setIsCardMounted(false);
           cfCardPathRef.current = homePath;
-          currentRootPathRef.current = homePath;
-          await loadDirectory(homePath, "cf-root");
+          currentRootPathRef.current = initialPath;
+          setExpandedFolders(new Set());
+          setCFStructure([]);
+          await loadDirectory(initialPath, "cf-root");
         } else {
           console.error("Failed to get home directory");
         }
@@ -224,20 +340,45 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
 
     // Listen for SD card detection events
     if (window.electron?.on) {
-      const handleCardDetected = (cardPath: string) => {
-        console.log("SD/CF card detected, navigating to:", cardPath);
+      const handleCardDetected = async (cardPath: string, cardUUID: string) => {
+        console.log("SD/CF card detected, navigating to:", cardPath, "UUID:", cardUUID);
+
         setCfCardPath(cardPath);
-        setCurrentRootPath(cardPath);
         setIsCardMounted(true);
+        setCurrentCardUUID(cardUUID);
         cfCardPathRef.current = cardPath;
-        currentRootPathRef.current = cardPath;
+
+        // Try to restore saved navigation state
+        let initialPath = cardPath;
+        const savedPath = getNavigationState(cardUUID);
+        if (savedPath) {
+          // Verify the saved path still exists and is accessible
+          try {
+            const statsResult = await window.electron?.fs.getFileStats(savedPath);
+            if (statsResult?.success && statsResult.data?.isDirectory) {
+              initialPath = savedPath;
+              console.log("Restored navigation state for card UUID:", cardUUID, "to:", savedPath);
+            } else {
+              console.log("Saved path exists but is not a directory, using card root");
+            }
+          } catch {
+            // Saved path doesn't exist, use card root
+            console.log("Saved path no longer exists, using card root");
+          }
+        } else {
+          console.log("No saved navigation state found for card UUID:", cardUUID);
+        }
+
+        // Navigate to the initial path (saved or card root)
+        setCurrentRootPath(initialPath);
+        currentRootPathRef.current = initialPath;
         setExpandedFolders(new Set());
         setCFStructure([]);
-        loadDirectory(cardPath, "cf-root");
+        await loadDirectory(initialPath, "cf-root");
       };
 
-      const handleCardRemoved = async (cardPath: string) => {
-        console.log("SD/CF card removed:", cardPath);
+      const handleCardRemoved = async (cardPath: string, cardUUID: string) => {
+        console.log("SD/CF card removed:", cardPath, "UUID:", cardUUID);
         // Check if we need to navigate away using refs
         if (cfCardPathRef.current === cardPath || currentRootPathRef.current === cardPath) {
           try {
@@ -245,14 +386,45 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
             if (homeResult?.success && homeResult.data) {
               // Fallback to home directory (same as left pane)
               const homePath = homeResult.data;
+
+              // Get volume UUID for home directory and try to restore saved navigation state
+              let initialPath = homePath;
+              try {
+                const volumeResult = await window.electron.fs.getVolumeInfo(homePath);
+                if (volumeResult.success && volumeResult.data?.uuid) {
+                  const volumeUUID = volumeResult.data.uuid;
+                  setCurrentCardUUID(volumeUUID);
+
+                  const savedPath = getNavigationState(volumeUUID);
+                  if (savedPath) {
+                    // Verify the saved path still exists and is accessible
+                    try {
+                      const statsResult = await window.electron.fs.getFileStats(savedPath);
+                      if (statsResult.success && statsResult.data?.isDirectory) {
+                        initialPath = savedPath;
+                        console.log("Restored navigation state for home volume UUID:", volumeUUID, "to:", savedPath);
+                      } else {
+                        console.log("Saved path exists but is not a directory, using home directory");
+                      }
+                    } catch {
+                      console.log("Saved path no longer exists, using home directory");
+                    }
+                  } else {
+                    console.log("No saved navigation state found for home volume UUID:", volumeUUID);
+                  }
+                }
+              } catch (error) {
+                console.error("Failed to get volume UUID for home directory:", error);
+              }
+
               setCfCardPath(homePath);
-              setCurrentRootPath(homePath);
+              setCurrentRootPath(initialPath);
               setIsCardMounted(false);
               cfCardPathRef.current = homePath;
-              currentRootPathRef.current = homePath;
+              currentRootPathRef.current = initialPath;
               setExpandedFolders(new Set());
               setCFStructure([]);
-              await loadDirectory(homePath, "cf-root");
+              await loadDirectory(initialPath, "cf-root");
             }
           } catch (error) {
             console.error("Error handling card removal:", error);
@@ -271,7 +443,7 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
         }
       };
     }
-  }, [loadDirectory]);
+  }, [loadDirectory, getNavigationState]);
 
   const toggleFolder = async (node: CFNode) => {
     const newExpanded = new Set(expandedFolders);
@@ -280,7 +452,7 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
     } else {
       newExpanded.add(node.id);
       // Load directory if not already loaded
-      if (!node.loaded && node.type === "folder") {
+      if (!node.loaded && node.type === "folder" && node.path) {
         setCFStructure((prev) => {
           const updateNode = (nodes: CFNode[]): CFNode[] => {
             return nodes.map((n) => {
@@ -302,12 +474,71 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
   };
 
   const navigateToFolder = async (folderPath: string) => {
+    if (!folderPath || typeof folderPath !== "string" || folderPath.trim() === "") {
+      console.error("Invalid folder path provided to navigateToFolder:", folderPath);
+      return;
+    }
+
     setCurrentRootPath(folderPath);
     currentRootPathRef.current = folderPath;
     setExpandedFolders(new Set());
     setCFStructure([]);
+    setPathDoesNotExist(false);
+
+    // Save navigation state if we have a card UUID
+    if (currentCardUUID) {
+      saveNavigationState(currentCardUUID, folderPath);
+      console.log("Saved navigation state for card UUID:", currentCardUUID, "path:", folderPath);
+    } else {
+      // If no card UUID, try to get volume UUID for the path
+      // This handles the case where we're navigating on a local drive
+      if (window.electron) {
+        try {
+          const volumeResult = await window.electron.fs.getVolumeInfo(folderPath);
+          if (volumeResult.success && volumeResult.data?.uuid) {
+            const volumeUUID = volumeResult.data.uuid;
+            setCurrentCardUUID(volumeUUID);
+            saveNavigationState(volumeUUID, folderPath);
+            console.log("Saved navigation state for volume UUID:", volumeUUID, "path:", folderPath);
+          }
+        } catch (error) {
+          console.error("Failed to get volume UUID for path:", error);
+        }
+      }
+    }
+
     await loadDirectory(folderPath, "cf-root");
   };
+
+  const navigateToNearestExistingParent = async () => {
+    if (!currentRootPath) return;
+
+    const nearestParent = await findNearestExistingParent(currentRootPath);
+    if (nearestParent) {
+      console.log("Navigating to nearest existing parent:", nearestParent);
+      await navigateToFolder(nearestParent);
+    } else {
+      // Fallback to card path
+      if (cfCardPath) {
+        await navigateToFolder(cfCardPath);
+      }
+    }
+  };
+
+  // Save navigation state whenever currentRootPath changes (for any reason)
+  useEffect(() => {
+    const saveCurrentPath = async () => {
+      if (!currentRootPath || !currentCardUUID) return;
+
+      // Only save if we have a valid UUID
+      if (currentCardUUID) {
+        saveNavigationState(currentCardUUID, currentRootPath);
+        console.log("Auto-saved navigation state for card UUID:", currentCardUUID, "path:", currentRootPath);
+      }
+    };
+
+    saveCurrentPath();
+  }, [currentRootPath, currentCardUUID, saveNavigationState]);
 
   const navigateToParent = async () => {
     if (!currentRootPath || currentRootPath === cfCardPath) return;
@@ -318,6 +549,8 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
     const parentPath = currentRootPath.startsWith("/")
       ? "/" + parts.slice(0, -1).join("/")
       : parts.slice(0, -1).join("/");
+
+    // Navigate to parent - navigateToFolder will handle UUID and saving
     await navigateToFolder(parentPath);
   };
 
@@ -386,8 +619,8 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
       destinationPath = currentRootPath || cfCardPath;
     }
 
-    if (!destinationPath) {
-      console.error("No destination path available");
+    if (!destinationPath || typeof destinationPath !== "string" || destinationPath.trim() === "") {
+      console.error("No destination path available or invalid:", destinationPath);
       return;
     }
 
@@ -416,14 +649,14 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
         // When card is not mounted, both panes show the same directory, so not converting is fine
         const isFromFileBrowser = cfCardPath ? !sourcePath.startsWith(cfCardPath) : false;
         const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
-        
+
         // Determine destination file path - if fileFormat is WAV, change extension to .wav
         let finalDestFilePath = destFilePath;
         if (isFromFileBrowser && isAudioFile && fileFormat === "WAV") {
           const sourceExt = /\.\w+$/i.exec(sourcePath)?.[0] || "";
           finalDestFilePath = destFilePath.replace(/\.\w+$/i, ".wav");
         }
-        
+
         const needsConversion =
           isFromFileBrowser &&
           isAudioFile &&
@@ -511,7 +744,9 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
           await loadDirectory(parentPath, parentNodeId);
         } else {
           // If it's the root, reload the root
-          await loadDirectory(cfCardPath, "cf-root");
+          if (cfCardPath) {
+            await loadDirectory(cfCardPath, "cf-root");
+          }
         }
       } else {
         console.error(`Failed to delete ${itemType}:`, result.error);
@@ -524,24 +759,66 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
   };
 
   const handleEject = async () => {
-    if (!isCardMounted || !window.electron) return;
+    if (!isCardMounted || !window.electron || !cfCardPath) return;
 
     try {
-      // Navigate back to home directory (same as left pane)
+      // First, actually eject the volume from the system
+      console.log("Ejecting volume:", cfCardPath);
+      const ejectResult = await window.electron.fs.ejectVolume(cfCardPath);
+
+      if (!ejectResult.success) {
+        console.error("Failed to eject volume:", ejectResult.error);
+        alert(`Failed to eject card: ${ejectResult.error}`);
+        return;
+      }
+
+      // Then navigate back to home directory (same as left pane)
       const homeResult = await window.electron.fs.getHomeDirectory();
       if (homeResult?.success && homeResult.data) {
         const homePath = homeResult.data;
+
+        // Get volume UUID for home directory and try to restore saved navigation state
+        let initialPath = homePath;
+        try {
+          const volumeResult = await window.electron.fs.getVolumeInfo(homePath);
+          if (volumeResult.success && volumeResult.data?.uuid) {
+            const volumeUUID = volumeResult.data.uuid;
+            setCurrentCardUUID(volumeUUID);
+
+            const savedPath = getNavigationState(volumeUUID);
+            if (savedPath) {
+              // Verify the saved path still exists and is accessible
+              try {
+                const statsResult = await window.electron.fs.getFileStats(savedPath);
+                if (statsResult.success && statsResult.data?.isDirectory) {
+                  initialPath = savedPath;
+                  console.log("Restored navigation state for home volume UUID:", volumeUUID, "to:", savedPath);
+                } else {
+                  console.log("Saved path exists but is not a directory, using home directory");
+                }
+              } catch {
+                console.log("Saved path no longer exists, using home directory");
+              }
+            } else {
+              console.log("No saved navigation state found for home volume UUID:", volumeUUID);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to get volume UUID for home directory:", error);
+        }
+
         setCfCardPath(homePath);
-        setCurrentRootPath(homePath);
+        setCurrentRootPath(initialPath);
         setIsCardMounted(false);
         cfCardPathRef.current = homePath;
-        currentRootPathRef.current = homePath;
+        currentRootPathRef.current = initialPath;
         setExpandedFolders(new Set());
         setCFStructure([]);
-        await loadDirectory(homePath, "cf-root");
+        await loadDirectory(initialPath, "cf-root");
       }
     } catch (error) {
       console.error("Error ejecting card:", error);
+      alert(`Error ejecting card: ${error}`);
     }
   };
 
@@ -554,7 +831,10 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
 
       if (result.success) {
         // Refresh the current directory
-        await loadDirectory(currentRootPath || cfCardPath, "cf-root");
+        const refreshPath = currentRootPath || cfCardPath;
+        if (refreshPath) {
+          await loadDirectory(refreshPath, "cf-root");
+        }
         setNewFolderDialogOpen(false);
         setNewFolderName("");
       } else {
@@ -711,7 +991,9 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">CF Card Structure</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            {cfCardPath ? basename(cfCardPath) : "CF Card Structure"}
+          </h2>
           <Button
             size="sm"
             variant="ghost"
@@ -763,11 +1045,26 @@ export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat
               }`}
             >
               {cfCardPath ? (
-                <div>
-                  <div>CF Card directory: {cfCardPath}</div>
-                  <div className="text-xs mt-2 text-muted-foreground">
-                    Directory doesn't exist yet. Drop files here to create it.
+                <div className="space-y-3">
+                  <div>
+                    {pathDoesNotExist ? (
+                      <div className="text-amber-600 dark:text-amber-500">
+                        Directory does not exist: {currentRootPath || cfCardPath}
+                      </div>
+                    ) : (
+                      <div>CF Card directory: {cfCardPath}</div>
+                    )}
                   </div>
+                  {pathDoesNotExist ? (
+                    <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
+                      <ArrowUp className="w-4 h-4" />
+                      Navigate to Nearest Existing Parent
+                    </Button>
+                  ) : (
+                    <div className="text-xs mt-2 text-muted-foreground">
+                      Directory {cfCardPath} doesn&apos;t exist yet. Drop files here to create it.
+                    </div>
+                  )}
                 </div>
               ) : (
                 "Drop files here to copy"

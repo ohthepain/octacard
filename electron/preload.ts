@@ -13,7 +13,9 @@ contextBridge.exposeInMainWorld("electron", {
     deleteFolder: (folderPath: string) => ipcRenderer.invoke("fs:deleteFolder", folderPath),
     createFolder: (folderPath: string) => ipcRenderer.invoke("fs:createFolder", folderPath),
     getSDCFCards: () => ipcRenderer.invoke("fs:getSDCFCards"),
+    getVolumeInfo: (volumePath: string) => ipcRenderer.invoke("fs:getVolumeInfo", volumePath),
     revealInFinder: (filePath: string) => ipcRenderer.invoke("fs:revealInFinder", filePath),
+    ejectVolume: (volumePath: string) => ipcRenderer.invoke("fs:ejectVolume", volumePath),
     convertAndCopyFile: (
       sourcePath: string,
       destPath: string,
@@ -26,11 +28,11 @@ contextBridge.exposeInMainWorld("electron", {
       ipcRenderer.invoke("fs:convertAndCopyFile", sourcePath, destPath, targetSampleRate, sampleDepth, fileFormat, mono, normalize),
   },
   on: {
-    sdCardDetected: (callback: (cardPath: string) => void) => {
-      ipcRenderer.on("sd-card-detected", (_event, cardPath: string) => callback(cardPath));
+    sdCardDetected: (callback: (cardPath: string, cardUUID: string) => void) => {
+      ipcRenderer.on("sd-card-detected", (_event, cardPath: string, cardUUID: string) => callback(cardPath, cardUUID));
     },
-    sdCardRemoved: (callback: (cardPath: string) => void) => {
-      ipcRenderer.on("sd-card-removed", (_event, cardPath: string) => callback(cardPath));
+    sdCardRemoved: (callback: (cardPath: string, cardUUID: string) => void) => {
+      ipcRenderer.on("sd-card-removed", (_event, cardPath: string, cardUUID: string) => callback(cardPath, cardUUID));
     },
   },
   removeListener: (channel: string) => {
