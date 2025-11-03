@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { FileBrowser } from "@/components/FileBrowser";
-import { CFCardView } from "@/components/CFCardView";
+import { FilePane } from "@/components/FilePane";
 import { AboutDialog } from "@/components/AboutDialog";
 import { SampleFormatDialog } from "@/components/SampleFormatDialog";
 
@@ -51,24 +50,37 @@ const Index = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Pane - File Browser (Local) */}
         <div className="w-1/2 border-r border-border flex flex-col">
-          <FileBrowser
-            onFileTransfer={handleFileTransfer}
-            sampleRate={sampleRate}
-            sampleDepth={sampleDepth}
-            mono={mono}
-            normalize={normalize}
-          />
-        </div>
-
-        {/* Right Pane - CF Card View */}
-        <div className="flex-1 flex flex-col">
-          <CFCardView
+          <FilePane
+            paneName="local"
+            title="Local Files"
             onFileTransfer={handleFileTransfer}
             sampleRate={sampleRate}
             sampleDepth={sampleDepth}
             fileFormat={fileFormat}
             mono={mono}
             normalize={normalize}
+            autoNavigateToCard={false}
+            convertFiles={false}
+            showEjectButton={false}
+            showNewFolderButton={true}
+          />
+        </div>
+
+        {/* Right Pane - CF Card View */}
+        <div className="flex-1 flex flex-col">
+          <FilePane
+            paneName="cfcard"
+            title="CF Card"
+            onFileTransfer={handleFileTransfer}
+            sampleRate={sampleRate}
+            sampleDepth={sampleDepth}
+            fileFormat={fileFormat}
+            mono={mono}
+            normalize={normalize}
+            autoNavigateToCard={true}
+            convertFiles={true}
+            showEjectButton={true}
+            showNewFolderButton={true}
           />
         </div>
       </div>
