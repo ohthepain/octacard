@@ -14,6 +14,8 @@ interface SampleFormatDialogProps {
   onOpenChange: (open: boolean) => void;
   sampleRate: string;
   onSampleRateChange: (value: string) => void;
+  sampleDepth: string;
+  onSampleDepthChange: (value: string) => void;
   mono: boolean;
   onMonoChange: (checked: boolean) => void;
   normalize: boolean;
@@ -25,6 +27,8 @@ export const SampleFormatDialog = ({
   onOpenChange,
   sampleRate,
   onSampleRateChange,
+  sampleDepth,
+  onSampleDepthChange,
   mono,
   onMonoChange,
   normalize,
@@ -41,7 +45,7 @@ export const SampleFormatDialog = ({
             Sample Format
           </DialogTitle>
           <DialogDescription className="pt-4 space-y-6">
-            <div className="space-y-3">
+            <div className="space-y-3 p-4 border border-border rounded-lg">
               <Label className="text-sm font-semibold text-foreground">Sample Rate</Label>
               <RadioGroup value={sampleRate} onValueChange={onSampleRateChange}>
                 <div className="flex items-center space-x-2">
@@ -60,6 +64,30 @@ export const SampleFormatDialog = ({
                     className="text-sm font-normal cursor-pointer text-foreground"
                   >
                     44.1 kHz
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-3 p-4 border border-border rounded-lg">
+              <Label className="text-sm font-semibold text-foreground">Sample Depth</Label>
+              <RadioGroup value={sampleDepth} onValueChange={onSampleDepthChange}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="dont-change" id="depth-dont-change" />
+                  <Label
+                    htmlFor="depth-dont-change"
+                    className="text-sm font-normal cursor-pointer text-foreground"
+                  >
+                    Don't Change
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="16-bit" id="16-bit" />
+                  <Label
+                    htmlFor="16-bit"
+                    className="text-sm font-normal cursor-pointer text-foreground"
+                  >
+                    16-bit
                   </Label>
                 </div>
               </RadioGroup>
