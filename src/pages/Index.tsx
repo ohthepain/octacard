@@ -9,6 +9,7 @@ const Index = () => {
   const [sampleFormatOpen, setSampleFormatOpen] = useState(false);
   const [sampleRate, setSampleRate] = useState("44.1");
   const [sampleDepth, setSampleDepth] = useState("dont-change");
+  const [fileFormat, setFileFormat] = useState("dont-change");
   const [mono, setMono] = useState(false);
   const [normalize, setNormalize] = useState(false);
 
@@ -50,12 +51,25 @@ const Index = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Pane - File Browser (Local) */}
         <div className="w-1/2 border-r border-border flex flex-col">
-          <FileBrowser onFileTransfer={handleFileTransfer} sampleRate={sampleRate} mono={mono} normalize={normalize} />
+          <FileBrowser
+            onFileTransfer={handleFileTransfer}
+            sampleRate={sampleRate}
+            sampleDepth={sampleDepth}
+            mono={mono}
+            normalize={normalize}
+          />
         </div>
 
         {/* Right Pane - CF Card View */}
         <div className="flex-1 flex flex-col">
-          <CFCardView onFileTransfer={handleFileTransfer} sampleRate={sampleRate} mono={mono} normalize={normalize} />
+          <CFCardView
+            onFileTransfer={handleFileTransfer}
+            sampleRate={sampleRate}
+            sampleDepth={sampleDepth}
+            fileFormat={fileFormat}
+            mono={mono}
+            normalize={normalize}
+          />
         </div>
       </div>
 
@@ -70,6 +84,8 @@ const Index = () => {
         onSampleRateChange={setSampleRate}
         sampleDepth={sampleDepth}
         onSampleDepthChange={setSampleDepth}
+        fileFormat={fileFormat}
+        onFileFormatChange={setFileFormat}
         mono={mono}
         onMonoChange={setMono}
         normalize={normalize}

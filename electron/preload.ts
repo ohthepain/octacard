@@ -18,9 +18,12 @@ contextBridge.exposeInMainWorld("electron", {
       sourcePath: string,
       destPath: string,
       targetSampleRate?: number,
+      sampleDepth?: string,
+      fileFormat?: string,
       mono?: boolean,
       normalize?: boolean
-    ) => ipcRenderer.invoke("fs:convertAndCopyFile", sourcePath, destPath, targetSampleRate, mono, normalize),
+    ) =>
+      ipcRenderer.invoke("fs:convertAndCopyFile", sourcePath, destPath, targetSampleRate, sampleDepth, fileFormat, mono, normalize),
   },
   on: {
     sdCardDetected: (callback: (cardPath: string) => void) => {

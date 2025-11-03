@@ -17,7 +17,7 @@ async function buildElectron() {
     target: 'node18',
     format: 'esm',
     outfile: path.join(outDir, 'main.js'),
-    external: ['electron'],
+    external: ['electron', 'ffmpeg-static'],
     sourcemap: true,
   });
 

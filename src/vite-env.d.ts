@@ -24,6 +24,8 @@ interface ElectronAPI {
       sourcePath: string,
       destPath: string,
       targetSampleRate?: number,
+      sampleDepth?: string,
+      fileFormat?: string,
       mono?: boolean,
       normalize?: boolean
     ) => Promise<{ success: boolean; error?: string }>;

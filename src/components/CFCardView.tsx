@@ -53,11 +53,13 @@ function formatFileSize(bytes: number): string {
 interface CFCardViewProps {
   onFileTransfer: (sourcePath: string, destinationPath: string) => void;
   sampleRate: string;
+  sampleDepth: string;
+  fileFormat: string;
   mono: boolean;
   normalize: boolean;
 }
 
-export const CFCardView = ({ onFileTransfer, sampleRate, mono, normalize }: CFCardViewProps) => {
+export const CFCardView = ({ onFileTransfer, sampleRate, sampleDepth, fileFormat, mono, normalize }: CFCardViewProps) => {
   const [cfStructure, setCFStructure] = useState<CFNode[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
@@ -178,11 +180,12 @@ export const CFCardView = ({ onFileTransfer, sampleRate, mono, normalize }: CFCa
       console.log("Electron API available:", window.electron);
 
       try {
-        // Check for existing SD/CF cards first
+        // Check for existing SD/CF cards first - prioritize card over local drive
         const cardsResult = await window.electron.fs.getSDCFCards();
+        console.log("CF Card - Cards detection result:", cardsResult);
         if (cardsResult.success && cardsResult.data && cardsResult.data.length > 0) {
           // Navigate to the first detected card
-          console.log("SD/CF card already mounted:", cardsResult.data[0]);
+          console.log("SD/CF card already mounted at startup, navigating to:", cardsResult.data[0]);
           const cardPath = cardsResult.data[0];
           setCfCardPath(cardPath);
           setCurrentRootPath(cardPath);
@@ -194,7 +197,8 @@ export const CFCardView = ({ onFileTransfer, sampleRate, mono, normalize }: CFCa
           return;
         }
 
-        // Fallback to same folder as left pane (home directory) if no card detected
+        // Only fallback to home directory if no card is detected
+        console.log("CF Card - No card detected at startup, falling back to home directory");
         const homeResult = await window.electron.fs.getHomeDirectory();
         console.log("CF Card - Home directory result:", homeResult);
         if (homeResult.success && homeResult.data) {
@@ -405,16 +409,34 @@ export const CFCardView = ({ onFileTransfer, sampleRate, mono, normalize }: CFCa
       const destFilePath = joinPath(destinationPath, fileName);
 
       if (sourceType === "file") {
-        // Check if file needs conversion (audio file and sample rate setting is not "dont-change")
+        // Check if file is being moved from FileBrowser (left) to CFCardView (right)
+        // If source is not within cfCardPath, it's coming from FileBrowser (left pane), so convert
+        // If source is within cfCardPath, it's being moved within CFCardView (right pane), so don't convert
+        // When card is mounted, cfCardPath will be different from FileBrowser's path, so this check works
+        // When card is not mounted, both panes show the same directory, so not converting is fine
+        const isFromFileBrowser = cfCardPath ? !sourcePath.startsWith(cfCardPath) : false;
+        const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
+        
+        // Determine destination file path - if fileFormat is WAV, change extension to .wav
+        let finalDestFilePath = destFilePath;
+        if (isFromFileBrowser && isAudioFile && fileFormat === "WAV") {
+          const sourceExt = /\.\w+$/i.exec(sourcePath)?.[0] || "";
+          finalDestFilePath = destFilePath.replace(/\.\w+$/i, ".wav");
+        }
+        
         const needsConversion =
-          sampleRate !== "dont-change" && /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
+          isFromFileBrowser &&
+          isAudioFile &&
+          (fileFormat === "WAV" || sampleRate !== "dont-change" || sampleDepth === "16-bit" || mono || normalize);
 
         let result;
         if (needsConversion) {
           result = await window.electron.fs.convertAndCopyFile(
             sourcePath,
-            destFilePath,
-            sampleRate === "44.1" ? 44100 : undefined,
+            finalDestFilePath,
+            sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
+            sampleDepth,
+            fileFormat,
             mono,
             normalize
           );

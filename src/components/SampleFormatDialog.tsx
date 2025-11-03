@@ -1,10 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -16,6 +10,8 @@ interface SampleFormatDialogProps {
   onSampleRateChange: (value: string) => void;
   sampleDepth: string;
   onSampleDepthChange: (value: string) => void;
+  fileFormat: string;
+  onFileFormatChange: (value: string) => void;
   mono: boolean;
   onMonoChange: (checked: boolean) => void;
   normalize: boolean;
@@ -29,6 +25,8 @@ export const SampleFormatDialog = ({
   onSampleRateChange,
   sampleDepth,
   onSampleDepthChange,
+  fileFormat,
+  onFileFormatChange,
   mono,
   onMonoChange,
   normalize,
@@ -46,23 +44,35 @@ export const SampleFormatDialog = ({
           </DialogTitle>
           <DialogDescription className="pt-4 space-y-6">
             <div className="space-y-3 p-4 border border-border rounded-lg">
+              <Label className="text-sm font-semibold text-foreground">File Format</Label>
+              <RadioGroup value={fileFormat} onValueChange={onFileFormatChange}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="dont-change" id="format-dont-change" />
+                  <Label htmlFor="format-dont-change" className="text-sm font-normal cursor-pointer text-foreground">
+                    Don't Change
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="WAV" id="WAV" />
+                  <Label htmlFor="WAV" className="text-sm font-normal cursor-pointer text-foreground">
+                    WAV
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-3 p-4 border border-border rounded-lg">
               <Label className="text-sm font-semibold text-foreground">Sample Rate</Label>
               <RadioGroup value={sampleRate} onValueChange={onSampleRateChange}>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="dont-change" id="dont-change" />
-                  <Label
-                    htmlFor="dont-change"
-                    className="text-sm font-normal cursor-pointer text-foreground"
-                  >
+                  <Label htmlFor="dont-change" className="text-sm font-normal cursor-pointer text-foreground">
                     Don't Change
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="44.1" id="44.1" />
-                  <Label
-                    htmlFor="44.1"
-                    className="text-sm font-normal cursor-pointer text-foreground"
-                  >
+                  <Label htmlFor="44.1" className="text-sm font-normal cursor-pointer text-foreground">
                     44.1 kHz
                   </Label>
                 </div>
@@ -74,19 +84,13 @@ export const SampleFormatDialog = ({
               <RadioGroup value={sampleDepth} onValueChange={onSampleDepthChange}>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="dont-change" id="depth-dont-change" />
-                  <Label
-                    htmlFor="depth-dont-change"
-                    className="text-sm font-normal cursor-pointer text-foreground"
-                  >
+                  <Label htmlFor="depth-dont-change" className="text-sm font-normal cursor-pointer text-foreground">
                     Don't Change
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="16-bit" id="16-bit" />
-                  <Label
-                    htmlFor="16-bit"
-                    className="text-sm font-normal cursor-pointer text-foreground"
-                  >
+                  <Label htmlFor="16-bit" className="text-sm font-normal cursor-pointer text-foreground">
                     16-bit
                   </Label>
                 </div>
@@ -94,15 +98,8 @@ export const SampleFormatDialog = ({
             </div>
 
             <div className="flex items-center space-x-2">
-              <Checkbox
-                id="mono"
-                checked={mono}
-                onCheckedChange={(checked) => onMonoChange(checked === true)}
-              />
-              <Label
-                htmlFor="mono"
-                className="text-sm font-normal cursor-pointer text-foreground"
-              >
+              <Checkbox id="mono" checked={mono} onCheckedChange={(checked) => onMonoChange(checked === true)} />
+              <Label htmlFor="mono" className="text-sm font-normal cursor-pointer text-foreground">
                 Mono
               </Label>
             </div>
@@ -113,10 +110,7 @@ export const SampleFormatDialog = ({
                 checked={normalize}
                 onCheckedChange={(checked) => onNormalizeChange(checked === true)}
               />
-              <Label
-                htmlFor="normalize"
-                className="text-sm font-normal cursor-pointer text-foreground"
-              >
+              <Label htmlFor="normalize" className="text-sm font-normal cursor-pointer text-foreground">
                 Normalize
               </Label>
             </div>
@@ -126,4 +120,3 @@ export const SampleFormatDialog = ({
     </Dialog>
   );
 };
-

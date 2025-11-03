@@ -27,11 +27,12 @@ function formatFileSize(bytes: number): string {
 interface FileBrowserProps {
   onFileTransfer: (sourcePath: string, destinationPath: string) => void;
   sampleRate: string;
+  sampleDepth: string;
   mono: boolean;
   normalize: boolean;
 }
 
-export const FileBrowser = ({ onFileTransfer, sampleRate, mono, normalize }: FileBrowserProps) => {
+export const FileBrowser = ({ onFileTransfer, sampleRate, sampleDepth, mono, normalize }: FileBrowserProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -288,22 +289,10 @@ export const FileBrowser = ({ onFileTransfer, sampleRate, mono, normalize }: Fil
       const destFilePath = joinPath(destinationPath, fileName);
 
       if (sourceType === "file") {
-        // Check if file needs conversion (audio file and sample rate setting is not "dont-change")
-        const needsConversion =
-          sampleRate !== "dont-change" && /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
-
-        let result;
-        if (needsConversion) {
-          result = await window.electron.fs.convertAndCopyFile(
-            sourcePath,
-            destFilePath,
-            sampleRate === "44.1" ? 44100 : undefined,
-            mono,
-            normalize
-          );
-        } else {
-          result = await window.electron.fs.copyFile(sourcePath, destFilePath);
-        }
+        // When files are dragged within FileBrowser (left pane), don't convert
+        // Conversion only happens when moving files from left (FileBrowser) to right (CFCardView)
+        // So we just copy the file without conversion
+        const result = await window.electron.fs.copyFile(sourcePath, destFilePath);
 
         if (result.success) {
           // Refresh the destination folder

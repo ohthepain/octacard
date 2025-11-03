@@ -4,6 +4,10 @@ import * as fs from "fs/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const ffmpegStatic = require("ffmpeg-static");
 
 const execAsync = promisify(exec);
 
@@ -342,10 +346,21 @@ ipcMain.handle("fs:revealInFinder", async (_event, filePath: string) => {
   }
 });
 
+// Helper function to get ffmpeg path (use static binary if available, otherwise try system)
+function getFFmpegPath(): string | null {
+  if (ffmpegStatic) {
+    return ffmpegStatic;
+  }
+  // Fallback to system ffmpeg
+  return "ffmpeg";
+}
+
 // Helper function to check if ffmpeg is available
 async function checkFFmpegAvailable(): Promise<boolean> {
   try {
-    await execAsync("ffmpeg -version");
+    const ffmpegPath = getFFmpegPath();
+    if (!ffmpegPath) return false;
+    await execAsync(`"${ffmpegPath}" -version`);
     return true;
   } catch {
     return false;
@@ -372,6 +387,8 @@ ipcMain.handle(
     sourcePath: string,
     destPath: string,
     targetSampleRate?: number,
+    sampleDepth?: string,
+    fileFormat?: string,
     mono?: boolean,
     normalize?: boolean
   ) => {
@@ -390,9 +407,17 @@ ipcMain.handle(
       }
 
       // Check if conversion is needed
-      // If targetSampleRate is set, we'll always convert (even if sample rate matches, to apply mono/normalize)
-      // If no targetSampleRate and no other conversions needed, just copy
-      if (!targetSampleRate && !mono && !normalize) {
+      // If any conversion setting is enabled, we'll convert
+      const needsConversion = targetSampleRate || sampleDepth === "16-bit" || mono || normalize || fileFormat === "WAV";
+      if (!needsConversion) {
+        await fs.copyFile(sourcePath, destPath);
+        return { success: true };
+      }
+
+      // Get ffmpeg path
+      const ffmpegPath = getFFmpegPath();
+      if (!ffmpegPath) {
+        console.warn("ffmpeg path not available, copying file without conversion");
         await fs.copyFile(sourcePath, destPath);
         return { success: true };
       }
@@ -419,15 +444,36 @@ ipcMain.handle(
         ffmpegArgs.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11");
       }
 
-      // Ensure output is WAV format (16-bit PCM for Octatrack compatibility)
+      // Determine audio codec based on sample depth
+      let audioCodec = "pcm_s16le"; // Default to 16-bit
+      if (sampleDepth === "16-bit") {
+        audioCodec = "pcm_s16le";
+      } else if (sampleDepth === "dont-change") {
+        // Try to preserve original bit depth, but default to 16-bit for WAV
+        audioCodec = "pcm_s16le";
+      } else {
+        // Default to 16-bit for compatibility
+        audioCodec = "pcm_s16le";
+      }
+
+      // Ensure output is WAV format if fileFormat is WAV
+      // If fileFormat is "dont-change" but we're converting for other reasons, also convert to WAV
       const destExt = path.extname(destPath).toLowerCase();
       let finalDestPath = destPath;
-      if (destExt !== ".wav") {
-        // Change extension to .wav for audio conversion
+      if (fileFormat === "WAV") {
+        // Change extension to .wav when fileFormat is explicitly set to WAV
+        finalDestPath = destPath.replace(/\.\w+$/i, ".wav");
+      } else if (destExt !== ".wav") {
+        // If not WAV format specified but extension is not .wav, convert to WAV for compatibility
         finalDestPath = destPath.replace(/\.\w+$/i, ".wav");
       }
 
-      ffmpegArgs.push("-acodec", "pcm_s16le", finalDestPath);
+      // Add output format specification for WAV
+      if (fileFormat === "WAV" || destExt !== ".wav") {
+        ffmpegArgs.push("-f", "wav");
+      }
+
+      ffmpegArgs.push("-acodec", audioCodec, finalDestPath);
 
       // Escape paths with spaces for shell execution
       const escapedArgs = ffmpegArgs.map((arg) => {
@@ -437,7 +483,9 @@ ipcMain.handle(
         return arg;
       });
 
-      const command = `ffmpeg ${escapedArgs.join(" ")}`;
+      const command = `"${ffmpegPath}" ${escapedArgs.join(" ")}`;
+
+      console.log("Running ffmpeg command:", command);
       await execAsync(command);
 
       // Update destPath if it was changed
@@ -447,6 +495,7 @@ ipcMain.handle(
 
       return { success: true };
     } catch (error) {
+      console.error("FFmpeg conversion error:", error);
       return { success: false, error: String(error) };
     }
   }
