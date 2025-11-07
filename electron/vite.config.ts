@@ -1,18 +1,29 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   build: {
-    lib: {
-      entry: resolve(__dirname, "main.ts"),
-      formats: ["es"],
-      fileName: "main",
-    },
     outDir: resolve(__dirname, "../dist-electron"),
+    emptyOutDir: false,
     rollupOptions: {
-      external: ["electron", "path", "url", "fs", "child_process"],
+      input: resolve(__dirname, "main.ts"),
+      external: [
+        "electron",
+        "path",
+        "url",
+        "fs",
+        "fs/promises",
+        "child_process",
+        "util",
+        "module",
+        "ffmpeg-static",
+      ],
       output: {
         format: "es",
+        entryFileNames: "main.js",
       },
     },
   },
