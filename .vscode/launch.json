@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Electron",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
+      "runtimeArgs": [".", "--inspect=5858"],
+      "args": ["${workspaceFolder}/dist-electron/main.js"],
+      "outputCapture": "std",
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**"],
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "preLaunchTask": "prepare-debug-complete"
+    }
+  ]
+}

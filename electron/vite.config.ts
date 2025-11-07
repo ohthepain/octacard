@@ -1,23 +1,19 @@
-import { defineConfig } from 'vite';
-import * as path from 'path';
+import { defineConfig } from "vite";
+import { resolve } from "path";
 
 export default defineConfig({
   build: {
-    outDir: 'dist-electron',
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'main.ts'),
-        preload: path.resolve(__dirname, 'preload.ts'),
-      },
-      output: {
-        entryFileNames: '[name].js',
-      },
+    lib: {
+      entry: resolve(__dirname, "main.ts"),
+      formats: ["es"],
+      fileName: "main",
     },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, '../src'),
+    outDir: resolve(__dirname, "../dist-electron"),
+    rollupOptions: {
+      external: ["electron", "path", "url", "fs", "child_process"],
+      output: {
+        format: "es",
+      },
     },
   },
 });
-
