@@ -7,8 +7,8 @@ const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [sampleFormatOpen, setSampleFormatOpen] = useState(false);
   const [sampleRate, setSampleRate] = useState("44.1");
-  const [sampleDepth, setSampleDepth] = useState("dont-change");
-  const [fileFormat, setFileFormat] = useState("dont-change");
+  const [sampleDepth, setSampleDepth] = useState("16-bit");
+  const [fileFormat, setFileFormat] = useState("WAV");
   const [mono, setMono] = useState(false);
   const [normalize, setNormalize] = useState(false);
 
