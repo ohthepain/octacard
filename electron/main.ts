@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, protocol } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { exec } from "child_process";
@@ -130,7 +130,8 @@ async function getVolumeUUID(volumePath: string): Promise<string | null> {
       try {
         const { stdout } = await execAsync(`diskutil info "${volumeName}"`);
         // Look for Volume UUID or Disk / Partition UUID
-        const uuidMatch = stdout.match(/Volume UUID:\s*([A-F0-9-]+)/i) || stdout.match(/Disk \/ Partition UUID:\s*([A-F0-9-]+)/i);
+        const uuidMatch =
+          stdout.match(/Volume UUID:\s*([A-F0-9-]+)/i) || stdout.match(/Disk \/ Partition UUID:\s*([A-F0-9-]+)/i);
         if (uuidMatch && uuidMatch[1]) {
           return uuidMatch[1];
         }
@@ -276,6 +277,102 @@ ipcMain.handle("fs:readDirectory", async (_event, dirPath: string) => {
       })
     );
     return { success: true, data: result };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+// Search files using macOS Spotlight (mdfind) - much faster than recursive directory reading
+ipcMain.handle("fs:searchFiles", async (_event, query: string, searchPath?: string) => {
+  try {
+    if (process.platform !== "darwin") {
+      return { success: false, error: "mdfind is only available on macOS" };
+    }
+
+    // Handle file extension queries using Spotlight query syntax
+    // mdfind uses Spotlight queries, not shell glob patterns
+    const searchPattern = query.trim();
+    console.log("searchFiles - original query:", query, "trimmed:", searchPattern);
+    
+    // Build Spotlight query pattern
+    let spotlightQuery: string;
+    
+    if (searchPattern.startsWith(".")) {
+      // ".wav" -> match files ending with .wav
+      // Remove the leading dot to get the extension
+      const ext = searchPattern.substring(1);
+      console.log("searchFiles - extension search, ext:", ext);
+      
+      // Use kMDItemFSName with wildcard pattern - the 'c' flag makes it case-insensitive
+      // Escape the extension in case it has special characters, but keep it simple for common extensions
+      const escapedExt = ext.replace(/'/g, "\\'");
+      spotlightQuery = `kMDItemFSName == '*.${escapedExt}'c`;
+    } else {
+      // "wav" or other text -> match files containing the text
+      const escapedPattern = searchPattern.replace(/'/g, "\\'");
+      spotlightQuery = `kMDItemFSName == '*${escapedPattern}*'c`;
+    }
+    
+    console.log("searchFiles - spotlight query:", spotlightQuery);
+    
+    // Build mdfind command using Spotlight query syntax
+    // The query is wrapped in double quotes, so single quotes inside are safe
+    let command: string;
+    if (searchPath) {
+      const escapedPath = searchPath.replace(/["\\]/g, "\\$&");
+      command = `mdfind -onlyin "${escapedPath}" "${spotlightQuery}"`;
+    } else {
+      command = `mdfind "${spotlightQuery}"`;
+    }
+    
+    console.log("mdfind command:", command);
+
+    const { stdout, stderr } = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
+    
+    if (stderr && !stderr.includes("mdfind:")) {
+      console.warn("mdfind stderr:", stderr);
+    }
+
+    const filePaths = stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    console.log("searchFiles - mdfind returned", filePaths.length, "file paths");
+
+    // Get stats for each file to determine if it's a file or folder
+    const results = await Promise.all(
+      filePaths.map(async (filePath) => {
+        try {
+          const stats = await fs.stat(filePath);
+          return {
+            name: path.basename(filePath),
+            path: filePath,
+            type: stats.isDirectory() ? "folder" : "file",
+            size: stats.size,
+            isDirectory: stats.isDirectory(),
+          };
+        } catch (error) {
+          // File might have been deleted between mdfind and stat
+          return null;
+        }
+      })
+    );
+
+    // Filter out null results and hidden files/folders
+    const filteredResults = results.filter(
+      (result) => result && !result.name.startsWith(".") && !result.name.startsWith("~")
+    ) as Array<{
+      name: string;
+      path: string;
+      type: "file" | "folder";
+      size: number;
+      isDirectory: boolean;
+    }>;
+
+    console.log("searchFiles - filtered results:", filteredResults.length);
+
+    return { success: true, data: filteredResults };
   } catch (error) {
     return { success: false, error: String(error) };
   }
@@ -449,7 +546,9 @@ ipcMain.handle("fs:ejectVolume", async (_event, volumePath: string) => {
     } else if (process.platform === "win32") {
       // Windows: Use PowerShell to eject the volume
       const drive = volumePath[0];
-      await execAsync(`powershell -Command "(New-Object -comObject Shell.Application).Namespace(17).ParseName('${drive}:').InvokeVerb('Eject')"`);
+      await execAsync(
+        `powershell -Command "(New-Object -comObject Shell.Application).Namespace(17).ParseName('${drive}:').InvokeVerb('Eject')"`
+      );
       return { success: true };
     } else if (process.platform === "linux") {
       // Linux: Use umount to unmount the volume
@@ -458,6 +557,85 @@ ipcMain.handle("fs:ejectVolume", async (_event, volumePath: string) => {
     }
     return { success: false, error: "Platform not supported" };
   } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+// IPC handler to get audio file URL using custom protocol
+ipcMain.handle("fs:getAudioFileUrl", async (_event, filePath: string) => {
+  try {
+    // Verify file exists before returning URL
+    try {
+      await fs.access(filePath);
+    } catch (accessError) {
+      console.error("getAudioFileUrl - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+
+    // Return a custom protocol URL that will be handled by our protocol handler
+    // Encode the entire path (including leading slash for absolute paths)
+    const encodedPath = encodeURIComponent(filePath);
+    const url = `octacard-audio://${encodedPath.startsWith("%2F") ? "/" : ""}${encodedPath}`;
+    console.log("getAudioFileUrl - file exists, returning URL:", url, "for path:", filePath);
+    return { success: true, data: url };
+  } catch (error) {
+    console.error("getAudioFileUrl - error:", error, "for path:", filePath);
+    return { success: false, error: String(error) };
+  }
+});
+
+// IPC handler to get audio file as blob data (for WaveSurfer which doesn't support custom protocols)
+ipcMain.handle("fs:getAudioFileBlob", async (_event, filePath: string) => {
+  try {
+    // Verify file exists and get size
+    let fileSize = 0;
+    try {
+      const stats = await fs.stat(filePath);
+      fileSize = stats.size;
+    } catch (accessError) {
+      console.error("getAudioFileBlob - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+
+    // Check file size - warn for very large files
+    const fileSizeMB = fileSize / (1024 * 1024);
+    if (fileSizeMB > 200) {
+      console.warn(`getAudioFileBlob - Large file detected: ${fileSizeMB.toFixed(1)}MB. This may take a while...`);
+    }
+
+    // Read file as buffer with progress logging for large files
+    console.log("getAudioFileBlob - Reading file:", filePath, `(${fileSizeMB.toFixed(1)}MB)`);
+    const fileBuffer = await fs.readFile(filePath);
+    console.log("getAudioFileBlob - File read complete, converting to base64...");
+    
+    // Get MIME type from extension
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      ".wav": "audio/wav",
+      ".aiff": "audio/aiff",
+      ".aif": "audio/aiff",
+      ".mp3": "audio/mpeg",
+      ".flac": "audio/flac",
+      ".ogg": "audio/ogg",
+      ".m4a": "audio/mp4",
+      ".aac": "audio/aac",
+      ".wma": "audio/x-ms-wma",
+    };
+    const mimeType = mimeTypes[ext] || "audio/mpeg";
+
+    // Convert buffer to base64 data URL
+    // For very large files, this conversion can take time
+    const base64 = fileBuffer.toString("base64");
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    console.log("getAudioFileBlob - returning blob data URL for:", filePath);
+    return { success: true, data: dataUrl };
+  } catch (error) {
+    console.error("getAudioFileBlob - error:", error, "for path:", filePath);
+    // Provide more helpful error messages
+    if (String(error).includes("ETIMEDOUT") || String(error).includes("timeout")) {
+      return { success: false, error: `File read timeout. The file may be too large or inaccessible.` };
+    }
     return { success: false, error: String(error) };
   }
 });
@@ -619,6 +797,86 @@ ipcMain.handle(
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
+  // Helper function to get MIME type from file extension
+  function getMimeType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      ".wav": "audio/wav",
+      ".aiff": "audio/aiff",
+      ".aif": "audio/aiff",
+      ".mp3": "audio/mpeg",
+      ".flac": "audio/flac",
+      ".ogg": "audio/ogg",
+      ".m4a": "audio/mp4",
+      ".aac": "audio/aac",
+      ".wma": "audio/x-ms-wma",
+    };
+    return mimeTypes[ext] || "audio/mpeg";
+  }
+
+  // Register custom protocol to serve audio files with proper MIME types
+  protocol.handle("octacard-audio", async (request) => {
+    try {
+      // Extract the file path from the URL
+      // URL format: octacard-audio:///encoded-path or octacard-audio://encoded-path
+      const url = new URL(request.url);
+      console.log("Protocol handler - request URL:", request.url);
+      console.log("Protocol handler - URL pathname:", url.pathname);
+
+      // Get the encoded path from pathname (may or may not have leading slash)
+      // If pathname starts with /, it represents the leading slash of an absolute path
+      // The rest is the encoded path
+      let encodedPath = url.pathname;
+
+      // If pathname starts with /, remove it (it's just the URL structure, not part of encoded path)
+      // The actual leading slash is encoded as %2F in the encoded path
+      if (encodedPath.startsWith("/")) {
+        encodedPath = encodedPath.slice(1);
+      }
+
+      let filePath: string;
+      try {
+        filePath = decodeURIComponent(encodedPath);
+      } catch (decodeError) {
+        console.error("Protocol handler - decode error:", decodeError, "encoded path:", encodedPath);
+        return new Response(null, { status: 404 });
+      }
+
+      // Normalize the path to handle any path issues
+      filePath = path.normalize(filePath);
+      console.log("Protocol handler - decoded and normalized file path:", filePath);
+
+      // Verify the file exists
+      try {
+        await fs.access(filePath);
+      } catch (accessError) {
+        console.error("Protocol handler - file access error:", accessError);
+        console.error("Protocol handler - attempted path:", filePath);
+        return new Response(null, { status: 404 });
+      }
+
+      // Read the file
+      try {
+        const fileBuffer = await fs.readFile(filePath);
+        const mimeType = getMimeType(filePath);
+        console.log("Protocol handler - file exists, serving:", filePath, "MIME type:", mimeType);
+        return new Response(fileBuffer, {
+          headers: {
+            "Content-Type": mimeType,
+          },
+        });
+      } catch (readError) {
+        console.error("Protocol handler - file read error:", readError);
+        return new Response(null, { status: 404 });
+      }
+    } catch (error) {
+      console.error("Protocol handler - error:", error, "request URL:", request.url);
+      return new Response(null, { status: 404 });
+    }
+  });
+
+  console.log("Custom protocol 'octacard-audio' registered");
+
   createWindow();
 
   // Start polling for SD/CF cards every 2 seconds
@@ -653,7 +911,7 @@ app.on("window-all-closed", () => {
     clearInterval(pollInterval);
     pollInterval = null;
   }
-  
+
   // On macOS, keep app running even when all windows are closed (unless debugging)
   // In debug mode, quit to allow debugger to detach properly
   if (process.platform !== "darwin" || process.env.NODE_ENV === "development") {

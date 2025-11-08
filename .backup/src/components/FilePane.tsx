@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Folder,
   File,
@@ -11,8 +11,8 @@ import {
   XCircle,
   ArrowUp,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
+import { ScrollArea } from "../../../src/components/ui/scroll-area";
+import { Button } from "../../../src/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -20,11 +20,30 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { useNavigationState } from "@/hooks/use-navigation-state";
+} from "../../../src/components/ui/dialog";
+import { Input } from "../../../src/components/ui/input";
+import { Label } from "../../../src/components/ui/label";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../../../src/components/ui/context-menu";
+import { useNavigationState } from "../../../src/hooks/use-navigation-state";
+
+// Type declaration for window.electron
+declare global {
+  interface Window {
+    electron?: {
+      fs: any;
+      on: {
+        sdCardDetected: (callback: (cardPath: string, cardUUID: string) => void) => void;
+        sdCardRemoved: (callback: (cardPath: string, cardUUID: string) => void) => void;
+      };
+      removeListener: (channel: string) => void;
+    };
+  }
+}
 
 // Simple path join utility for cross-platform compatibility
 function joinPath(...parts: string[]): string {
@@ -487,17 +506,19 @@ export const FilePane = ({
             if (savedState) {
               // Verify the saved path still exists and is accessible
               try {
-                const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
-                if (statsResult.success && statsResult.data?.isDirectory) {
-                  initialPath = savedState.currentPath;
-                  console.log(
-                    `${paneName} - Restored navigation state for home volume UUID:`,
-                    volumeUUID,
-                    "to:",
-                    savedState.currentPath
-                  );
-                } else {
-                  console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
+                if (window.electron) {
+                  const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+                  if (statsResult.success && statsResult.data?.isDirectory) {
+                    initialPath = savedState.currentPath;
+                    console.log(
+                      `${paneName} - Restored navigation state for home volume UUID:`,
+                      volumeUUID,
+                      "to:",
+                      savedState.currentPath
+                    );
+                  } else {
+                    console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
+                  }
                 }
               } catch {
                 console.log(`${paneName} - Saved path no longer exists, using home directory`);
@@ -619,17 +640,19 @@ export const FilePane = ({
                 const savedState = getNavigationState(volumeUUID);
                 if (savedState) {
                   try {
-                    const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
-                    if (statsResult.success && statsResult.data?.isDirectory) {
-                      initialPath = savedState.currentPath;
-                      console.log(
-                        `${paneName} - Restored navigation state for home volume UUID:`,
-                        volumeUUID,
-                        "to:",
-                        savedState.currentPath
-                      );
-                    } else {
-                      console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
+                    if (window.electron) {
+                      const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+                      if (statsResult.success && statsResult.data?.isDirectory) {
+                        initialPath = savedState.currentPath;
+                        console.log(
+                          `${paneName} - Restored navigation state for home volume UUID:`,
+                          volumeUUID,
+                          "to:",
+                          savedState.currentPath
+                        );
+                      } else {
+                        console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
+                      }
                     }
                   } catch {
                     console.log(`${paneName} - Saved path no longer exists, using home directory`);
@@ -658,8 +681,10 @@ export const FilePane = ({
         }
       };
 
-      window.electron.on.sdCardDetected(handleCardDetected);
-      window.electron.on.sdCardRemoved(handleCardRemoved);
+      if (window.electron) {
+        window.electron.on.sdCardDetected(handleCardDetected);
+        window.electron.on.sdCardRemoved(handleCardRemoved);
+      }
     }
 
     // Cleanup function
@@ -1187,14 +1212,12 @@ export const FilePane = ({
                         ))
                       )}
                     </span>
-                    <Folder
-                      className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
-                    />
+                    <Folder className={`w-4 h-4 shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`} />
                   </>
                 ) : (
                   <>
                     <span className="w-4" />
-                    <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <File className="w-4 h-4 text-muted-foreground shrink-0" />
                   </>
                 )}
                 <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>

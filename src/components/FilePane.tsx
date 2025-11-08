@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useNavigationState } from "@/hooks/use-navigation-state";
+import { AudioPreview } from "@/components/AudioPreview";
 
 // Simple path join utility for cross-platform compatibility
 function joinPath(...parts: string[]): string {
@@ -41,6 +42,10 @@ function joinPath(...parts: string[]): string {
 function basename(path: string): string {
   const parts = path.split("/").filter(Boolean);
   return parts[parts.length - 1] || path;
+}
+
+function isAudioFile(fileName: string): boolean {
+  return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
 }
 
 interface FileNode {
@@ -95,6 +100,10 @@ export const FilePane = ({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSearchingFolders, setIsSearchingFolders] = useState(false);
+  const [searchResults, setSearchResults] = useState<
+    Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>
+  >([]);
   const [rootPath, setRootPath] = useState<string>("");
   const [currentRootPath, setCurrentRootPath] = useState<string>("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
@@ -104,9 +113,63 @@ export const FilePane = ({
   const [isCardMounted, setIsCardMounted] = useState(false);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [selectedAudioFile, setSelectedAudioFile] = useState<{ path: string; name: string } | null>(null);
+  const [displayTitle, setDisplayTitle] = useState<string>(title);
   const currentRootPathRef = useRef<string>("");
   const rootPathRef = useRef<string>("");
+  const fileTreeRef = useRef<FileNode[]>([]);
+  const isSearchLoadingRef = useRef<boolean>(false);
+  const searchCancelledRef = useRef<boolean>(false);
+  const isSearchingRef = useRef<boolean>(false);
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
+  const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
+  const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
+
+  // Helper functions for storing/retrieving last right pane volume UUID
+  const getLastRightPaneVolumeUUID = useCallback((): string | null => {
+    try {
+      const saved = localStorage.getItem("octacard_last_right_pane_volume_uuid");
+      return saved || null;
+    } catch (error) {
+      console.error("Failed to get last right pane volume UUID:", error);
+      return null;
+    }
+  }, []);
+
+  const saveLastRightPaneVolumeUUID = useCallback((volumeUUID: string | null) => {
+    try {
+      if (volumeUUID) {
+        localStorage.setItem("octacard_last_right_pane_volume_uuid", volumeUUID);
+      } else {
+        localStorage.removeItem("octacard_last_right_pane_volume_uuid");
+      }
+    } catch (error) {
+      console.error("Failed to save last right pane volume UUID:", error);
+    }
+  }, []);
+
+  // Helper function to get volume name from path
+  const getVolumeName = useCallback((volumePath: string): string => {
+    if (!volumePath) return "Local Files";
+    // Extract volume name from path
+    // On macOS: /Volumes/VolumeName -> VolumeName
+    // On Linux: /media/username/VolumeName -> VolumeName
+    // On Windows: C:\ -> C:
+    const parts = volumePath.split("/").filter(Boolean);
+    if (parts.length > 0) {
+      // For macOS /Volumes/VolumeName, return VolumeName
+      if (volumePath.startsWith("/Volumes/") && parts.length >= 2) {
+        return parts[1];
+      }
+      // For Linux /media/username/VolumeName, return VolumeName
+      if (volumePath.startsWith("/media/") && parts.length >= 3) {
+        return parts[2];
+      }
+      // For other cases, return the last part
+      return parts[parts.length - 1];
+    }
+    return "Local Files";
+  }, []);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -116,6 +179,14 @@ export const FilePane = ({
   useEffect(() => {
     rootPathRef.current = rootPath;
   }, [rootPath]);
+
+  useEffect(() => {
+    fileTreeRef.current = fileTree;
+  }, [fileTree]);
+
+  useEffect(() => {
+    isSearchingRef.current = !!searchQuery;
+  }, [searchQuery]);
 
   // Helper function to get volume UUID for a path
   const getVolumeUUIDForPath = async (path: string): Promise<string | null> => {
@@ -253,12 +324,18 @@ export const FilePane = ({
     [paneName]
   );
 
-  const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
-  const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
-
   // Effect to restore expanded folders when fileTree is populated
   useEffect(() => {
-    if (pendingExpandedFolders.length === 0 || fileTree.length === 0 || isRestoringExpanded) return;
+    // Don't restore expanded folders during search or if already restoring
+    // Only run when pendingExpandedFolders changes, not when fileTree changes
+    if (
+      pendingExpandedFolders.length === 0 ||
+      fileTreeRef.current.length === 0 ||
+      isRestoringExpanded ||
+      isSearchingRef.current ||
+      isSearchingFolders
+    )
+      return;
 
     let cancelled = false;
     const timeouts: NodeJS.Timeout[] = [];
@@ -266,6 +343,7 @@ export const FilePane = ({
     const restoreExpandedFolders = async () => {
       setIsRestoringExpanded(true);
       const expandedSet = new Set(pendingExpandedFolders);
+      const currentTree = fileTreeRef.current; // Use ref to get latest tree
 
       // Find and expand nodes recursively
       const processNodes = async (nodesToProcess: FileNode[], parentLoaded: boolean = true): Promise<void> => {
@@ -294,6 +372,7 @@ export const FilePane = ({
 
             // Load directory if not already loaded
             if (!node.loaded) {
+              loadDirectory;
               await loadDirectory(node.path, node.id);
               if (cancelled) return;
 
@@ -306,15 +385,29 @@ export const FilePane = ({
 
             if (cancelled) return;
 
+            // Get updated tree from ref
+            const updatedTree = fileTreeRef.current;
+            const findNode = (treeNodes: FileNode[], targetId: string): FileNode | null => {
+              for (const n of treeNodes) {
+                if (n.id === targetId) return n;
+                if (n.children) {
+                  const found = findNode(n.children, targetId);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+            const updatedNode = findNode(updatedTree, node.id);
+
             // Process children recursively
-            if (node.children && node.children.length > 0) {
-              await processNodes(node.children, true);
+            if (updatedNode?.children && updatedNode.children.length > 0) {
+              await processNodes(updatedNode.children, true);
             }
           }
         }
       };
 
-      await processNodes(fileTree, true);
+      await processNodes(currentTree, true);
 
       if (!cancelled) {
         setPendingExpandedFolders([]);
@@ -329,11 +422,13 @@ export const FilePane = ({
       cancelled = true;
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
-  }, [fileTree, pendingExpandedFolders, loadDirectory, isRestoringExpanded]);
+  }, [pendingExpandedFolders, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Added isSearchingFolders to prevent running during search
 
   useEffect(() => {
     let cancelled = false;
     const timeouts: NodeJS.Timeout[] = [];
+
+    console.log("useEffect: autoNavigateToCard, paneName:", paneName);
 
     // Initialize directory
     const initializePane = async () => {
@@ -362,7 +457,11 @@ export const FilePane = ({
         let volumeUUID: string | null = null;
 
         if (autoNavigateToCard) {
-          // Check for existing SD/CF cards first with timeout
+          // For right pane: Check saved last volume UUID first, then removable drives, then fallback to home
+          const lastRightPaneUUID = getLastRightPaneVolumeUUID();
+          console.log(`${paneName} - Last right pane volume UUID:`, lastRightPaneUUID);
+
+          // Check for existing SD/CF cards with timeout
           const cardsResultPromise = window.electron.fs.getSDCFCards();
           const timeoutPromise = new Promise((_, reject) => {
             const timeout = setTimeout(() => reject(new Error("getSDCFCards timeout")), 5000);
@@ -380,23 +479,37 @@ export const FilePane = ({
           }
 
           console.log(`${paneName} - Cards detection result:`, cardsResult);
-          if (cardsResult.success && cardsResult.data && cardsResult.data.length > 0) {
-            // Navigate to the first detected card
-            const cardInfo = cardsResult.data[0];
-            const cardPath = cardInfo.path;
-            const cardUUID = cardInfo.uuid;
-            console.log(
-              `${paneName} - SD/CF card already mounted at startup, navigating to:`,
-              cardPath,
-              "UUID:",
-              cardUUID
-            );
+          const availableCards = cardsResult.success && cardsResult.data ? cardsResult.data : [];
+
+          // Try to find the saved last volume UUID in available cards
+          let selectedCard: { path: string; uuid: string } | null = null;
+          if (lastRightPaneUUID && availableCards.length > 0) {
+            const foundCard = availableCards.find((card) => card.uuid === lastRightPaneUUID);
+            if (foundCard) {
+              selectedCard = foundCard;
+              console.log(`${paneName} - Found saved last right pane volume:`, selectedCard);
+            }
+          }
+
+          // If saved volume not found, use first available removable drive
+          if (!selectedCard && availableCards.length > 0) {
+            selectedCard = availableCards[0];
+            console.log(`${paneName} - Using first available removable drive:`, selectedCard);
+          }
+
+          if (selectedCard) {
+            // Navigate to the selected card
+            const cardPath = selectedCard.path;
+            const cardUUID = selectedCard.uuid;
+            console.log(`${paneName} - Navigating to removable drive:`, cardPath, "UUID:", cardUUID);
 
             setRootPath(cardPath);
             setIsCardMounted(true);
             setCurrentVolumeUUID(cardUUID);
             rootPathRef.current = cardPath;
             volumeUUID = cardUUID;
+            setDisplayTitle(getVolumeName(cardPath));
+            saveLastRightPaneVolumeUUID(cardUUID);
 
             // Try to restore saved navigation state
             initialPath = cardPath;
@@ -464,6 +577,9 @@ export const FilePane = ({
             }
             return;
           }
+
+          // No removable drives found - fallback to home directory (same as left pane)
+          console.log(`${paneName} - No removable drives found, falling back to home directory`);
         }
 
         // Fallback to home directory (when no card detected or autoNavigateToCard is false)
@@ -475,10 +591,16 @@ export const FilePane = ({
           setRootPath(homePath);
           setIsCardMounted(false); // Ensure card mounted state is false when using home directory
           rootPathRef.current = homePath;
+          setDisplayTitle("Local Files");
 
           // Get volume UUID for home directory
           volumeUUID = await getVolumeUUIDForPath(homePath);
           setCurrentVolumeUUID(volumeUUID);
+
+          // If this is the right pane and we're falling back to home, clear the saved volume UUID
+          if (autoNavigateToCard) {
+            saveLastRightPaneVolumeUUID(null);
+          }
 
           // Try to restore saved navigation state for home volume
           initialPath = homePath;
@@ -562,6 +684,8 @@ export const FilePane = ({
         setIsCardMounted(true);
         setCurrentVolumeUUID(cardUUID);
         rootPathRef.current = cardPath;
+        setDisplayTitle(getVolumeName(cardPath));
+        saveLastRightPaneVolumeUUID(cardUUID);
 
         // Try to restore saved navigation state
         let initialPath = cardPath;
@@ -612,6 +736,8 @@ export const FilePane = ({
               setCurrentVolumeUUID(volumeUUID);
               setRootPath(homePath);
               rootPathRef.current = homePath;
+              setDisplayTitle("Local Files");
+              saveLastRightPaneVolumeUUID(null);
 
               // Try to restore saved navigation state
               let initialPath = homePath;
@@ -672,7 +798,7 @@ export const FilePane = ({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoNavigateToCard, loadDirectory, paneName]);
+  }, [autoNavigateToCard, paneName]);
   // getNavigationState is intentionally omitted - it's stable (memoized) and only used inside async functions
 
   const toggleFolder = async (node: FileNode) => {
@@ -1000,6 +1126,8 @@ export const FilePane = ({
         setCurrentVolumeUUID(volumeUUID);
         setRootPath(homePath);
         rootPathRef.current = homePath;
+        setDisplayTitle("Local Files");
+        saveLastRightPaneVolumeUUID(null);
 
         // Try to restore saved navigation state
         let initialPath = homePath;
@@ -1070,6 +1198,68 @@ export const FilePane = ({
       alert(`Error creating folder: ${error}`);
     }
   };
+
+  // Effect to search files using mdfind (macOS Spotlight) - much faster than recursive directory reading
+  useEffect(() => {
+    if (!searchQuery || !window.electron || loading) {
+      setIsSearchingFolders(false);
+      setSearchResults([]);
+      searchCancelledRef.current = true;
+      isSearchLoadingRef.current = false;
+      return;
+    }
+
+    searchCancelledRef.current = true;
+    const cancelTimeout = setTimeout(() => {
+      searchCancelledRef.current = false;
+    }, 100);
+
+    let cancelled = false;
+
+    const timeout = setTimeout(async () => {
+      if (isSearchLoadingRef.current || searchCancelledRef.current || cancelled) {
+        return;
+      }
+
+      isSearchLoadingRef.current = true;
+      setIsSearchingFolders(true);
+
+      try {
+        console.log("Searching with mdfind:", searchQuery);
+        // Optionally limit search to current root path or search entire system
+        const searchPath = currentRootPath || undefined;
+        const result = await window.electron.fs.searchFiles(searchQuery, searchPath);
+
+        if (cancelled || searchCancelledRef.current) {
+          return;
+        }
+
+        if (result.success && result.data) {
+          setSearchResults(result.data);
+        } else {
+          console.error("Search failed:", result.error);
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error("Error searching files:", error);
+        setSearchResults([]);
+      } finally {
+        if (!cancelled && !searchCancelledRef.current) {
+          setIsSearchingFolders(false);
+        }
+        isSearchLoadingRef.current = false;
+      }
+    }, 500); // Reduced debounce since mdfind is fast
+
+    return () => {
+      cancelled = true;
+      searchCancelledRef.current = true;
+      setIsSearchingFolders(false);
+      setSearchResults([]);
+      clearTimeout(timeout);
+      clearTimeout(cancelTimeout);
+    };
+  }, [searchQuery, loading, currentRootPath]);
 
   const filterNodes = (nodes: FileNode[], query: string): FileNode[] => {
     if (!query) return nodes;
@@ -1153,7 +1343,7 @@ export const FilePane = ({
                   }
                 }}
                 className={`flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
-                  node.type === "folder" ? "cursor-pointer" : ""
+                  node.type === "folder" || (node.type === "file" && isAudioFile(node.name)) ? "cursor-pointer" : ""
                 } ${
                   isDragOver && node.type === "folder" && !isParentLink
                     ? "bg-primary/20 border border-primary"
@@ -1165,6 +1355,8 @@ export const FilePane = ({
                     navigateToParent();
                   } else if (node.type === "folder") {
                     toggleFolder(node);
+                  } else if (node.type === "file" && isAudioFile(node.name)) {
+                    setSelectedAudioFile({ path: node.path, name: node.name });
                   }
                 }}
                 onDoubleClick={() => {
@@ -1187,14 +1379,12 @@ export const FilePane = ({
                         ))
                       )}
                     </span>
-                    <Folder
-                      className={`w-4 h-4 flex-shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
-                    />
+                    <Folder className={`w-4 h-4 shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`} />
                   </>
                 ) : (
                   <>
                     <span className="w-4" />
-                    <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <File className="w-4 h-4 text-muted-foreground shrink-0" />
                   </>
                 )}
                 <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
@@ -1230,6 +1420,19 @@ export const FilePane = ({
     });
   };
 
+  // Convert search results to FileNode format for rendering
+  const searchResultsAsNodes: FileNode[] = searchQuery
+    ? searchResults.map((result) => ({
+        id: `search-${result.path}`,
+        name: result.name,
+        type: result.type,
+        path: result.path,
+        size: result.type === "file" ? formatFileSize(result.size) : undefined,
+        loaded: true,
+        children: undefined,
+      }))
+    : [];
+
   const filteredFileSystem = filterNodes(fileTree, searchQuery);
 
   return (
@@ -1237,7 +1440,7 @@ export const FilePane = ({
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2 flex-1">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{displayTitle}</h2>
           {showEjectButton && (
             <Button
               size="sm"
@@ -1264,6 +1467,9 @@ export const FilePane = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 w-48"
             />
+            {isSearchingFolders && (
+              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-muted-foreground animate-spin" />
+            )}
           </div>
           {showNewFolderButton && (
             <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
@@ -1297,6 +1503,17 @@ export const FilePane = ({
             <div className="text-center py-8 text-sm text-red-500">
               Electron API not available. Please run in Electron environment.
             </div>
+          ) : isSearchingFolders ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="flex flex-col items-center gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                <div className="text-sm text-muted-foreground">Searching...</div>
+              </div>
+            </div>
+          ) : searchQuery && searchResultsAsNodes.length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              No files found matching &quot;{searchQuery}&quot;
+            </div>
           ) : filteredFileSystem.length === 0 ? (
             <div
               className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
@@ -1313,10 +1530,14 @@ export const FilePane = ({
                     Navigate to Nearest Existing Parent
                   </Button>
                 </div>
+              ) : searchQuery ? (
+                <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
               ) : (
                 <div className="text-muted-foreground">No files found</div>
               )}
             </div>
+          ) : searchQuery ? (
+            renderFileTree(searchResultsAsNodes)
           ) : (
             renderFileTree(filteredFileSystem)
           )}
@@ -1371,6 +1592,15 @@ export const FilePane = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Audio Preview */}
+      {selectedAudioFile && (
+        <AudioPreview
+          filePath={selectedAudioFile.path}
+          fileName={selectedAudioFile.name}
+          onClose={() => setSelectedAudioFile(null)}
+        />
+      )}
     </div>
   );
 };

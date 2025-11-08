@@ -1,5 +1,5 @@
 // electron/main.ts
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, protocol } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { exec } from "child_process";
@@ -210,6 +210,63 @@ ipcMain.handle("fs:readDirectory", async (_event, dirPath) => {
     return { success: false, error: String(error) };
   }
 });
+ipcMain.handle("fs:searchFiles", async (_event, query, searchPath) => {
+  try {
+    if (process.platform !== "darwin") {
+      return { success: false, error: "mdfind is only available on macOS" };
+    }
+    const searchPattern = query.trim();
+    console.log("searchFiles - original query:", query, "trimmed:", searchPattern);
+    let spotlightQuery;
+    if (searchPattern.startsWith(".")) {
+      const ext = searchPattern.substring(1);
+      console.log("searchFiles - extension search, ext:", ext);
+      const escapedExt = ext.replace(/'/g, "\\'");
+      spotlightQuery = `kMDItemFSName == '*.${escapedExt}'c`;
+    } else {
+      const escapedPattern = searchPattern.replace(/'/g, "\\'");
+      spotlightQuery = `kMDItemFSName == '*${escapedPattern}*'c`;
+    }
+    console.log("searchFiles - spotlight query:", spotlightQuery);
+    let command;
+    if (searchPath) {
+      const escapedPath = searchPath.replace(/["\\]/g, "\\$&");
+      command = `mdfind -onlyin "${escapedPath}" "${spotlightQuery}"`;
+    } else {
+      command = `mdfind "${spotlightQuery}"`;
+    }
+    console.log("mdfind command:", command);
+    const { stdout, stderr } = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
+    if (stderr && !stderr.includes("mdfind:")) {
+      console.warn("mdfind stderr:", stderr);
+    }
+    const filePaths = stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+    console.log("searchFiles - mdfind returned", filePaths.length, "file paths");
+    const results = await Promise.all(
+      filePaths.map(async (filePath) => {
+        try {
+          const stats = await fs.stat(filePath);
+          return {
+            name: path.basename(filePath),
+            path: filePath,
+            type: stats.isDirectory() ? "folder" : "file",
+            size: stats.size,
+            isDirectory: stats.isDirectory()
+          };
+        } catch (error) {
+          return null;
+        }
+      })
+    );
+    const filteredResults = results.filter(
+      (result) => result && !result.name.startsWith(".") && !result.name.startsWith("~")
+    );
+    console.log("searchFiles - filtered results:", filteredResults.length);
+    return { success: true, data: filteredResults };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
 ipcMain.handle("fs:copyFile", async (_event, sourcePath, destPath) => {
   try {
     const destDir = path.dirname(destPath);
@@ -349,7 +406,9 @@ ipcMain.handle("fs:ejectVolume", async (_event, volumePath) => {
       return { success: true };
     } else if (process.platform === "win32") {
       const drive = volumePath[0];
-      await execAsync(`powershell -Command "(New-Object -comObject Shell.Application).Namespace(17).ParseName('${drive}:').InvokeVerb('Eject')"`);
+      await execAsync(
+        `powershell -Command "(New-Object -comObject Shell.Application).Namespace(17).ParseName('${drive}:').InvokeVerb('Eject')"`
+      );
       return { success: true };
     } else if (process.platform === "linux") {
       await execAsync(`umount "${volumePath}"`);
@@ -357,6 +416,65 @@ ipcMain.handle("fs:ejectVolume", async (_event, volumePath) => {
     }
     return { success: false, error: "Platform not supported" };
   } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+ipcMain.handle("fs:getAudioFileUrl", async (_event, filePath) => {
+  try {
+    try {
+      await fs.access(filePath);
+    } catch (accessError) {
+      console.error("getAudioFileUrl - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+    const encodedPath = encodeURIComponent(filePath);
+    const url = `octacard-audio://${encodedPath.startsWith("%2F") ? "/" : ""}${encodedPath}`;
+    console.log("getAudioFileUrl - file exists, returning URL:", url, "for path:", filePath);
+    return { success: true, data: url };
+  } catch (error) {
+    console.error("getAudioFileUrl - error:", error, "for path:", filePath);
+    return { success: false, error: String(error) };
+  }
+});
+ipcMain.handle("fs:getAudioFileBlob", async (_event, filePath) => {
+  try {
+    let fileSize = 0;
+    try {
+      const stats = await fs.stat(filePath);
+      fileSize = stats.size;
+    } catch (accessError) {
+      console.error("getAudioFileBlob - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+    const fileSizeMB = fileSize / (1024 * 1024);
+    if (fileSizeMB > 200) {
+      console.warn(`getAudioFileBlob - Large file detected: ${fileSizeMB.toFixed(1)}MB. This may take a while...`);
+    }
+    console.log("getAudioFileBlob - Reading file:", filePath, `(${fileSizeMB.toFixed(1)}MB)`);
+    const fileBuffer = await fs.readFile(filePath);
+    console.log("getAudioFileBlob - File read complete, converting to base64...");
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+      ".wav": "audio/wav",
+      ".aiff": "audio/aiff",
+      ".aif": "audio/aiff",
+      ".mp3": "audio/mpeg",
+      ".flac": "audio/flac",
+      ".ogg": "audio/ogg",
+      ".m4a": "audio/mp4",
+      ".aac": "audio/aac",
+      ".wma": "audio/x-ms-wma"
+    };
+    const mimeType = mimeTypes[ext] || "audio/mpeg";
+    const base64 = fileBuffer.toString("base64");
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+    console.log("getAudioFileBlob - returning blob data URL for:", filePath);
+    return { success: true, data: dataUrl };
+  } catch (error) {
+    console.error("getAudioFileBlob - error:", error, "for path:", filePath);
+    if (String(error).includes("ETIMEDOUT") || String(error).includes("timeout")) {
+      return { success: false, error: `File read timeout. The file may be too large or inaccessible.` };
+    }
     return { success: false, error: String(error) };
   }
 });
@@ -378,7 +496,7 @@ async function checkFFmpegAvailable() {
 }
 ipcMain.handle(
   "fs:convertAndCopyFile",
-  async (_event, sourcePath, destPath, targetSampleRate, sampleDepth, fileFormat, mono, normalize) => {
+  async (_event, sourcePath, destPath, targetSampleRate, sampleDepth, fileFormat, mono, normalize2) => {
     try {
       const destDir = path.dirname(destPath);
       await fs.mkdir(destDir, { recursive: true });
@@ -388,7 +506,7 @@ ipcMain.handle(
         await fs.copyFile(sourcePath, destPath);
         return { success: true };
       }
-      const needsConversion = targetSampleRate || sampleDepth === "16-bit" || mono || normalize || fileFormat === "WAV";
+      const needsConversion = targetSampleRate || sampleDepth === "16-bit" || mono || normalize2 || fileFormat === "WAV";
       if (!needsConversion) {
         await fs.copyFile(sourcePath, destPath);
         return { success: true };
@@ -411,7 +529,7 @@ ipcMain.handle(
       if (mono) {
         ffmpegArgs.push("-ac", "1");
       }
-      if (normalize) {
+      if (normalize2) {
         ffmpegArgs.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11");
       }
       let audioCodec = "pcm_s16le";
@@ -453,6 +571,65 @@ ipcMain.handle(
   }
 );
 app.whenReady().then(() => {
+  function getMimeType(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+      ".wav": "audio/wav",
+      ".aiff": "audio/aiff",
+      ".aif": "audio/aiff",
+      ".mp3": "audio/mpeg",
+      ".flac": "audio/flac",
+      ".ogg": "audio/ogg",
+      ".m4a": "audio/mp4",
+      ".aac": "audio/aac",
+      ".wma": "audio/x-ms-wma"
+    };
+    return mimeTypes[ext] || "audio/mpeg";
+  }
+  protocol.handle("octacard-audio", async (request) => {
+    try {
+      const url = new URL(request.url);
+      console.log("Protocol handler - request URL:", request.url);
+      console.log("Protocol handler - URL pathname:", url.pathname);
+      let encodedPath = url.pathname;
+      if (encodedPath.startsWith("/")) {
+        encodedPath = encodedPath.slice(1);
+      }
+      let filePath;
+      try {
+        filePath = decodeURIComponent(encodedPath);
+      } catch (decodeError) {
+        console.error("Protocol handler - decode error:", decodeError, "encoded path:", encodedPath);
+        return new Response(null, { status: 404 });
+      }
+      filePath = path.normalize(filePath);
+      console.log("Protocol handler - decoded and normalized file path:", filePath);
+      try {
+        await fs.access(filePath);
+      } catch (accessError) {
+        console.error("Protocol handler - file access error:", accessError);
+        console.error("Protocol handler - attempted path:", filePath);
+        return new Response(null, { status: 404 });
+      }
+      try {
+        const fileBuffer = await fs.readFile(filePath);
+        const mimeType = getMimeType(filePath);
+        console.log("Protocol handler - file exists, serving:", filePath, "MIME type:", mimeType);
+        return new Response(fileBuffer, {
+          headers: {
+            "Content-Type": mimeType
+          }
+        });
+      } catch (readError) {
+        console.error("Protocol handler - file read error:", readError);
+        return new Response(null, { status: 404 });
+      }
+    } catch (error) {
+      console.error("Protocol handler - error:", error, "request URL:", request.url);
+      return new Response(null, { status: 404 });
+    }
+  });
+  console.log("Custom protocol 'octacard-audio' registered");
   createWindow();
   pollInterval = setInterval(pollForCards, 2e3);
   pollForCards();

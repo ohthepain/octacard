@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("electron", {
     getVolumeInfo: (volumePath: string) => ipcRenderer.invoke("fs:getVolumeInfo", volumePath),
     revealInFinder: (filePath: string) => ipcRenderer.invoke("fs:revealInFinder", filePath),
     ejectVolume: (volumePath: string) => ipcRenderer.invoke("fs:ejectVolume", volumePath),
+    getAudioFileUrl: (filePath: string) => ipcRenderer.invoke("fs:getAudioFileUrl", filePath),
+    getAudioFileBlob: (filePath: string) => ipcRenderer.invoke("fs:getAudioFileBlob", filePath),
     convertAndCopyFile: (
       sourcePath: string,
       destPath: string,
@@ -25,7 +27,18 @@ contextBridge.exposeInMainWorld("electron", {
       mono?: boolean,
       normalize?: boolean
     ) =>
-      ipcRenderer.invoke("fs:convertAndCopyFile", sourcePath, destPath, targetSampleRate, sampleDepth, fileFormat, mono, normalize),
+      ipcRenderer.invoke(
+        "fs:convertAndCopyFile",
+        sourcePath,
+        destPath,
+        targetSampleRate,
+        sampleDepth,
+        fileFormat,
+        mono,
+        normalize
+      ),
+    searchFiles: (query: string, searchPath?: string) =>
+      ipcRenderer.invoke("fs:searchFiles", query, searchPath),
   },
   on: {
     sdCardDetected: (callback: (cardPath: string, cardUUID: string) => void) => {
