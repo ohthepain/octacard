@@ -121,6 +121,7 @@ export const FilePane = ({
   const isSearchLoadingRef = useRef<boolean>(false);
   const searchCancelledRef = useRef<boolean>(false);
   const isSearchingRef = useRef<boolean>(false);
+  const currentSearchQueryRef = useRef<string>("");
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
@@ -1204,33 +1205,46 @@ export const FilePane = ({
     if (!searchQuery || !window.electron || loading) {
       setIsSearchingFolders(false);
       setSearchResults([]);
-      searchCancelledRef.current = true;
       isSearchLoadingRef.current = false;
+      searchCancelledRef.current = false;
       return;
     }
 
+    // Cancel any previous search that's in progress
     searchCancelledRef.current = true;
-    const cancelTimeout = setTimeout(() => {
-      searchCancelledRef.current = false;
-    }, 100);
+    isSearchLoadingRef.current = false;
+
+    // Update the ref to the new query immediately
+    currentSearchQueryRef.current = searchQuery;
 
     let cancelled = false;
+    const currentSearchQuery = searchQuery; // Capture the query for this search
 
     const timeout = setTimeout(async () => {
-      if (isSearchLoadingRef.current || searchCancelledRef.current || cancelled) {
+      // Check if this effect was cancelled (cleanup ran)
+      if (cancelled) {
         return;
       }
 
+      // Check if query has changed since we started this timeout
+      // (if user typed again, the ref would have been updated)
+      if (currentSearchQueryRef.current !== currentSearchQuery) {
+        return;
+      }
+
+      // Clear cancelled flag and start the search
+      searchCancelledRef.current = false;
       isSearchLoadingRef.current = true;
       setIsSearchingFolders(true);
 
       try {
-        console.log("Searching with mdfind:", searchQuery);
+        console.log("Searching with mdfind:", currentSearchQuery);
         // Optionally limit search to current root path or search entire system
         const searchPath = currentRootPath || undefined;
-        const result = await window.electron.fs.searchFiles(searchQuery, searchPath);
+        const result = await window.electron.fs.searchFiles(currentSearchQuery, searchPath);
 
-        if (cancelled || searchCancelledRef.current) {
+        // Double-check this search is still valid (query hasn't changed)
+        if (cancelled || currentSearchQueryRef.current !== currentSearchQuery) {
           return;
         }
 
@@ -1242,22 +1256,26 @@ export const FilePane = ({
         }
       } catch (error) {
         console.error("Error searching files:", error);
-        setSearchResults([]);
+        if (!cancelled && currentSearchQueryRef.current === currentSearchQuery) {
+          setSearchResults([]);
+        }
       } finally {
-        if (!cancelled && !searchCancelledRef.current) {
+        if (!cancelled && currentSearchQueryRef.current === currentSearchQuery) {
           setIsSearchingFolders(false);
         }
         isSearchLoadingRef.current = false;
       }
-    }, 500); // Reduced debounce since mdfind is fast
+    }, 300); // Debounce delay
 
     return () => {
       cancelled = true;
-      searchCancelledRef.current = true;
-      setIsSearchingFolders(false);
-      setSearchResults([]);
       clearTimeout(timeout);
-      clearTimeout(cancelTimeout);
+      // Don't clear search results here - let the new search set them
+      // Only clear loading state if we're cancelling
+      if (isSearchLoadingRef.current) {
+        setIsSearchingFolders(false);
+        isSearchLoadingRef.current = false;
+      }
     };
   }, [searchQuery, loading, currentRootPath]);
 

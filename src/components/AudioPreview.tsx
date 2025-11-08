@@ -1,7 +1,22 @@
 import { useState, useRef, useEffect } from "react";
-import { Play, Pause, SkipBack, SkipForward, Volume2, X, ZoomIn, ZoomOut, Gauge, RotateCcw, Map } from "lucide-react";
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  X,
+  ZoomIn,
+  ZoomOut,
+  Gauge,
+  RotateCcw,
+  Map,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline";
@@ -30,6 +45,7 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
   const [zoom, setZoom] = useState(50);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [normalize, setNormalize] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   // Get audio file as blob data URL for WaveSurfer
   // WaveSurfer needs to fetch the audio file to generate waveform, so we use blob data URLs
@@ -95,12 +111,12 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
     const fileExtension = fileName.toLowerCase().split(".").pop();
     const useMediaElementBackend = fileExtension === "aif" || fileExtension === "aiff";
 
-    // Create WaveSurfer instance
+    // Create WaveSurfer instance with Ableton Live color scheme
     const wavesurfer = WaveSurfer.create({
       container: waveformRef.current,
-      waveColor: "hsl(var(--primary))",
-      progressColor: "hsl(var(--primary) / 0.5)",
-      cursorColor: "hsl(var(--primary))",
+      waveColor: "#E0E0E0", // Light grey/white waveform (Ableton style)
+      progressColor: "#FF764D", // Orange progress (Ableton orange)
+      cursorColor: "#FF764D", // Orange cursor (Ableton orange)
       barWidth: 2,
       barRadius: 3,
       barGap: 1,
@@ -127,7 +143,7 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
       secondaryLabelInterval: 1,
       style: {
         fontSize: "10px",
-        color: "hsl(var(--muted-foreground))",
+        color: "#B0B0B0", // Light grey text (Ableton style)
       },
     });
     timelineRef.current = timeline;
@@ -137,8 +153,8 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
     const minimap = MinimapPlugin.create({
       height: 40,
       insertPosition: "afterend",
-      waveColor: "hsl(var(--muted-foreground))",
-      progressColor: "hsl(var(--primary) / 0.3)",
+      waveColor: "#C0C0C0", // Light grey for minimap waveform (Ableton style)
+      progressColor: "#FF764D80", // Orange progress with transparency (Ableton orange)
     });
     minimapRef.current = minimap;
     wavesurfer.registerPlugin(minimap);
@@ -264,7 +280,7 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
     const marker = regionsRef.current.addRegion({
       start: currentTime,
       end: Math.min(duration, currentTime + 0.1),
-      color: "hsl(var(--primary))",
+      color: "#FF764D", // Orange marker (Ableton orange)
       drag: true,
       resize: false,
       content: `Marker: ${formatTime(currentTime)}`,
@@ -281,7 +297,7 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
     const region = regionsRef.current.addRegion({
       start: currentTime,
       end: Math.min(duration, currentTime + 5),
-      color: "hsl(var(--primary) / 0.3)",
+      color: "#FF764D4D", // Orange region with transparency (Ableton orange, ~30% opacity)
       drag: true,
       resize: true,
     });
@@ -322,7 +338,16 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
             Preview: {fileName}
           </span>
         </div>
-        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onClose}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 w-6 p-0"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+        >
           <X className="w-4 h-4" />
         </Button>
       </div>
@@ -434,38 +459,66 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
           <span className="text-xs text-muted-foreground font-mono min-w-[40px]">{playbackRate.toFixed(2)}x</span>
         </div>
 
-        {/* Normalize Toggle */}
-        <Button
-          size="sm"
-          variant={normalize ? "default" : "outline"}
-          className="h-7 gap-2"
-          onClick={() => setNormalize(!normalize)}
-          disabled={isLoading}
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Normalize
-        </Button>
+        {/* Advanced Controls Collapsible */}
+        <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen}>
+          <CollapsibleTrigger asChild>
+            <Button size="sm" variant="outline" className="h-7 gap-2">
+              {isAdvancedOpen ? (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5" />
+                  Advanced
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  Advanced
+                </>
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2">
+            <div className="flex items-center gap-4 flex-wrap">
+              {/* Normalize Toggle */}
+              <Button
+                size="sm"
+                variant={normalize ? "default" : "outline"}
+                className="h-7 gap-2"
+                onClick={() => setNormalize(!normalize)}
+                disabled={isLoading}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Normalize
+              </Button>
 
-        {/* Region Controls */}
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addRegion} disabled={isLoading}>
-            Add Region
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearRegions} disabled={isLoading}>
-            Clear Regions
-          </Button>
-        </div>
+              {/* Region Controls */}
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addRegion} disabled={isLoading}>
+                  Add Region
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearRegions} disabled={isLoading}>
+                  Clear Regions
+                </Button>
+              </div>
 
-        {/* Marker Controls */}
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addMarker} disabled={isLoading}>
-            <Map className="w-3 h-3" />
-            Add Marker
-          </Button>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearMarkers} disabled={isLoading}>
-            Clear Markers
-          </Button>
-        </div>
+              {/* Marker Controls */}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1"
+                  onClick={addMarker}
+                  disabled={isLoading}
+                >
+                  <Map className="w-3 h-3" />
+                  Add Marker
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearMarkers} disabled={isLoading}>
+                  Clear Markers
+                </Button>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </div>
   );
