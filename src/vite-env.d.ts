@@ -24,6 +24,8 @@ interface ElectronAPI {
     ejectVolume: (volumePath: string) => Promise<{ success: boolean; error?: string }>;
     getAudioFileUrl: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
     getAudioFileBlob: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    getVideoFileUrl: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    getVideoFileBlob: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
     convertAndCopyFile: (
       sourcePath: string,
       destPath: string,

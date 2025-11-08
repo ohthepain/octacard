@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld("electron", {
     ejectVolume: (volumePath: string) => ipcRenderer.invoke("fs:ejectVolume", volumePath),
     getAudioFileUrl: (filePath: string) => ipcRenderer.invoke("fs:getAudioFileUrl", filePath),
     getAudioFileBlob: (filePath: string) => ipcRenderer.invoke("fs:getAudioFileBlob", filePath),
+    getVideoFileUrl: (filePath: string) => ipcRenderer.invoke("fs:getVideoFileUrl", filePath),
+    getVideoFileBlob: (filePath: string) => ipcRenderer.invoke("fs:getVideoFileBlob", filePath),
     convertAndCopyFile: (
       sourcePath: string,
       destPath: string,

@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { AudioPreview } from "@/components/AudioPreview";
+import { VideoPreview } from "@/components/VideoPreview";
 
 // Simple path join utility for cross-platform compatibility
 function joinPath(...parts: string[]): string {
@@ -55,6 +56,10 @@ function dirname(filePath: string): string {
 
 function isAudioFile(fileName: string): boolean {
   return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
+}
+
+function isVideoFile(fileName: string): boolean {
+  return /\.(mp4|mov|avi|mkv|webm|m4v|flv|wmv|3gp|ogv)$/i.test(fileName);
 }
 
 interface FileNode {
@@ -123,6 +128,7 @@ export const FilePane = ({
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedAudioFile, setSelectedAudioFile] = useState<{ path: string; name: string } | null>(null);
+  const [selectedVideoFile, setSelectedVideoFile] = useState<{ path: string; name: string } | null>(null);
   const [displayTitle, setDisplayTitle] = useState<string>(title);
   const currentRootPathRef = useRef<string>("");
   const rootPathRef = useRef<string>("");
@@ -1370,7 +1376,9 @@ export const FilePane = ({
                   }
                 }}
                 className={`flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
-                  node.type === "folder" || (node.type === "file" && isAudioFile(node.name)) ? "cursor-pointer" : ""
+                  node.type === "folder" || (node.type === "file" && (isAudioFile(node.name) || isVideoFile(node.name)))
+                    ? "cursor-pointer"
+                    : ""
                 } ${
                   isDragOver && node.type === "folder" && !isParentLink
                     ? "bg-primary/20 border border-primary"
@@ -1390,6 +1398,10 @@ export const FilePane = ({
                     }
                   } else if (node.type === "file" && isAudioFile(node.name)) {
                     setSelectedAudioFile({ path: node.path, name: node.name });
+                    setSelectedVideoFile(null); // Clear video preview if audio is selected
+                  } else if (node.type === "file" && isVideoFile(node.name)) {
+                    setSelectedVideoFile({ path: node.path, name: node.name });
+                    setSelectedAudioFile(null); // Clear audio preview if video is selected
                   }
                 }}
                 onDoubleClick={() => {
@@ -1730,6 +1742,15 @@ export const FilePane = ({
           filePath={selectedAudioFile.path}
           fileName={selectedAudioFile.name}
           onClose={() => setSelectedAudioFile(null)}
+        />
+      )}
+
+      {/* Video Preview */}
+      {selectedVideoFile && (
+        <VideoPreview
+          filePath={selectedVideoFile.path}
+          fileName={selectedVideoFile.name}
+          onClose={() => setSelectedVideoFile(null)}
         />
       )}
     </div>

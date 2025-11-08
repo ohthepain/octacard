@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, protocol } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
+import { createReadStream } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
@@ -293,16 +294,16 @@ ipcMain.handle("fs:searchFiles", async (_event, query: string, searchPath?: stri
     // mdfind uses Spotlight queries, not shell glob patterns
     const searchPattern = query.trim();
     console.log("searchFiles - original query:", query, "trimmed:", searchPattern);
-    
+
     // Build Spotlight query pattern
     let spotlightQuery: string;
-    
+
     if (searchPattern.startsWith(".")) {
       // ".wav" -> match files ending with .wav
       // Remove the leading dot to get the extension
       const ext = searchPattern.substring(1);
       console.log("searchFiles - extension search, ext:", ext);
-      
+
       // Use kMDItemFSName with wildcard pattern - the 'c' flag makes it case-insensitive
       // Escape the extension in case it has special characters, but keep it simple for common extensions
       const escapedExt = ext.replace(/'/g, "\\'");
@@ -312,9 +313,9 @@ ipcMain.handle("fs:searchFiles", async (_event, query: string, searchPath?: stri
       const escapedPattern = searchPattern.replace(/'/g, "\\'");
       spotlightQuery = `kMDItemFSName == '*${escapedPattern}*'c`;
     }
-    
+
     console.log("searchFiles - spotlight query:", spotlightQuery);
-    
+
     // Build mdfind command using Spotlight query syntax
     // The query is wrapped in double quotes, so single quotes inside are safe
     let command: string;
@@ -324,11 +325,11 @@ ipcMain.handle("fs:searchFiles", async (_event, query: string, searchPath?: stri
     } else {
       command = `mdfind "${spotlightQuery}"`;
     }
-    
+
     console.log("mdfind command:", command);
 
     const { stdout, stderr } = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
-    
+
     if (stderr && !stderr.includes("mdfind:")) {
       console.warn("mdfind stderr:", stderr);
     }
@@ -607,7 +608,7 @@ ipcMain.handle("fs:getAudioFileBlob", async (_event, filePath: string) => {
     console.log("getAudioFileBlob - Reading file:", filePath, `(${fileSizeMB.toFixed(1)}MB)`);
     const fileBuffer = await fs.readFile(filePath);
     console.log("getAudioFileBlob - File read complete, converting to base64...");
-    
+
     // Get MIME type from extension
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes: Record<string, string> = {
@@ -632,6 +633,87 @@ ipcMain.handle("fs:getAudioFileBlob", async (_event, filePath: string) => {
     return { success: true, data: dataUrl };
   } catch (error) {
     console.error("getAudioFileBlob - error:", error, "for path:", filePath);
+    // Provide more helpful error messages
+    if (String(error).includes("ETIMEDOUT") || String(error).includes("timeout")) {
+      return { success: false, error: `File read timeout. The file may be too large or inaccessible.` };
+    }
+    return { success: false, error: String(error) };
+  }
+});
+
+// IPC handler to get video file URL using custom protocol (better for cloud-synced files)
+ipcMain.handle("fs:getVideoFileUrl", async (_event, filePath: string) => {
+  try {
+    // Verify file exists before returning URL
+    try {
+      await fs.access(filePath);
+    } catch (accessError) {
+      console.error("getVideoFileUrl - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+
+    // Return a custom protocol URL that will be handled by our protocol handler
+    // Encode the entire path (including leading slash for absolute paths)
+    const encodedPath = encodeURIComponent(filePath);
+    const url = `octacard-video://${encodedPath.startsWith("%2F") ? "/" : ""}${encodedPath}`;
+    console.log("getVideoFileUrl - file exists, returning URL:", url, "for path:", filePath);
+    return { success: true, data: url };
+  } catch (error) {
+    console.error("getVideoFileUrl - error:", error, "for path:", filePath);
+    return { success: false, error: String(error) };
+  }
+});
+
+// IPC handler to get video file as blob data (similar to audio files)
+// Note: This may timeout for cloud-synced files - prefer getVideoFileUrl instead
+ipcMain.handle("fs:getVideoFileBlob", async (_event, filePath: string) => {
+  try {
+    // Verify file exists and get size
+    let fileSize = 0;
+    try {
+      const stats = await fs.stat(filePath);
+      fileSize = stats.size;
+    } catch (accessError) {
+      console.error("getVideoFileBlob - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+
+    // Check file size - warn for very large files
+    const fileSizeMB = fileSize / (1024 * 1024);
+    if (fileSizeMB > 500) {
+      console.warn(`getVideoFileBlob - Large file detected: ${fileSizeMB.toFixed(1)}MB. This may take a while...`);
+    }
+
+    // Read file as buffer with progress logging for large files
+    console.log("getVideoFileBlob - Reading file:", filePath, `(${fileSizeMB.toFixed(1)}MB)`);
+    const fileBuffer = await fs.readFile(filePath);
+    console.log("getVideoFileBlob - File read complete, converting to base64...");
+
+    // Get MIME type from extension
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      ".mp4": "video/mp4",
+      ".mov": "video/quicktime",
+      ".avi": "video/x-msvideo",
+      ".mkv": "video/x-matroska",
+      ".webm": "video/webm",
+      ".m4v": "video/x-m4v",
+      ".flv": "video/x-flv",
+      ".wmv": "video/x-ms-wmv",
+      ".3gp": "video/3gpp",
+      ".ogv": "video/ogg",
+    };
+    const mimeType = mimeTypes[ext] || "video/mp4";
+
+    // Convert buffer to base64 data URL
+    // For very large files, this conversion can take time
+    const base64 = fileBuffer.toString("base64");
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    console.log("getVideoFileBlob - returning blob data URL for:", filePath);
+    return { success: true, data: dataUrl };
+  } catch (error) {
+    console.error("getVideoFileBlob - error:", error, "for path:", filePath);
     // Provide more helpful error messages
     if (String(error).includes("ETIMEDOUT") || String(error).includes("timeout")) {
       return { success: false, error: `File read timeout. The file may be too large or inaccessible.` };
@@ -814,6 +896,24 @@ app.whenReady().then(() => {
     return mimeTypes[ext] || "audio/mpeg";
   }
 
+  // Helper function to get video MIME type from file extension
+  function getVideoMimeType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      ".mp4": "video/mp4",
+      ".mov": "video/quicktime",
+      ".avi": "video/x-msvideo",
+      ".mkv": "video/x-matroska",
+      ".webm": "video/webm",
+      ".m4v": "video/x-m4v",
+      ".flv": "video/x-flv",
+      ".wmv": "video/x-ms-wmv",
+      ".3gp": "video/3gpp",
+      ".ogv": "video/ogg",
+    };
+    return mimeTypes[ext] || "video/mp4";
+  }
+
   // Register custom protocol to serve audio files with proper MIME types
   protocol.handle("octacard-audio", async (request) => {
     try {
@@ -875,7 +975,62 @@ app.whenReady().then(() => {
     }
   });
 
-  console.log("Custom protocol 'octacard-audio' registered");
+  // Register custom protocol to serve video files with proper MIME types
+  // This uses streaming for better performance with cloud-synced files
+  protocol.handle("octacard-video", async (request) => {
+    try {
+      // Extract the file path from the URL
+      const url = new URL(request.url);
+      console.log("Video protocol handler - request URL:", request.url);
+
+      let encodedPath = url.pathname;
+      if (encodedPath.startsWith("/")) {
+        encodedPath = encodedPath.slice(1);
+      }
+
+      let filePath: string;
+      try {
+        filePath = decodeURIComponent(encodedPath);
+      } catch (decodeError) {
+        console.error("Video protocol handler - decode error:", decodeError, "encoded path:", encodedPath);
+        return new Response(null, { status: 404 });
+      }
+
+      filePath = path.normalize(filePath);
+      console.log("Video protocol handler - decoded file path:", filePath);
+
+      // Verify the file exists (but don't read it all - let the browser stream it)
+      try {
+        await fs.access(filePath);
+      } catch (accessError) {
+        console.error("Video protocol handler - file access error:", accessError);
+        return new Response(null, { status: 404 });
+      }
+
+      // Use createReadStream for better performance with large/cloud-synced files
+      // This allows the browser to stream the video instead of loading it all into memory
+      try {
+        const fileStream = createReadStream(filePath);
+        const mimeType = getVideoMimeType(filePath);
+        console.log("Video protocol handler - serving:", filePath, "MIME type:", mimeType);
+
+        return new Response(fileStream as any, {
+          headers: {
+            "Content-Type": mimeType,
+            "Accept-Ranges": "bytes",
+          },
+        });
+      } catch (readError) {
+        console.error("Video protocol handler - file read error:", readError);
+        return new Response(null, { status: 404 });
+      }
+    } catch (error) {
+      console.error("Video protocol handler - error:", error, "request URL:", request.url);
+      return new Response(null, { status: 404 });
+    }
+  });
+
+  console.log("Custom protocols 'octacard-audio' and 'octacard-video' registered");
 
   createWindow();
 

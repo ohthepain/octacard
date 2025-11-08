@@ -2,6 +2,7 @@
 import { app, BrowserWindow, ipcMain, protocol } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
+import { createReadStream } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
@@ -478,6 +479,66 @@ ipcMain.handle("fs:getAudioFileBlob", async (_event, filePath) => {
     return { success: false, error: String(error) };
   }
 });
+ipcMain.handle("fs:getVideoFileUrl", async (_event, filePath) => {
+  try {
+    try {
+      await fs.access(filePath);
+    } catch (accessError) {
+      console.error("getVideoFileUrl - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+    const encodedPath = encodeURIComponent(filePath);
+    const url = `octacard-video://${encodedPath.startsWith("%2F") ? "/" : ""}${encodedPath}`;
+    console.log("getVideoFileUrl - file exists, returning URL:", url, "for path:", filePath);
+    return { success: true, data: url };
+  } catch (error) {
+    console.error("getVideoFileUrl - error:", error, "for path:", filePath);
+    return { success: false, error: String(error) };
+  }
+});
+ipcMain.handle("fs:getVideoFileBlob", async (_event, filePath) => {
+  try {
+    let fileSize = 0;
+    try {
+      const stats = await fs.stat(filePath);
+      fileSize = stats.size;
+    } catch (accessError) {
+      console.error("getVideoFileBlob - file does not exist:", filePath, accessError);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+    const fileSizeMB = fileSize / (1024 * 1024);
+    if (fileSizeMB > 500) {
+      console.warn(`getVideoFileBlob - Large file detected: ${fileSizeMB.toFixed(1)}MB. This may take a while...`);
+    }
+    console.log("getVideoFileBlob - Reading file:", filePath, `(${fileSizeMB.toFixed(1)}MB)`);
+    const fileBuffer = await fs.readFile(filePath);
+    console.log("getVideoFileBlob - File read complete, converting to base64...");
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+      ".mp4": "video/mp4",
+      ".mov": "video/quicktime",
+      ".avi": "video/x-msvideo",
+      ".mkv": "video/x-matroska",
+      ".webm": "video/webm",
+      ".m4v": "video/x-m4v",
+      ".flv": "video/x-flv",
+      ".wmv": "video/x-ms-wmv",
+      ".3gp": "video/3gpp",
+      ".ogv": "video/ogg"
+    };
+    const mimeType = mimeTypes[ext] || "video/mp4";
+    const base64 = fileBuffer.toString("base64");
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+    console.log("getVideoFileBlob - returning blob data URL for:", filePath);
+    return { success: true, data: dataUrl };
+  } catch (error) {
+    console.error("getVideoFileBlob - error:", error, "for path:", filePath);
+    if (String(error).includes("ETIMEDOUT") || String(error).includes("timeout")) {
+      return { success: false, error: `File read timeout. The file may be too large or inaccessible.` };
+    }
+    return { success: false, error: String(error) };
+  }
+});
 function getFFmpegPath() {
   if (ffmpegStatic) {
     return ffmpegStatic;
@@ -586,6 +647,22 @@ app.whenReady().then(() => {
     };
     return mimeTypes[ext] || "audio/mpeg";
   }
+  function getVideoMimeType(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+      ".mp4": "video/mp4",
+      ".mov": "video/quicktime",
+      ".avi": "video/x-msvideo",
+      ".mkv": "video/x-matroska",
+      ".webm": "video/webm",
+      ".m4v": "video/x-m4v",
+      ".flv": "video/x-flv",
+      ".wmv": "video/x-ms-wmv",
+      ".3gp": "video/3gpp",
+      ".ogv": "video/ogg"
+    };
+    return mimeTypes[ext] || "video/mp4";
+  }
   protocol.handle("octacard-audio", async (request) => {
     try {
       const url = new URL(request.url);
@@ -629,7 +706,49 @@ app.whenReady().then(() => {
       return new Response(null, { status: 404 });
     }
   });
-  console.log("Custom protocol 'octacard-audio' registered");
+  protocol.handle("octacard-video", async (request) => {
+    try {
+      const url = new URL(request.url);
+      console.log("Video protocol handler - request URL:", request.url);
+      let encodedPath = url.pathname;
+      if (encodedPath.startsWith("/")) {
+        encodedPath = encodedPath.slice(1);
+      }
+      let filePath;
+      try {
+        filePath = decodeURIComponent(encodedPath);
+      } catch (decodeError) {
+        console.error("Video protocol handler - decode error:", decodeError, "encoded path:", encodedPath);
+        return new Response(null, { status: 404 });
+      }
+      filePath = path.normalize(filePath);
+      console.log("Video protocol handler - decoded file path:", filePath);
+      try {
+        await fs.access(filePath);
+      } catch (accessError) {
+        console.error("Video protocol handler - file access error:", accessError);
+        return new Response(null, { status: 404 });
+      }
+      try {
+        const fileStream = createReadStream(filePath);
+        const mimeType = getVideoMimeType(filePath);
+        console.log("Video protocol handler - serving:", filePath, "MIME type:", mimeType);
+        return new Response(fileStream, {
+          headers: {
+            "Content-Type": mimeType,
+            "Accept-Ranges": "bytes"
+          }
+        });
+      } catch (readError) {
+        console.error("Video protocol handler - file read error:", readError);
+        return new Response(null, { status: 404 });
+      }
+    } catch (error) {
+      console.error("Video protocol handler - error:", error, "request URL:", request.url);
+      return new Response(null, { status: 404 });
+    }
+  });
+  console.log("Custom protocols 'octacard-audio' and 'octacard-video' registered");
   createWindow();
   pollInterval = setInterval(pollForCards, 2e3);
   pollForCards();
