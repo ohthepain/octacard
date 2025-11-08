@@ -44,6 +44,15 @@ function basename(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+function dirname(filePath: string): string {
+  const parts = filePath.split("/").filter(Boolean);
+  if (parts.length <= 1) {
+    return filePath.startsWith("/") ? "/" : "";
+  }
+  const parentParts = parts.slice(0, -1);
+  return filePath.startsWith("/") ? "/" + parentParts.join("/") : parentParts.join("/");
+}
+
 function isAudioFile(fileName: string): boolean {
   return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
 }
@@ -1372,13 +1381,23 @@ export const FilePane = ({
                   if (isParentLink) {
                     navigateToParent();
                   } else if (node.type === "folder") {
-                    toggleFolder(node);
+                    // If this is a search result folder, navigate to it and clear search
+                    if (searchQuery && node.id.startsWith("search-folder-")) {
+                      setSearchQuery("");
+                      navigateToFolder(node.path);
+                    } else {
+                      toggleFolder(node);
+                    }
                   } else if (node.type === "file" && isAudioFile(node.name)) {
                     setSelectedAudioFile({ path: node.path, name: node.name });
                   }
                 }}
                 onDoubleClick={() => {
                   if (!isParentLink && node.type === "folder") {
+                    // If this is a search result folder, clear search when navigating
+                    if (searchQuery && node.id.startsWith("search-folder-")) {
+                      setSearchQuery("");
+                    }
                     navigateToFolder(node.path);
                   }
                 }}
@@ -1438,17 +1457,110 @@ export const FilePane = ({
     });
   };
 
-  // Convert search results to FileNode format for rendering
-  const searchResultsAsNodes: FileNode[] = searchQuery
-    ? searchResults.map((result) => ({
-        id: `search-${result.path}`,
-        name: result.name,
-        type: result.type,
-        path: result.path,
-        size: result.type === "file" ? formatFileSize(result.size) : undefined,
-        loaded: true,
+  // Convert search results to folder tree structure - only show folders containing matches
+  const buildFolderTreeFromSearchResults = (
+    results: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>,
+    searchRootPath?: string
+  ): FileNode[] => {
+    if (results.length === 0) return [];
+
+    // Extract all unique folder paths that contain matches
+    const folderPaths = new Set<string>();
+
+    results.forEach((result) => {
+      // Get the parent directory of each result
+      const parentPath = dirname(result.path);
+      if (parentPath && parentPath !== "." && parentPath !== "/") {
+        // If searching within a specific path, only include folders within that path
+        if (!searchRootPath || parentPath.startsWith(searchRootPath)) {
+          folderPaths.add(parentPath);
+        }
+      }
+
+      // If the result itself is a folder, include it
+      if (result.isDirectory) {
+        if (!searchRootPath || result.path.startsWith(searchRootPath)) {
+          folderPaths.add(result.path);
+        }
+      }
+    });
+
+    if (folderPaths.size === 0) return [];
+
+    // Build a tree structure from folder paths
+    const folderMap = new Map<string, FileNode>();
+    const rootFolders: FileNode[] = [];
+
+    // Sort folder paths by depth (shallowest first)
+    const sortedPaths = Array.from(folderPaths).sort((a, b) => {
+      const depthA = a.split("/").filter(Boolean).length;
+      const depthB = b.split("/").filter(Boolean).length;
+      return depthA - depthB;
+    });
+
+    // Determine the root path for the tree (either searchRootPath or common ancestor)
+    const treeRoot =
+      searchRootPath ||
+      (() => {
+        // Find common root path
+        const paths = Array.from(folderPaths);
+        if (paths.length === 0) return "";
+        let commonRoot = paths[0];
+        for (let i = 1; i < paths.length; i++) {
+          const parts = commonRoot.split("/").filter(Boolean);
+          const otherParts = paths[i].split("/").filter(Boolean);
+          let j = 0;
+          while (j < parts.length && j < otherParts.length && parts[j] === otherParts[j]) {
+            j++;
+          }
+          commonRoot = "/" + parts.slice(0, j).join("/");
+        }
+        return commonRoot || "/";
+      })();
+
+    sortedPaths.forEach((folderPath) => {
+      const parts = folderPath.split("/").filter(Boolean);
+      const folderName = parts[parts.length - 1];
+
+      // Create folder node
+      const folderNode: FileNode = {
+        id: `search-folder-${folderPath}`,
+        name: folderName,
+        type: "folder",
+        path: folderPath,
+        loaded: false, // Not loaded yet - user can expand to see contents
         children: undefined,
-      }))
+      };
+
+      folderMap.set(folderPath, folderNode);
+
+      // Find parent folder
+      const parentPath = dirname(folderPath);
+      if (parentPath && parentPath !== treeRoot && parentPath !== "/") {
+        const parentNode = folderMap.get(parentPath);
+        if (parentNode) {
+          if (!parentNode.children) {
+            parentNode.children = [];
+          }
+          parentNode.children.push(folderNode);
+        } else {
+          // Parent not in our set yet, add to root
+          rootFolders.push(folderNode);
+        }
+      } else {
+        // Root level folder (relative to tree root)
+        rootFolders.push(folderNode);
+      }
+    });
+
+    // Sort root folders alphabetically
+    rootFolders.sort((a, b) => a.name.localeCompare(b.name));
+
+    return rootFolders;
+  };
+
+  const searchResultsAsNodes: FileNode[] = searchQuery
+    ? buildFolderTreeFromSearchResults(searchResults, currentRootPath)
     : [];
 
   const filteredFileSystem = filterNodes(fileTree, searchQuery);
@@ -1483,11 +1595,12 @@ export const FilePane = ({
               placeholder="Search files..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 w-48"
+              className="pl-9 pr-9 w-48"
             />
-            {isSearchingFolders && (
-              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-muted-foreground animate-spin" />
-            )}
+            {/* Reserve space for loader to prevent layout shifts */}
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 flex items-center justify-center">
+              {isSearchingFolders && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />}
+            </div>
           </div>
           {showNewFolderButton && (
             <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>

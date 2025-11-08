@@ -94,16 +94,46 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
     loadAudioUrl();
   }, [filePath]);
 
+  // Stop playback when file changes
+  useEffect(() => {
+    return () => {
+      // Cleanup: stop and destroy previous instance when filePath changes
+      if (wavesurferRef.current) {
+        try {
+          wavesurferRef.current.pause();
+          wavesurferRef.current.destroy();
+        } catch (error) {
+          console.error("Error cleaning up WaveSurfer:", error);
+        }
+        wavesurferRef.current = null;
+        regionsRef.current = null;
+        timelineRef.current = null;
+        minimapRef.current = null;
+      }
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+    };
+  }, [filePath]);
+
   // Initialize WaveSurfer
   useEffect(() => {
     if (!waveformRef.current || !audioUrl) return;
 
     // Clean up previous instance
     if (wavesurferRef.current) {
-      wavesurferRef.current.destroy();
+      try {
+        wavesurferRef.current.pause();
+        wavesurferRef.current.destroy();
+      } catch (error) {
+        console.error("Error destroying previous WaveSurfer:", error);
+      }
     }
 
     setIsLoading(true);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
 
     // Determine backend based on file extension
     // AIF files may not work well with WebAudio backend, so use MediaElement for them
@@ -201,11 +231,19 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
 
     // Cleanup
     return () => {
-      wavesurfer.destroy();
+      try {
+        if (wavesurfer) {
+          wavesurfer.pause();
+          wavesurfer.destroy();
+        }
+      } catch (error) {
+        console.error("Error cleaning up WaveSurfer in effect:", error);
+      }
       wavesurferRef.current = null;
       regionsRef.current = null;
       timelineRef.current = null;
       minimapRef.current = null;
+      setIsPlaying(false);
     };
   }, [audioUrl, normalize, fileName]);
 
@@ -369,12 +407,24 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
       </div>
 
       {/* Playback Controls */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={skipBackward} disabled={isLoading}>
+      <div className="flex items-center gap-3 flex-wrap" style={{ minHeight: "2rem" }}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0 shrink-0"
+            onClick={skipBackward}
+            disabled={isLoading}
+          >
             <SkipBack className="w-4 h-4" />
           </Button>
-          <Button size="sm" variant="secondary" className="h-8 w-8 p-0" onClick={togglePlayPause} disabled={isLoading}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 w-8 p-0 shrink-0"
+            onClick={togglePlayPause}
+            disabled={isLoading}
+          >
             {isLoading ? (
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : isPlaying ? (
@@ -383,20 +433,23 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
               <Play className="w-4 h-4" />
             )}
           </Button>
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={skipForward} disabled={isLoading}>
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0" onClick={skipForward} disabled={isLoading}>
             <SkipForward className="w-4 h-4" />
           </Button>
         </div>
 
         {/* Time Display */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono min-w-[100px]">
+        <div
+          className="flex items-center gap-2 text-xs text-muted-foreground font-mono shrink-0"
+          style={{ minWidth: "100px" }}
+        >
           <span>{formatTime(currentTime)}</span>
           <span>/</span>
           <span>{formatTime(duration)}</span>
         </div>
 
         {/* Progress Slider */}
-        <div className="flex-1 min-w-[200px]">
+        <div className="flex-1 shrink min-w-0" style={{ minWidth: "150px" }}>
           <Slider
             value={[currentTime]}
             max={duration || 100}
@@ -408,7 +461,7 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
         </div>
 
         {/* Volume Control */}
-        <div className="flex items-center gap-2 w-32">
+        <div className="flex items-center gap-2 shrink-0" style={{ width: "128px", minWidth: "128px" }}>
           <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
           <Slider
             value={[volume]}
