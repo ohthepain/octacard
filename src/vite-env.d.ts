@@ -41,6 +41,17 @@ interface ElectronAPI {
       data?: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>;
       error?: string;
     }>;
+    getAvailableVolumes: () => Promise<{
+      success: boolean;
+      data?: Array<{
+        path: string;
+        uuid: string | null;
+        name: string;
+        isRemovable: boolean;
+        isHome: boolean;
+      }>;
+      error?: string;
+    }>;
   };
   on: {
     sdCardDetected: (callback: (cardPath: string, cardUUID: string) => void) => void;

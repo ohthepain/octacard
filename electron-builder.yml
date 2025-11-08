@@ -1,0 +1,47 @@
+appId: com.octacard.app
+productName: OctaCard
+copyright: Copyright © 2024
+
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!.editorconfig"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,CVS,.svn,Thumbs.db,.gitignore,.gitattributes}"
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: mas
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  entitlements: build/entitlements.mas.plist
+  entitlementsInherit: build/entitlements.mas.inherit.plist
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  type: distribution
+
+mas:
+  entitlements: build/entitlements.mas.plist
+  entitlementsInherit: build/entitlements.mas.inherit.plist
+
+dmg:
+  title: ${productName}
+  icon: build/icon.icns
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+publish:
+  provider: generic
+  url: ""
+

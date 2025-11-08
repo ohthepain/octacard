@@ -4,6 +4,7 @@ import {
   File,
   ChevronRight,
   ChevronDown,
+  Check,
   Search,
   Trash2,
   FolderPlus,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +69,14 @@ interface FileNode {
   format?: string;
   isLoading?: boolean;
   loaded?: boolean;
+}
+
+interface VolumeOption {
+  path: string;
+  uuid: string | null;
+  name: string;
+  isRemovable: boolean;
+  isHome: boolean;
 }
 
 function formatFileSize(bytes: number): string {
@@ -124,6 +134,7 @@ export const FilePane = ({
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedAudioFile, setSelectedAudioFile] = useState<{ path: string; name: string } | null>(null);
   const [displayTitle, setDisplayTitle] = useState<string>(title);
+  const [availableVolumes, setAvailableVolumes] = useState<VolumeOption[]>([]);
   const currentRootPathRef = useRef<string>("");
   const rootPathRef = useRef<string>("");
   const fileTreeRef = useRef<FileNode[]>([]);
@@ -180,6 +191,34 @@ export const FilePane = ({
     }
     return "Local Files";
   }, []);
+
+  const normalizeVolumePath = useCallback((value: string | null | undefined): string => {
+    if (!value) return "";
+    return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  }, []);
+
+  const refreshAvailableVolumes = useCallback(async () => {
+    if (!window.electron) return;
+    try {
+      const result = await window.electron.fs.getAvailableVolumes();
+      if (result.success && result.data) {
+        setAvailableVolumes(
+          result.data.map((volume) => ({
+            ...volume,
+            name: volume.isHome ? "Local Files" : getVolumeName(volume.path),
+          }))
+        );
+      } else if (result.error) {
+        console.error("Failed to fetch available volumes:", result.error);
+      }
+    } catch (error) {
+      console.error("Failed to fetch available volumes:", error);
+    }
+  }, [getVolumeName]);
+
+  useEffect(() => {
+    void refreshAvailableVolumes();
+  }, [refreshAvailableVolumes]);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -520,6 +559,7 @@ export const FilePane = ({
             volumeUUID = cardUUID;
             setDisplayTitle(getVolumeName(cardPath));
             saveLastRightPaneVolumeUUID(cardUUID);
+            await refreshAvailableVolumes();
 
             // Try to restore saved navigation state
             initialPath = cardPath;
@@ -602,6 +642,7 @@ export const FilePane = ({
           setIsCardMounted(false); // Ensure card mounted state is false when using home directory
           rootPathRef.current = homePath;
           setDisplayTitle("Local Files");
+          await refreshAvailableVolumes();
 
           // Get volume UUID for home directory
           volumeUUID = await getVolumeUUIDForPath(homePath);
@@ -732,6 +773,9 @@ export const FilePane = ({
         if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
           setPendingExpandedFolders(savedState.expandedFolders);
         }
+
+        void refreshAvailableVolumes();
+        void refreshAvailableVolumes();
       };
 
       const handleCardRemoved = async (cardPath: string, cardUUID: string) => {
@@ -881,6 +925,86 @@ export const FilePane = ({
       }
     }
   };
+
+  const handleVolumeSelect = useCallback(
+    async (volume: VolumeOption) => {
+      if (!window.electron) return;
+
+      if (normalizeVolumePath(rootPath) === normalizeVolumePath(volume.path)) {
+        return;
+      }
+
+      setLoading(true);
+      setSearchQuery("");
+      setSelectedAudioFile(null);
+      setPathDoesNotExist(false);
+
+      try {
+        const resolvedUUID = volume.uuid ?? (await getVolumeUUIDForPath(volume.path));
+        const displayName = volume.isHome ? "Local Files" : getVolumeName(volume.path);
+
+        setRootPath(volume.path);
+        rootPathRef.current = volume.path;
+        setDisplayTitle(displayName);
+        setIsCardMounted(volume.isRemovable);
+        setCurrentVolumeUUID(resolvedUUID);
+
+        if (autoNavigateToCard) {
+          if (volume.isRemovable && resolvedUUID) {
+            saveLastRightPaneVolumeUUID(resolvedUUID);
+          } else {
+            saveLastRightPaneVolumeUUID(null);
+          }
+        }
+
+        let initialPath = volume.path;
+        let restoredExpanded: string[] | undefined;
+
+        if (resolvedUUID) {
+          const savedState = getNavigationState(resolvedUUID);
+          if (savedState?.currentPath) {
+            try {
+              const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+              if (statsResult.success && statsResult.data?.isDirectory) {
+                initialPath = savedState.currentPath;
+                restoredExpanded = savedState.expandedFolders;
+              }
+            } catch {
+              // Ignore errors restoring saved path
+            }
+          }
+        }
+
+        setCurrentRootPath(initialPath);
+        currentRootPathRef.current = initialPath;
+        setExpandedFolders(new Set());
+        setFileTree([]);
+
+        await loadDirectory(initialPath, "root");
+
+        if (restoredExpanded && restoredExpanded.length > 0) {
+          setPendingExpandedFolders(restoredExpanded);
+        }
+      } catch (error) {
+        console.error("Failed to switch volume:", error);
+        setPathDoesNotExist(true);
+      } finally {
+        setLoading(false);
+        void refreshAvailableVolumes();
+      }
+    },
+    [
+      autoNavigateToCard,
+      getNavigationState,
+      getVolumeName,
+      getVolumeUUIDForPath,
+      loadDirectory,
+      normalizeVolumePath,
+      refreshAvailableVolumes,
+      rootPath,
+      saveLastRightPaneVolumeUUID,
+    ]
+  );
 
   // Save navigation state whenever currentRootPath or expandedFolders changes
   useEffect(() => {
@@ -1177,6 +1301,7 @@ export const FilePane = ({
             setPendingExpandedFolders(savedState.expandedFolders);
           }
         }
+        void refreshAvailableVolumes();
       }
     } catch (error) {
       console.error(`${paneName} - Error ejecting card:`, error);
@@ -1570,7 +1695,46 @@ export const FilePane = ({
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2 flex-1">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{displayTitle}</h2>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm px-1 py-0.5 transition-colors"
+              >
+                <span>{displayTitle}</span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              {availableVolumes.length === 0 ? (
+                <DropdownMenuItem disabled>No volumes detected</DropdownMenuItem>
+              ) : (
+                availableVolumes.map((volume) => {
+                  const isActive = normalizeVolumePath(rootPath) === normalizeVolumePath(volume.path);
+                  return (
+                    <DropdownMenuItem
+                      key={`${volume.uuid ?? volume.path}`}
+                      disabled={isActive}
+                      onSelect={() => {
+                        if (!isActive) {
+                          void handleVolumeSelect(volume);
+                        }
+                      }}
+                      className="flex items-start gap-2 py-2"
+                    >
+                      <span className="mt-0.5 h-4 w-4 text-primary">
+                        {isActive ? <Check className="w-4 h-4" /> : null}
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">{volume.name}</span>
+                        <span className="text-xs text-muted-foreground break-all">{volume.path}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  );
+                })
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {showEjectButton && (
             <Button
               size="sm"

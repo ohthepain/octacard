@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("electron", {
       ),
     searchFiles: (query: string, searchPath?: string) =>
       ipcRenderer.invoke("fs:searchFiles", query, searchPath),
+    getAvailableVolumes: () => ipcRenderer.invoke("fs:getAvailableVolumes"),
   },
   on: {
     sdCardDetected: (callback: (cardPath: string, cardUUID: string) => void) => {

@@ -328,6 +328,69 @@ ipcMain.handle("fs:getFileStats", async (_event, filePath) => {
 ipcMain.handle("fs:getHomeDirectory", () => {
   return { success: true, data: app.getPath("home") };
 });
+ipcMain.handle("fs:getAvailableVolumes", async () => {
+  try {
+    const volumeEntries = [];
+    const seenPaths = /* @__PURE__ */ new Set();
+    const normalizePath = (inputPath) => {
+      if (process.platform === "win32") {
+        return inputPath.replace(/\\+/g, "\\").toLowerCase();
+      }
+      if (inputPath === "/") {
+        return "/";
+      }
+      return inputPath.replace(/\/+$/, "");
+    };
+    const homePath = app.getPath("home");
+    const normalizedHome = normalizePath(homePath);
+    seenPaths.add(normalizedHome);
+    volumeEntries.push({
+      path: homePath,
+      uuid: await getVolumeUUID(homePath),
+      name: "Local Files",
+      isRemovable: false,
+      isHome: true
+    });
+    const mountedVolumes = await getMountedVolumes();
+    for (const rawVolumePath of mountedVolumes) {
+      if (!rawVolumePath) continue;
+      const normalizedVolume = normalizePath(rawVolumePath);
+      if (!normalizedVolume || seenPaths.has(normalizedVolume)) {
+        continue;
+      }
+      try {
+        const stats = await fs.stat(rawVolumePath);
+        if (!stats.isDirectory()) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+      const volumeName = path.basename(rawVolumePath) || rawVolumePath;
+      if (volumeName.startsWith(".")) {
+        continue;
+      }
+      const uuid = await getVolumeUUID(rawVolumePath);
+      const removable = await isRemovableMedia(rawVolumePath);
+      volumeEntries.push({
+        path: rawVolumePath,
+        uuid,
+        name: volumeName,
+        isRemovable: removable,
+        isHome: false
+      });
+      seenPaths.add(normalizedVolume);
+    }
+    volumeEntries.sort((a, b) => {
+      if (a.isHome) return -1;
+      if (b.isHome) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return { success: true, data: volumeEntries };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
 ipcMain.handle("fs:getSDCFCards", async () => {
   try {
     const cards = await detectSDCFCards();
