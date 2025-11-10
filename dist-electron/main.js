@@ -2,7 +2,6 @@
 import { app, BrowserWindow, ipcMain, protocol } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
-import { createReadStream } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
@@ -178,7 +177,9 @@ var createWindow = () => {
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      webSecurity: false
+      // Disable web security to allow file:// URLs and custom protocols
     },
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default"
   });
@@ -551,8 +552,8 @@ ipcMain.handle("fs:getVideoFileUrl", async (_event, filePath) => {
       return { success: false, error: `File not found: ${filePath}` };
     }
     const encodedPath = encodeURIComponent(filePath);
-    const url = `octacard-video://${encodedPath.startsWith("%2F") ? "/" : ""}${encodedPath}`;
-    console.log("getVideoFileUrl - file exists, returning URL:", url, "for path:", filePath);
+    const url = `octacard-video://${encodedPath}`;
+    console.log("getVideoFileUrl - file exists, returning custom protocol URL:", url, "for path:", filePath);
     return { success: true, data: url };
   } catch (error) {
     console.error("getVideoFileUrl - error:", error, "for path:", filePath);
@@ -773,33 +774,103 @@ app.whenReady().then(() => {
     try {
       const url = new URL(request.url);
       console.log("Video protocol handler - request URL:", request.url);
-      let encodedPath = url.pathname;
+      console.log("Video protocol handler - URL parts:", {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        pathname: url.pathname,
+        href: url.href
+      });
+      let encodedPath = url.pathname || url.hostname || "";
       if (encodedPath.startsWith("/")) {
         encodedPath = encodedPath.slice(1);
+      }
+      if (!encodedPath) {
+        console.error("Video protocol handler - no encoded path found in URL");
+        return new Response(null, { status: 404 });
       }
       let filePath;
       try {
         filePath = decodeURIComponent(encodedPath);
+        console.log("Video protocol handler - decoded path:", filePath);
       } catch (decodeError) {
         console.error("Video protocol handler - decode error:", decodeError, "encoded path:", encodedPath);
         return new Response(null, { status: 404 });
       }
       filePath = path.normalize(filePath);
       console.log("Video protocol handler - decoded file path:", filePath);
+      let stats;
       try {
-        await fs.access(filePath);
+        stats = await fs.stat(filePath);
       } catch (accessError) {
         console.error("Video protocol handler - file access error:", accessError);
         return new Response(null, { status: 404 });
       }
+      const fileSize = stats.size;
+      const mimeType = getVideoMimeType(filePath);
+      const rangeHeader = request.headers.get("range");
+      if (rangeHeader) {
+        const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (rangeMatch) {
+          const start = parseInt(rangeMatch[1], 10);
+          const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
+          if (start < 0 || start >= fileSize || end < start || end >= fileSize) {
+            console.error(`Video protocol handler - invalid range: ${start}-${end}, file size: ${fileSize}`);
+            return new Response(null, {
+              status: 416,
+              headers: {
+                "Content-Range": `bytes */${fileSize}`
+              }
+            });
+          }
+          const chunkSize = end - start + 1;
+          console.log(
+            `Video protocol handler - range request: ${start}-${end} (${chunkSize} bytes) of ${fileSize} total`
+          );
+          try {
+            const fileHandle = await fs.open(filePath, "r");
+            const buffer = Buffer.alloc(chunkSize);
+            const { bytesRead } = await fileHandle.read(buffer, 0, chunkSize, start);
+            await fileHandle.close();
+            const actualBuffer = bytesRead < chunkSize ? buffer.subarray(0, bytesRead) : buffer;
+            const actualEnd = start + bytesRead - 1;
+            console.log(`Video protocol handler - read ${bytesRead} bytes, returning range ${start}-${actualEnd}`);
+            return new Response(actualBuffer, {
+              status: 206,
+              // Partial Content
+              headers: {
+                "Content-Type": mimeType,
+                "Content-Range": `bytes ${start}-${actualEnd}/${fileSize}`,
+                "Accept-Ranges": "bytes",
+                "Content-Length": bytesRead.toString()
+              }
+            });
+          } catch (readError) {
+            console.error("Video protocol handler - range read error:", readError);
+            return new Response(null, {
+              status: 416,
+              headers: {
+                "Content-Range": `bytes */${fileSize}`
+              }
+            });
+          }
+        } else {
+          console.error("Video protocol handler - invalid range header format:", rangeHeader);
+        }
+      }
+      console.log(
+        "Video protocol handler - serving full file:",
+        filePath,
+        "MIME type:",
+        mimeType,
+        `(${(fileSize / (1024 * 1024)).toFixed(1)}MB)`
+      );
       try {
-        const fileStream = createReadStream(filePath);
-        const mimeType = getVideoMimeType(filePath);
-        console.log("Video protocol handler - serving:", filePath, "MIME type:", mimeType);
-        return new Response(fileStream, {
+        const fileBuffer = await fs.readFile(filePath);
+        return new Response(fileBuffer, {
           headers: {
             "Content-Type": mimeType,
-            "Accept-Ranges": "bytes"
+            "Accept-Ranges": "bytes",
+            "Content-Length": fileSize.toString()
           }
         });
       } catch (readError) {

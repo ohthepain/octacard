@@ -241,6 +241,7 @@ const createWindow = () => {
       preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: false, // Disable web security to allow file:// URLs and custom protocols
     },
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
   });
@@ -723,7 +724,8 @@ ipcMain.handle("fs:getAudioFileBlob", async (_event, filePath: string) => {
   }
 });
 
-// IPC handler to get video file URL using custom protocol (better for cloud-synced files)
+// IPC handler to get video file URL
+// Uses file:// URL for better codec support (system codecs work with file:// URLs)
 ipcMain.handle("fs:getVideoFileUrl", async (_event, filePath: string) => {
   try {
     // Verify file exists before returning URL
@@ -734,11 +736,13 @@ ipcMain.handle("fs:getVideoFileUrl", async (_event, filePath: string) => {
       return { success: false, error: `File not found: ${filePath}` };
     }
 
-    // Return a custom protocol URL that will be handled by our protocol handler
+    // Use custom protocol URL - the protocol handler will serve the video file
+    // This approach works better with Electron's codec support
     // Encode the entire path (including leading slash for absolute paths)
     const encodedPath = encodeURIComponent(filePath);
-    const url = `octacard-video://${encodedPath.startsWith("%2F") ? "/" : ""}${encodedPath}`;
-    console.log("getVideoFileUrl - file exists, returning URL:", url, "for path:", filePath);
+    // Don't add extra slash - the encoded path already includes %2F for the leading slash
+    const url = `octacard-video://${encodedPath}`;
+    console.log("getVideoFileUrl - file exists, returning custom protocol URL:", url, "for path:", filePath);
     return { success: true, data: url };
   } catch (error) {
     console.error("getVideoFileUrl - error:", error, "for path:", filePath);
@@ -1059,20 +1063,38 @@ app.whenReady().then(() => {
 
   // Register custom protocol to serve video files with proper MIME types
   // This uses streaming for better performance with cloud-synced files
+  // Supports HTTP range requests for proper video seeking
   protocol.handle("octacard-video", async (request) => {
     try {
       // Extract the file path from the URL
       const url = new URL(request.url);
       console.log("Video protocol handler - request URL:", request.url);
+      console.log("Video protocol handler - URL parts:", {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        pathname: url.pathname,
+        href: url.href,
+      });
 
-      let encodedPath = url.pathname;
+      // Extract encoded path from URL
+      // URL format: octacard-video://encoded-path or octacard-video:///encoded-path
+      // When there's no slash, the encoded path might be in hostname
+      let encodedPath = url.pathname || url.hostname || "";
+
+      // Remove leading slash if present (it's just URL structure)
       if (encodedPath.startsWith("/")) {
         encodedPath = encodedPath.slice(1);
+      }
+
+      if (!encodedPath) {
+        console.error("Video protocol handler - no encoded path found in URL");
+        return new Response(null, { status: 404 });
       }
 
       let filePath: string;
       try {
         filePath = decodeURIComponent(encodedPath);
+        console.log("Video protocol handler - decoded path:", filePath);
       } catch (decodeError) {
         console.error("Video protocol handler - decode error:", decodeError, "encoded path:", encodedPath);
         return new Response(null, { status: 404 });
@@ -1081,25 +1103,99 @@ app.whenReady().then(() => {
       filePath = path.normalize(filePath);
       console.log("Video protocol handler - decoded file path:", filePath);
 
-      // Verify the file exists (but don't read it all - let the browser stream it)
+      // Get file stats
+      let stats;
       try {
-        await fs.access(filePath);
+        stats = await fs.stat(filePath);
       } catch (accessError) {
         console.error("Video protocol handler - file access error:", accessError);
         return new Response(null, { status: 404 });
       }
 
-      // Use createReadStream for better performance with large/cloud-synced files
-      // This allows the browser to stream the video instead of loading it all into memory
-      try {
-        const fileStream = createReadStream(filePath);
-        const mimeType = getVideoMimeType(filePath);
-        console.log("Video protocol handler - serving:", filePath, "MIME type:", mimeType);
+      const fileSize = stats.size;
+      const mimeType = getVideoMimeType(filePath);
 
-        return new Response(fileStream as any, {
+      // Check for Range request header (for video seeking)
+      const rangeHeader = request.headers.get("range");
+
+      if (rangeHeader) {
+        // Parse range header (e.g., "bytes=0-1023" or "bytes=1024-")
+        const rangeMatch = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (rangeMatch) {
+          const start = parseInt(rangeMatch[1], 10);
+          const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
+
+          // Validate range
+          if (start < 0 || start >= fileSize || end < start || end >= fileSize) {
+            console.error(`Video protocol handler - invalid range: ${start}-${end}, file size: ${fileSize}`);
+            return new Response(null, {
+              status: 416,
+              headers: {
+                "Content-Range": `bytes */${fileSize}`,
+              },
+            });
+          }
+
+          const chunkSize = end - start + 1;
+
+          console.log(
+            `Video protocol handler - range request: ${start}-${end} (${chunkSize} bytes) of ${fileSize} total`
+          );
+
+          // For range requests, read the specific chunk into a buffer
+          // This is more reliable than streams for Electron's Response API
+          try {
+            const fileHandle = await fs.open(filePath, "r");
+            const buffer = Buffer.alloc(chunkSize);
+            const { bytesRead } = await fileHandle.read(buffer, 0, chunkSize, start);
+            await fileHandle.close();
+
+            // If we read fewer bytes than requested, adjust the buffer
+            const actualBuffer = bytesRead < chunkSize ? buffer.subarray(0, bytesRead) : buffer;
+            const actualEnd = start + bytesRead - 1;
+
+            console.log(`Video protocol handler - read ${bytesRead} bytes, returning range ${start}-${actualEnd}`);
+
+            return new Response(actualBuffer, {
+              status: 206, // Partial Content
+              headers: {
+                "Content-Type": mimeType,
+                "Content-Range": `bytes ${start}-${actualEnd}/${fileSize}`,
+                "Accept-Ranges": "bytes",
+                "Content-Length": bytesRead.toString(),
+              },
+            });
+          } catch (readError) {
+            console.error("Video protocol handler - range read error:", readError);
+            return new Response(null, {
+              status: 416,
+              headers: {
+                "Content-Range": `bytes */${fileSize}`,
+              },
+            });
+          }
+        } else {
+          console.error("Video protocol handler - invalid range header format:", rangeHeader);
+        }
+      }
+
+      // No range request - read entire file into buffer (like audio handler)
+      // This ensures compatibility and allows video element to read metadata
+      console.log(
+        "Video protocol handler - serving full file:",
+        filePath,
+        "MIME type:",
+        mimeType,
+        `(${(fileSize / (1024 * 1024)).toFixed(1)}MB)`
+      );
+
+      try {
+        const fileBuffer = await fs.readFile(filePath);
+        return new Response(fileBuffer, {
           headers: {
             "Content-Type": mimeType,
             "Accept-Ranges": "bytes",
+            "Content-Length": fileSize.toString(),
           },
         });
       } catch (readError) {

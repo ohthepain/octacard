@@ -1,4 +1,4 @@
-appId: com.octacard.app
+appId: com.thisco.octacard
 productName: OctaCard
 copyright: Copyright © 2024
 
@@ -32,6 +32,7 @@ mac:
 mas:
   entitlements: build/entitlements.mas.plist
   entitlementsInherit: build/entitlements.mas.inherit.plist
+  provisioningProfile: /Users/paulwilkinson/Library/MobileDevice/Provisioning Profiles/93b46b20-fb9b-46f9-b2a8-6980da1b10cc.provisionprofile
 
 dmg:
   title: ${productName}
