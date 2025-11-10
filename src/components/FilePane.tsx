@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -1822,27 +1827,38 @@ export const FilePane = ({
               No files found matching &quot;{searchQuery}&quot;
             </div>
           ) : filteredFileSystem.length === 0 ? (
-            <div
-              className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
-                isDraggingOverRoot ? "border-primary bg-primary/10" : "border-muted text-muted-foreground"
-              }`}
-            >
-              {pathDoesNotExist ? (
-                <div className="space-y-3">
-                  <div className="text-amber-600 dark:text-amber-500">
-                    Directory does not exist: {currentRootPath || rootPath}
+            <>
+              {/* Render file tree with empty array - renderFileTree will add parent link if needed */}
+              {!searchQuery && renderFileTree([])}
+              <div
+                className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
+                  isDraggingOverRoot ? "border-primary bg-primary/10" : "border-muted text-muted-foreground"
+                }`}
+              >
+                {pathDoesNotExist ? (
+                  <div className="space-y-3">
+                    <div className="text-amber-600 dark:text-amber-500">
+                      Directory does not exist: {currentRootPath || rootPath}
+                    </div>
+                    {currentRootPath && currentRootPath !== rootPath ? (
+                      <Button size="sm" variant="outline" onClick={navigateToParent} className="gap-2">
+                        <ArrowUp className="w-4 h-4" />
+                        Go to Parent Folder
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
+                        <ArrowUp className="w-4 h-4" />
+                        Navigate to Nearest Existing Parent
+                      </Button>
+                    )}
                   </div>
-                  <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
-                    <ArrowUp className="w-4 h-4" />
-                    Navigate to Nearest Existing Parent
-                  </Button>
-                </div>
-              ) : searchQuery ? (
-                <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-              ) : (
-                <div className="text-muted-foreground">No files found</div>
-              )}
-            </div>
+                ) : searchQuery ? (
+                  <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
+                ) : (
+                  <div className="text-muted-foreground">No files found</div>
+                )}
+              </div>
+            </>
           ) : searchQuery ? (
             renderFileTree(searchResultsAsNodes)
           ) : (

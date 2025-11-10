@@ -1,4 +1,4 @@
-# Welcome to your Lovable project
+# Welcome to Octacard
 
 ## Project info
 
@@ -74,6 +74,7 @@ npm run dev:electron
 ```
 
 This will:
+
 1. Start the Vite dev server on http://localhost:8080
 2. Wait for the server to be ready
 3. Launch Electron with hot-reload support
@@ -91,6 +92,7 @@ npm run build:electron
 ```
 
 The built applications will be in the `release` directory:
+
 - **macOS**: `.dmg` file
 - **Windows**: `.exe` installer
 - **Linux**: `.AppImage` file

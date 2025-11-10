@@ -49,18 +49,21 @@ export const VideoPreview = ({ filePath, fileName, onClose }: VideoPreviewProps)
           }
         }
 
-        // Use URL approach for better performance with cloud-synced files
-        // Falls back to blob if URL fails
-        let result = await window.electron.fs.getVideoFileUrl(filePath);
+        // For video files, use blob approach for better codec support
+        // Custom protocols don't work well with Electron's video codec support
+        // Blob URLs work better for video playback
+        console.log("VideoPreview - Using blob approach for video file");
+        let result = await window.electron.fs.getVideoFileBlob(filePath);
         
+        // Fallback to URL if blob fails (for very large files)
         if (!result.success || !result.data) {
-          // Fallback to blob if URL approach fails
-          console.log("VideoPreview - URL approach failed, trying blob approach");
-          result = await window.electron.fs.getVideoFileBlob(filePath);
+          console.log("VideoPreview - Blob approach failed, trying URL approach");
+          result = await window.electron.fs.getVideoFileUrl(filePath);
         }
 
         if (result.success && result.data) {
           console.log("VideoPreview - Got video URL/blob for file:", filePath);
+          console.log("VideoPreview - Video URL:", result.data);
           setVideoUrl(result.data);
           setErrorMessage("");
         } else {
@@ -122,10 +125,39 @@ export const VideoPreview = ({ filePath, fileName, onClose }: VideoPreviewProps)
 
     const handleError = () => {
       const error = video.error;
-      const errorMessage = error
-        ? `Failed to load video: ${error.message || "Unknown error"}`
-        : "Failed to load video";
-      console.error("Video error:", error);
+      let errorMessage = "Failed to load video";
+      
+      if (error) {
+        // Map error codes to user-friendly messages
+        const errorMessages: Record<number, string> = {
+          1: "Video loading aborted",
+          2: "Network error while loading video",
+          3: "Video decoding error - file may be corrupted or unsupported format",
+          4: "Video format not supported - codec may not be available",
+        };
+        
+        errorMessage = errorMessages[error.code] || error.message || `Video error (code: ${error.code})`;
+        console.error("Video error:", {
+          code: error.code,
+          message: error.message,
+          videoSrc: video.src,
+          videoNetworkState: video.networkState,
+          videoReadyState: video.readyState,
+          MEDIA_ERR_ABORTED: 1,
+          MEDIA_ERR_NETWORK: 2,
+          MEDIA_ERR_DECODE: 3,
+          MEDIA_ERR_SRC_NOT_SUPPORTED: 4,
+        });
+      } else {
+        console.error("Video error event fired but no error object available");
+        console.error("Video state:", {
+          src: video.src,
+          networkState: video.networkState,
+          readyState: video.readyState,
+          error: video.error,
+        });
+      }
+      
       setErrorMessage(errorMessage);
       setIsLoading(false);
     };
@@ -263,6 +295,7 @@ export const VideoPreview = ({ filePath, fileName, onClose }: VideoPreviewProps)
             src={videoUrl}
             className="w-full h-full"
             playsInline
+            preload="metadata"
           />
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center">
