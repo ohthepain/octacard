@@ -193,10 +193,11 @@ var createWindow = () => {
 };
 ipcMain.handle("fs:readDirectory", async (_event, dirPath) => {
   try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const realPath = await fs.realpath(dirPath);
+    const entries = await fs.readdir(realPath, { withFileTypes: true });
     const result = await Promise.all(
       entries.map(async (entry) => {
-        const fullPath = path.join(dirPath, entry.name);
+        const fullPath = path.join(realPath, entry.name);
         const stats = await fs.stat(fullPath);
         return {
           name: entry.name,
@@ -314,7 +315,8 @@ ipcMain.handle("fs:copyFolder", async (_event, sourcePath, destPath) => {
 });
 ipcMain.handle("fs:getFileStats", async (_event, filePath) => {
   try {
-    const stats = await fs.stat(filePath);
+    const realPath = await fs.realpath(filePath);
+    const stats = await fs.stat(realPath);
     return {
       success: true,
       data: {

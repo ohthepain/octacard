@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { AudioPreview } from "@/components/AudioPreview";
@@ -146,6 +147,14 @@ export const FilePane = ({
   const [selectedVideoFile, setSelectedVideoFile] = useState<{ path: string; name: string } | null>(null);
   const [displayTitle, setDisplayTitle] = useState<string>(title);
   const [availableVolumes, setAvailableVolumes] = useState<VolumeOption[]>([]);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number>(-1);
+  const [copyProgress, setCopyProgress] = useState<{
+    isVisible: boolean;
+    current: number;
+    total: number;
+    currentFile: string;
+  } | null>(null);
   const currentRootPathRef = useRef<string>("");
   const rootPathRef = useRef<string>("");
   const fileTreeRef = useRef<FileNode[]>([]);
@@ -156,6 +165,83 @@ export const FilePane = ({
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
+
+  // Helper function to recursively count files in a folder
+  const countFilesRecursively = useCallback(async (folderPath: string): Promise<number> => {
+    if (!window.electron) return 0;
+    try {
+      const result = await window.electron.fs.readDirectory(folderPath);
+      if (!result.success || !result.data) return 0;
+
+      let count = 0;
+      for (const entry of result.data) {
+        if (entry.type === "file") {
+          count++;
+        } else if (entry.type === "folder") {
+          count += await countFilesRecursively(entry.path);
+        }
+      }
+      return count;
+    } catch (error) {
+      console.error("Error counting files:", error);
+      return 0;
+    }
+  }, []);
+
+  // Helper function to get all selected nodes from the file tree
+  const getSelectedNodes = useCallback(
+    (nodes: FileNode[]): FileNode[] => {
+      const selected: FileNode[] = [];
+      const findNodes = (nodeList: FileNode[]) => {
+        for (const node of nodeList) {
+          if (selectedItems.has(node.id) && node.id !== "parent-link") {
+            selected.push(node);
+          }
+          if (node.children) {
+            findNodes(node.children);
+          }
+        }
+      };
+      findNodes(nodes);
+      return selected;
+    },
+    [selectedItems]
+  );
+
+  // Helper function to get all files from selected items (including files in folders)
+  const getAllFilesFromSelection = useCallback(
+    async (selectedNodes: FileNode[]): Promise<Array<{ path: string; name: string; type: "file" | "folder" }>> => {
+      const files: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
+
+      for (const node of selectedNodes) {
+        if (node.type === "file") {
+          files.push({ path: node.path, name: node.name, type: "file" });
+        } else if (node.type === "folder") {
+          // Recursively get all files in the folder
+          const getAllFilesInFolder = async (folderPath: string): Promise<void> => {
+            if (!window.electron) return;
+            try {
+              const result = await window.electron.fs.readDirectory(folderPath);
+              if (!result.success || !result.data) return;
+
+              for (const entry of result.data) {
+                if (entry.type === "file") {
+                  files.push({ path: entry.path, name: entry.name, type: "file" });
+                } else if (entry.type === "folder") {
+                  await getAllFilesInFolder(entry.path);
+                }
+              }
+            } catch (error) {
+              console.error("Error reading folder:", error);
+            }
+          };
+          await getAllFilesInFolder(node.path);
+        }
+      }
+      return files;
+    },
+    []
+  );
 
   // Helper functions for storing/retrieving last right pane volume UUID
   const getLastRightPaneVolumeUUID = useCallback((): string | null => {
@@ -578,20 +664,32 @@ export const FilePane = ({
             console.log(`${paneName} - Checking saved state for card UUID:`, cardUUID, "savedState:", savedState);
 
             if (savedState && savedState.currentPath) {
-              // Verify the saved path still exists and is accessible
+              // Verify the saved path still exists, is accessible, AND is on the same volume as the card
               try {
                 console.log(`${paneName} - Verifying saved path exists:`, savedState.currentPath);
                 const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
                 console.log(`${paneName} - Stats result:`, statsResult);
 
                 if (statsResult.success && statsResult.data?.isDirectory) {
-                  initialPath = savedState.currentPath;
-                  console.log(
-                    `${paneName} - Restored navigation state for card UUID:`,
-                    cardUUID,
-                    "to:",
-                    savedState.currentPath
-                  );
+                  // Verify the saved path is on the same volume as the card
+                  const savedPathVolumeUUID = await getVolumeUUIDForPath(savedState.currentPath);
+                  console.log(`${paneName} - Saved path volume UUID:`, savedPathVolumeUUID, "Card UUID:", cardUUID);
+
+                  if (savedPathVolumeUUID === cardUUID) {
+                    // Path is on the correct volume (SD card)
+                    initialPath = savedState.currentPath;
+                    console.log(
+                      `${paneName} - Restored navigation state for card UUID:`,
+                      cardUUID,
+                      "to:",
+                      savedState.currentPath
+                    );
+                  } else {
+                    console.log(
+                      `${paneName} - Saved path is on different volume (${savedPathVolumeUUID} vs ${cardUUID}), using card root:`,
+                      cardPath
+                    );
+                  }
                 } else {
                   console.log(
                     `${paneName} - Saved path exists but is not a directory (success: ${statsResult.success}), using card root:`,
@@ -752,18 +850,29 @@ export const FilePane = ({
         // Try to restore saved navigation state
         let initialPath = cardPath;
         const savedState = getNavigationState(cardUUID);
-        if (savedState) {
-          // Verify the saved path still exists and is accessible
+        if (savedState && savedState.currentPath) {
+          // Verify the saved path still exists, is accessible, AND is on the same volume as the card
           try {
             const statsResult = await window.electron?.fs.getFileStats(savedState.currentPath);
             if (statsResult?.success && statsResult.data?.isDirectory) {
-              initialPath = savedState.currentPath;
-              console.log(
-                `${paneName} - Restored navigation state for card UUID:`,
-                cardUUID,
-                "to:",
-                savedState.currentPath
-              );
+              // Verify the saved path is on the same volume as the card
+              const savedPathVolumeUUID = await getVolumeUUIDForPath(savedState.currentPath);
+              console.log(`${paneName} - Saved path volume UUID:`, savedPathVolumeUUID, "Card UUID:", cardUUID);
+
+              if (savedPathVolumeUUID === cardUUID) {
+                // Path is on the correct volume (SD card)
+                initialPath = savedState.currentPath;
+                console.log(
+                  `${paneName} - Restored navigation state for card UUID:`,
+                  cardUUID,
+                  "to:",
+                  savedState.currentPath
+                );
+              } else {
+                console.log(
+                  `${paneName} - Saved path is on different volume (${savedPathVolumeUUID} vs ${cardUUID}), using card root`
+                );
+              }
             } else {
               console.log(`${paneName} - Saved path exists but is not a directory, using card root`);
             }
@@ -785,7 +894,6 @@ export const FilePane = ({
           setPendingExpandedFolders(savedState.expandedFolders);
         }
 
-        void refreshAvailableVolumes();
         void refreshAvailableVolumes();
       };
 
@@ -1050,8 +1158,25 @@ export const FilePane = ({
   };
 
   const handleDragStart = (e: React.DragEvent, node: FileNode) => {
-    e.dataTransfer.setData("sourcePath", node.path);
-    e.dataTransfer.setData("sourceType", node.type);
+    // Check if we have multiple selected items
+    const selectedNodes = getSelectedNodes(fileTree);
+
+    // If multiple items are selected, include all of them in the drag
+    if (selectedNodes.length > 1) {
+      // Store all selected items as JSON in drag data
+      const selectedItemsData = selectedNodes.map((n) => ({
+        path: n.path,
+        name: n.name,
+        type: n.type,
+      }));
+      e.dataTransfer.setData("multipleItems", JSON.stringify(selectedItemsData));
+      e.dataTransfer.setData("isMultiple", "true");
+    } else {
+      // Single item drag
+      e.dataTransfer.setData("sourcePath", node.path);
+      e.dataTransfer.setData("sourceType", node.type);
+      e.dataTransfer.setData("isMultiple", "false");
+    }
     e.dataTransfer.effectAllowed = "copy";
   };
 
@@ -1099,6 +1224,191 @@ export const FilePane = ({
     }
   };
 
+  // Copy multiple items with progress tracking
+  const copyMultipleItems = useCallback(
+    async (
+      items: Array<{ path: string; name: string; type: "file" | "folder" }>,
+      destinationPath: string,
+      destinationNode?: FileNode
+    ) => {
+      if (!window.electron) return;
+
+      // Count total files for progress tracking
+      let totalFiles = 0;
+      for (const item of items) {
+        if (item.type === "file") {
+          totalFiles++;
+        } else {
+          totalFiles += await countFilesRecursively(item.path);
+        }
+      }
+
+      // Only show progress for multiple files
+      const showProgress = totalFiles > 1;
+      if (showProgress) {
+        setCopyProgress({
+          isVisible: true,
+          current: 0,
+          total: totalFiles,
+          currentFile: "",
+        });
+      }
+
+      let currentFileIndex = 0;
+      const errors: Array<{ name: string; error: string }> = [];
+
+      // Helper to copy folder recursively with progress tracking
+      const copyFolderWithProgress = async (sourceFolder: string, destFolder: string): Promise<void> => {
+        if (!window.electron) return;
+        try {
+          const result = await window.electron.fs.readDirectory(sourceFolder);
+          if (!result.success || !result.data) return;
+
+          await window.electron.fs.createFolder(destFolder);
+
+          for (const entry of result.data) {
+            const entryDestPath = joinPath(destFolder, entry.name);
+            if (entry.type === "file") {
+              currentFileIndex++;
+              if (showProgress) {
+                setCopyProgress({
+                  isVisible: true,
+                  current: currentFileIndex,
+                  total: totalFiles,
+                  currentFile: entry.name,
+                });
+              }
+
+              const isFromDifferentPane = rootPath ? !entry.path.startsWith(rootPath) : false;
+              const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(entry.path);
+
+              let finalDestPath = entryDestPath;
+              if (convertFiles && isFromDifferentPane && isAudioFile && fileFormat === "WAV") {
+                finalDestPath = entryDestPath.replace(/\.\w+$/i, ".wav");
+              }
+
+              const needsConversion =
+                convertFiles &&
+                isFromDifferentPane &&
+                isAudioFile &&
+                (fileFormat === "WAV" || sampleRate !== "dont-change" || sampleDepth === "16-bit" || mono || normalize);
+
+              let copyResult;
+              if (needsConversion) {
+                copyResult = await window.electron.fs.convertAndCopyFile(
+                  entry.path,
+                  finalDestPath,
+                  sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
+                  sampleDepth,
+                  fileFormat,
+                  mono,
+                  normalize
+                );
+              } else {
+                copyResult = await window.electron.fs.copyFile(entry.path, entryDestPath);
+              }
+
+              if (!copyResult.success) {
+                errors.push({ name: entry.name, error: copyResult.error || "Unknown error" });
+              } else {
+                onFileTransfer?.(entry.path, destinationPath);
+              }
+            } else if (entry.type === "folder") {
+              await copyFolderWithProgress(entry.path, entryDestPath);
+            }
+          }
+        } catch (error) {
+          errors.push({ name: basename(sourceFolder), error: String(error) });
+        }
+      };
+
+      for (const item of items) {
+        const fileName = basename(item.path);
+        const destFilePath = joinPath(destinationPath, fileName);
+
+        if (item.type === "file") {
+          currentFileIndex++;
+          if (showProgress) {
+            setCopyProgress({
+              isVisible: true,
+              current: currentFileIndex,
+              total: totalFiles,
+              currentFile: item.name,
+            });
+          }
+
+          // Check if file conversion is needed
+          const isFromDifferentPane = rootPath ? !item.path.startsWith(rootPath) : false;
+          const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
+
+          let finalDestFilePath = destFilePath;
+          if (convertFiles && isFromDifferentPane && isAudioFile && fileFormat === "WAV") {
+            finalDestFilePath = destFilePath.replace(/\.\w+$/i, ".wav");
+          }
+
+          const needsConversion =
+            convertFiles &&
+            isFromDifferentPane &&
+            isAudioFile &&
+            (fileFormat === "WAV" || sampleRate !== "dont-change" || sampleDepth === "16-bit" || mono || normalize);
+
+          let result;
+          if (needsConversion) {
+            result = await window.electron.fs.convertAndCopyFile(
+              item.path,
+              finalDestFilePath,
+              sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
+              sampleDepth,
+              fileFormat,
+              mono,
+              normalize
+            );
+          } else {
+            result = await window.electron.fs.copyFile(item.path, destFilePath);
+          }
+
+          if (!result.success) {
+            errors.push({ name: item.name, error: result.error || "Unknown error" });
+          } else {
+            onFileTransfer?.(item.path, destinationPath);
+          }
+        } else if (item.type === "folder") {
+          // Copy folder recursively with progress tracking
+          await copyFolderWithProgress(item.path, destFilePath);
+        }
+      }
+
+      // Hide progress dialog
+      if (showProgress) {
+        setCopyProgress(null);
+      }
+
+      // Refresh the destination folder
+      const nodeId = destinationNode ? destinationNode.id : "root";
+      await loadDirectory(destinationPath, nodeId);
+
+      // Show errors if any
+      if (errors.length > 0) {
+        const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
+          .map((e) => `- ${e.name}: ${e.error}`)
+          .join("\n")}`;
+        alert(errorMessage);
+      }
+    },
+    [
+      countFilesRecursively,
+      convertFiles,
+      fileFormat,
+      loadDirectory,
+      mono,
+      normalize,
+      onFileTransfer,
+      rootPath,
+      sampleDepth,
+      sampleRate,
+    ]
+  );
+
   const handleDrop = async (e: React.DragEvent, destinationNode?: FileNode) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1119,6 +1429,37 @@ export const FilePane = ({
       return;
     }
 
+    // Check if this is a multiple item drag (from drag data)
+    const isMultiple = e.dataTransfer.getData("isMultiple") === "true";
+    if (isMultiple) {
+      const multipleItemsData = e.dataTransfer.getData("multipleItems");
+      if (multipleItemsData) {
+        try {
+          const items: Array<{ path: string; name: string; type: "file" | "folder" }> = JSON.parse(multipleItemsData);
+          await copyMultipleItems(items, destinationPath, destinationNode);
+          setSelectedItems(new Set()); // Clear selection after copy
+          return;
+        } catch (error) {
+          console.error("Error parsing multiple items data:", error);
+        }
+      }
+    }
+
+    // Check if we have selected items to copy (fallback for when selection state is preserved)
+    const selectedNodes = getSelectedNodes(fileTree);
+    if (selectedNodes.length > 0) {
+      // Convert selected nodes to items array
+      const items: Array<{ path: string; name: string; type: "file" | "folder" }> = selectedNodes.map((node) => ({
+        path: node.path,
+        name: node.name,
+        type: node.type,
+      }));
+      await copyMultipleItems(items, destinationPath, destinationNode);
+      setSelectedItems(new Set()); // Clear selection after copy
+      return;
+    }
+
+    // Fallback to drag-and-drop behavior (single item)
     const sourcePath = e.dataTransfer.getData("sourcePath");
     const sourceType = e.dataTransfer.getData("sourceType");
 
@@ -1196,57 +1537,81 @@ export const FilePane = ({
     }
   };
 
-  const handleDelete = async (node: FileNode) => {
+  const handleDelete = async (node?: FileNode) => {
     if (!window.electron) return;
 
-    const itemType = node.type === "file" ? "file" : "folder";
-    const confirmMessage = `Are you sure you want to delete ${itemType} "${node.name}"?`;
+    // Check if we have multiple selected items
+    const selectedNodes = node ? [node] : getSelectedNodes(fileTree);
+
+    if (selectedNodes.length === 0) return;
+
+    const itemCount = selectedNodes.length;
+    const itemType = itemCount === 1 ? (selectedNodes[0].type === "file" ? "file" : "folder") : "items";
+    const confirmMessage =
+      itemCount === 1
+        ? `Are you sure you want to delete ${itemType} "${selectedNodes[0].name}"?`
+        : `Are you sure you want to delete ${itemCount} ${itemType}?`;
 
     if (!confirm(confirmMessage)) {
       return;
     }
 
-    try {
-      let result;
-      if (node.type === "file") {
-        result = await window.electron.fs.deleteFile(node.path);
-      } else {
-        result = await window.electron.fs.deleteFolder(node.path);
-      }
+    const errors: Array<{ name: string; error: string }> = [];
+    const deletedPaths = new Set<string>();
 
-      if (result.success) {
-        // Find parent directory to refresh
-        const parentPath = node.path.split("/").slice(0, -1).join("/");
-        if (parentPath) {
-          // Find the parent node ID
-          const findParentNodeId = (nodes: FileNode[], targetPath: string): string | null => {
-            for (const n of nodes) {
-              if (n.path === targetPath) {
-                return n.id;
-              }
-              if (n.children) {
-                const found = findParentNodeId(n.children, targetPath);
-                if (found) return found;
-              }
-            }
-            return null;
-          };
-
-          const parentNodeId = findParentNodeId(fileTree, parentPath) || "root";
-          await loadDirectory(parentPath, parentNodeId);
+    for (const nodeToDelete of selectedNodes) {
+      try {
+        let result;
+        if (nodeToDelete.type === "file") {
+          result = await window.electron.fs.deleteFile(nodeToDelete.path);
         } else {
-          // If it's the root, reload the root
-          if (rootPath) {
-            await loadDirectory(rootPath, "root");
-          }
+          result = await window.electron.fs.deleteFolder(nodeToDelete.path);
         }
-      } else {
-        console.error(`Failed to delete ${itemType}:`, result.error);
-        alert(`Failed to delete ${itemType}: ${result.error}`);
+
+        if (result.success) {
+          deletedPaths.add(nodeToDelete.path);
+          // Find parent directory to refresh
+          const parentPath = nodeToDelete.path.split("/").slice(0, -1).join("/");
+          if (parentPath && !deletedPaths.has(parentPath)) {
+            // Find the parent node ID
+            const findParentNodeId = (nodes: FileNode[], targetPath: string): string | null => {
+              for (const n of nodes) {
+                if (n.path === targetPath) {
+                  return n.id;
+                }
+                if (n.children) {
+                  const found = findParentNodeId(n.children, targetPath);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+
+            const parentNodeId = findParentNodeId(fileTree, parentPath) || "root";
+            await loadDirectory(parentPath, parentNodeId);
+          } else {
+            // If it's the root, reload the root
+            if (rootPath) {
+              await loadDirectory(rootPath, "root");
+            }
+          }
+        } else {
+          errors.push({ name: nodeToDelete.name, error: result.error || "Unknown error" });
+        }
+      } catch (error) {
+        errors.push({ name: nodeToDelete.name, error: String(error) });
       }
-    } catch (error) {
-      console.error(`Error deleting ${itemType}:`, error);
-      alert(`Error deleting ${itemType}: ${error}`);
+    }
+
+    // Clear selection after deletion
+    setSelectedItems(new Set());
+
+    // Show errors if any
+    if (errors.length > 0) {
+      const errorMessage = `Failed to delete ${errors.length} item(s):\n${errors
+        .map((e) => `- ${e.name}: ${e.error}`)
+        .join("\n")}`;
+      alert(errorMessage);
     }
   };
 
@@ -1442,6 +1807,23 @@ export const FilePane = ({
     }, []);
   };
 
+  // Helper to get flat list of nodes for shift-click range selection
+  const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
+    const flat: FileNode[] = [];
+    const traverse = (nodeList: FileNode[]) => {
+      for (const node of nodeList) {
+        if (node.id !== "parent-link") {
+          flat.push(node);
+        }
+        if (node.children) {
+          traverse(node.children);
+        }
+      }
+    };
+    traverse(nodes);
+    return flat;
+  }, []);
+
   const renderFileTree = (nodes: FileNode[], depth: number = 0): React.ReactNode => {
     // Add ".." entry if not at root
     const showParentLink = currentRootPath && currentRootPath !== rootPath;
@@ -1464,11 +1846,14 @@ export const FilePane = ({
           ]
         : nodes;
 
-    return itemsToRender.map((node) => {
+    const flatNodes = depth === 0 ? getFlatNodeList(itemsToRender.filter((n) => n.id !== "parent-link")) : [];
+
+    return itemsToRender.map((node, index) => {
       const isExpanded = expandedFolders.has(node.id);
       const hasChildren = node.children && node.children.length > 0;
       const isDragOver = dragOverPath === node.path;
       const isParentLink = node.id === "parent-link";
+      const isSelected = selectedItems.has(node.id);
 
       const handleRevealInFinder = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -1505,20 +1890,66 @@ export const FilePane = ({
                     handleDrop(e, node);
                   }
                 }}
-                className={`flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
+                className={`relative flex items-center gap-2 py-1.5 px-2 rounded group transition-colors ${
                   node.type === "folder" || (node.type === "file" && (isAudioFile(node.name) || isVideoFile(node.name)))
                     ? "cursor-pointer"
                     : ""
                 } ${
                   isDragOver && node.type === "folder" && !isParentLink
                     ? "bg-primary/20 border border-primary"
+                    : isSelected && !isParentLink
+                    ? "bg-primary/10 border border-primary/30"
                     : "hover:bg-secondary/50"
                 }`}
                 style={{ paddingLeft: `${depth * 16 + 8}px` }}
-                onClick={() => {
+                onClick={(e) => {
                   if (isParentLink) {
                     navigateToParent();
-                  } else if (node.type === "folder") {
+                    return;
+                  }
+
+                  // Handle multi-select
+                  if (e.ctrlKey || e.metaKey) {
+                    // Ctrl/Cmd+click: toggle selection
+                    e.stopPropagation();
+                    setSelectedItems((prev) => {
+                      const newSet = new Set(prev);
+                      if (newSet.has(node.id)) {
+                        newSet.delete(node.id);
+                      } else {
+                        newSet.add(node.id);
+                      }
+                      return newSet;
+                    });
+                    setLastSelectedIndex(flatNodes.findIndex((n) => n.id === node.id));
+                    return;
+                  }
+
+                  if (e.shiftKey && lastSelectedIndex >= 0 && depth === 0) {
+                    // Shift+click: select range
+                    e.stopPropagation();
+                    const currentIndex = flatNodes.findIndex((n) => n.id === node.id);
+                    if (currentIndex >= 0) {
+                      const start = Math.min(lastSelectedIndex, currentIndex);
+                      const end = Math.max(lastSelectedIndex, currentIndex);
+                      setSelectedItems((prev) => {
+                        const newSet = new Set(prev);
+                        for (let i = start; i <= end; i++) {
+                          if (flatNodes[i] && flatNodes[i].id !== "parent-link") {
+                            newSet.add(flatNodes[i].id);
+                          }
+                        }
+                        return newSet;
+                      });
+                    }
+                    return;
+                  }
+
+                  // Single click: always clear previous selection and select this item
+                  setSelectedItems(new Set([node.id]));
+                  setLastSelectedIndex(flatNodes.findIndex((n) => n.id === node.id));
+
+                  if (node.type === "folder") {
                     // If this is a search result folder, navigate to it and clear search
                     if (searchQuery && node.id.startsWith("search-folder-")) {
                       setSearchQuery("");
@@ -1583,6 +2014,7 @@ export const FilePane = ({
                     <Trash2 className="w-3 h-3" />
                   </Button>
                 )}
+                {isSelected && !isParentLink && <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />}
               </div>
             </ContextMenuTrigger>
             {!isParentLink && (
@@ -1708,7 +2140,7 @@ export const FilePane = ({
   const filteredFileSystem = filterNodes(fileTree, searchQuery);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-w-0">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2 flex-1">
@@ -1804,6 +2236,13 @@ export const FilePane = ({
             if (!dragOverPath) {
               e.stopPropagation();
               handleDrop(e);
+            }
+          }}
+          onClick={(e) => {
+            // Clear selection when clicking on empty space (not on a file/folder item)
+            const target = e.target as HTMLElement;
+            if (target === e.currentTarget || (!target.closest('[draggable="true"]') && !target.closest("button"))) {
+              setSelectedItems(new Set());
             }
           }}
         >
@@ -1932,6 +2371,33 @@ export const FilePane = ({
           fileName={selectedVideoFile.name}
           onClose={() => setSelectedVideoFile(null)}
         />
+      )}
+
+      {/* Copy Progress Dialog */}
+      {copyProgress && copyProgress.isVisible && (
+        <Dialog open={true} onOpenChange={() => {}}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Copying Files</DialogTitle>
+              <DialogDescription>
+                {copyProgress.currentFile && (
+                  <div className="mt-2 text-sm text-muted-foreground truncate">{copyProgress.currentFile}</div>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Progress</span>
+                  <span className="font-medium">
+                    {copyProgress.current} of {copyProgress.total} files
+                  </span>
+                </div>
+                <Progress value={(copyProgress.current / copyProgress.total) * 100} className="h-2" />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

@@ -33,6 +33,11 @@ mas:
   entitlements: build/entitlements.mas.plist
   entitlementsInherit: build/entitlements.mas.inherit.plist
   provisioningProfile: /Users/paulwilkinson/Library/MobileDevice/Provisioning Profiles/93b46b20-fb9b-46f9-b2a8-6980da1b10cc.provisionprofile
+  # Ensure helper apps are properly signed and consistent
+  helperBundleId: ${appId}.helper
+  helperGPUBundleId: ${appId}.helper.GPU
+  helperPluginBundleId: ${appId}.helper.Plugin
+  helperRendererBundleId: ${appId}.helper.Renderer
 
 dmg:
   title: ${productName}

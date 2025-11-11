@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Play,
   Pause,
@@ -34,6 +34,9 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const timelineRef = useRef<TimelinePlugin | null>(null);
   const minimapRef = useRef<MinimapPlugin | null>(null);
+  const minimapContainerRef = useRef<HTMLDivElement | null>(null);
+  const isInitializingRef = useRef<boolean>(false);
+  const currentAudioUrlRef = useRef<string>("");
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -46,6 +49,60 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
   const [playbackRate, setPlaybackRate] = useState(1);
   const [normalize, setNormalize] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+
+  // Drag state for zoom and navigation
+  const dragStateRef = useRef<{
+    isDragging: boolean;
+    startY: number;
+    startX: number;
+    startZoom: number;
+    startTime: number;
+    isMinimapDrag: boolean;
+    hasMoved: boolean; // Track if mouse has moved enough to consider it a drag
+  } | null>(null);
+
+  // Handle mouse down on minimap (for navigation)
+  const handleMinimapMouseDown = useCallback((e: MouseEvent) => {
+    if (!wavesurferRef.current || !minimapContainerRef.current || isLoading) return;
+    const rect = minimapContainerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const width = rect.width;
+    
+    // Calculate time based on click position
+    const currentDuration = wavesurferRef.current.getDuration();
+    if (!currentDuration) return;
+    
+    const clickTime = (x / width) * currentDuration;
+    
+    dragStateRef.current = {
+      isDragging: false, // Will be set to true once movement threshold is reached
+      startY: e.clientY,
+      startX: e.clientX,
+      startZoom: zoom,
+      startTime: clickTime,
+      isMinimapDrag: true,
+      hasMoved: false,
+    };
+    
+    // Seek to clicked position immediately (click behavior)
+    wavesurferRef.current.seekTo(clickTime / currentDuration);
+    e.preventDefault();
+  }, [zoom, isLoading]);
+
+  // Handle mouse down on waveform (for zoom)
+  const handleWaveformMouseDown = (e: React.MouseEvent) => {
+    if (!wavesurferRef.current || isLoading) return;
+    dragStateRef.current = {
+      isDragging: false, // Will be set to true once movement threshold is reached
+      startY: e.clientY,
+      startX: e.clientX,
+      startZoom: zoom,
+      startTime: wavesurferRef.current.getCurrentTime(),
+      isMinimapDrag: false,
+      hasMoved: false,
+    };
+    // Don't prevent default - allow normal click behavior unless it becomes a drag
+  };
 
   // Get audio file as blob data URL for WaveSurfer
   // WaveSurfer needs to fetch the audio file to generate waveform, so we use blob data URLs
@@ -100,10 +157,24 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
       // Cleanup: stop and destroy previous instance when filePath changes
       if (wavesurferRef.current) {
         try {
-          wavesurferRef.current.pause();
-          wavesurferRef.current.destroy();
+          try {
+            wavesurferRef.current.pause();
+          } catch (e) {
+            // Ignore errors when pausing
+          }
+          try {
+            wavesurferRef.current.destroy();
+          } catch (error) {
+            // Ignore AbortError - it's expected when switching files
+            if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+              console.error("Error cleaning up WaveSurfer:", error);
+            }
+          }
         } catch (error) {
-          console.error("Error cleaning up WaveSurfer:", error);
+          // Ignore AbortError during cleanup
+          if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+            console.error("Error cleaning up WaveSurfer:", error);
+          }
         }
         wavesurferRef.current = null;
         regionsRef.current = null;
@@ -119,133 +190,278 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
   // Initialize WaveSurfer
   useEffect(() => {
     if (!waveformRef.current || !audioUrl) return;
-
-    // Clean up previous instance
-    if (wavesurferRef.current) {
-      try {
-        wavesurferRef.current.pause();
-        wavesurferRef.current.destroy();
-      } catch (error) {
-        console.error("Error destroying previous WaveSurfer:", error);
-      }
+    
+    // Prevent multiple simultaneous initializations
+    if (isInitializingRef.current) {
+      console.log("WaveSurfer initialization already in progress, skipping...");
+      return;
+    }
+    
+    // Prevent re-initializing with the same audioUrl
+    if (currentAudioUrlRef.current === audioUrl && wavesurferRef.current) {
+      console.log("WaveSurfer already initialized with this audioUrl, skipping...");
+      return;
     }
 
-    setIsLoading(true);
-    setIsPlaying(false);
-    setCurrentTime(0);
-    setDuration(0);
+    let cancelled = false;
+    isInitializingRef.current = true;
+    currentAudioUrlRef.current = audioUrl;
 
-    // Determine backend based on file extension
-    // AIF files may not work well with WebAudio backend, so use MediaElement for them
-    // For blob data URLs, WebAudio backend works fine and provides better waveform rendering
-    const fileExtension = fileName.toLowerCase().split(".").pop();
-    const useMediaElementBackend = fileExtension === "aif" || fileExtension === "aiff";
+    // Clean up previous instance and wait for it to complete
+    const cleanupPrevious = async () => {
+      if (wavesurferRef.current) {
+        try {
+          const prevInstance = wavesurferRef.current;
+          wavesurferRef.current = null; // Clear ref immediately to prevent race conditions
+          
+          try {
+            prevInstance.pause();
+          } catch (e) {
+            // Ignore pause errors
+          }
+          
+          try {
+            // Destroy and wait a bit for cleanup
+            prevInstance.destroy();
+            // Give time for audio context to close
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          } catch (error) {
+            // Ignore AbortError during cleanup
+            if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+              console.error("Error destroying previous WaveSurfer:", error);
+            }
+          }
+        } catch (error) {
+          // Ignore cleanup errors
+          if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+            console.error("Error in cleanup:", error);
+          }
+        }
+      }
+    };
 
-    // Create WaveSurfer instance with Ableton Live color scheme
-    const wavesurfer = WaveSurfer.create({
-      container: waveformRef.current,
-      waveColor: "#E0E0E0", // Light grey/white waveform (Ableton style)
-      progressColor: "#FF764D", // Orange progress (Ableton orange)
-      cursorColor: "#FF764D", // Orange cursor (Ableton orange)
-      barWidth: 2,
-      barRadius: 3,
-      barGap: 1,
-      height: 100,
-      normalize: normalize,
-      backend: useMediaElementBackend ? "MediaElement" : "WebAudio",
-      mediaControls: false,
-      interact: true,
-    });
+    const initializeWaveSurfer = async () => {
+      await cleanupPrevious();
+      
+      if (cancelled) return;
 
-    wavesurferRef.current = wavesurfer;
-
-    // Add Regions plugin
-    const regions = RegionsPlugin.create();
-    regionsRef.current = regions;
-    wavesurfer.registerPlugin(regions);
-
-    // Add Timeline plugin
-    const timeline = TimelinePlugin.create({
-      height: 20,
-      insertPosition: "beforebegin",
-      timeInterval: 0.2,
-      primaryLabelInterval: 5,
-      secondaryLabelInterval: 1,
-      style: {
-        fontSize: "10px",
-        color: "#B0B0B0", // Light grey text (Ableton style)
-      },
-    });
-    timelineRef.current = timeline;
-    wavesurfer.registerPlugin(timeline);
-
-    // Add Minimap plugin
-    const minimap = MinimapPlugin.create({
-      height: 40,
-      insertPosition: "afterend",
-      waveColor: "#C0C0C0", // Light grey for minimap waveform (Ableton style)
-      progressColor: "#FF764D80", // Orange progress with transparency (Ableton orange)
-    });
-    minimapRef.current = minimap;
-    wavesurfer.registerPlugin(minimap);
-
-    // Event listeners
-    wavesurfer.on("ready", () => {
-      console.log("WaveSurfer ready");
-      setDuration(wavesurfer.getDuration());
-      setIsLoading(false);
-      setErrorMessage("");
-
-      // Set initial zoom
-      wavesurfer.zoom(zoom);
-    });
-
-    wavesurfer.on("play", () => {
-      setIsPlaying(true);
-    });
-
-    wavesurfer.on("pause", () => {
+      setIsLoading(true);
       setIsPlaying(false);
-    });
+      setCurrentTime(0);
+      setDuration(0);
 
-    wavesurfer.on("finish", () => {
-      setIsPlaying(false);
-    });
+      // Use MediaElement backend to avoid audio context issues
+      // MediaElement backend is more stable and doesn't create multiple audio contexts/streams
+      // This prevents the "Number of opened output audio streams exceed the max" error
 
-    wavesurfer.on("timeupdate", (time) => {
-      setCurrentTime(time);
-    });
+      // Create WaveSurfer instance with Ableton Live color scheme
+      const wavesurfer = WaveSurfer.create({
+        container: waveformRef.current,
+        waveColor: "#E0E0E0", // Light grey/white waveform (Ableton style)
+        progressColor: "#FF764D", // Orange progress (Ableton orange)
+        cursorColor: "#FF764D", // Orange cursor (Ableton orange)
+        barWidth: 2,
+        barRadius: 3,
+        barGap: 1,
+        height: 100,
+        normalize: normalize,
+        backend: "MediaElement", // Use MediaElement to avoid audio context/stream issues
+        mediaControls: false,
+        interact: true,
+      });
 
-    wavesurfer.on("error", (error) => {
-      console.error("WaveSurfer error:", error);
-      setErrorMessage(`Failed to load audio: ${error.message || "Unknown error"}`);
-      setIsLoading(false);
-    });
+      wavesurferRef.current = wavesurfer;
 
-    wavesurfer.on("loading", (percent) => {
-      console.log("Loading:", percent + "%");
-    });
+      // Add Regions plugin
+      const regions = RegionsPlugin.create();
+      regionsRef.current = regions;
+      wavesurfer.registerPlugin(regions);
 
-    // Load audio
-    wavesurfer.load(audioUrl);
+      // Add Timeline plugin
+      const timeline = TimelinePlugin.create({
+        height: 20,
+        insertPosition: "beforebegin",
+        timeInterval: 0.2,
+        primaryLabelInterval: 5,
+        secondaryLabelInterval: 1,
+        style: {
+          fontSize: "10px",
+          color: "#B0B0B0", // Light grey text (Ableton style)
+        },
+      });
+      timelineRef.current = timeline;
+      wavesurfer.registerPlugin(timeline);
+
+      // Add Minimap plugin
+      const minimap = MinimapPlugin.create({
+        height: 40,
+        insertPosition: "afterend",
+        waveColor: "#C0C0C0", // Light grey for minimap waveform (Ableton style)
+        progressColor: "#FF764D80", // Orange progress with transparency (Ableton orange)
+      });
+      minimapRef.current = minimap;
+      wavesurfer.registerPlugin(minimap);
+
+      // Event listeners
+      wavesurfer.on("ready", () => {
+        if (cancelled) {
+          console.log("WaveSurfer ready but cancelled, ignoring...");
+          return;
+        }
+        console.log("WaveSurfer ready");
+        isInitializingRef.current = false;
+        setDuration(wavesurfer.getDuration());
+        setIsLoading(false);
+        setErrorMessage("");
+
+        // Set initial zoom
+        wavesurfer.zoom(zoom);
+      });
+
+      wavesurfer.on("play", () => {
+        if (!cancelled) setIsPlaying(true);
+      });
+
+      wavesurfer.on("pause", () => {
+        if (!cancelled) setIsPlaying(false);
+      });
+
+      wavesurfer.on("finish", () => {
+        if (!cancelled) setIsPlaying(false);
+      });
+
+      wavesurfer.on("timeupdate", (time) => {
+        if (!cancelled) setCurrentTime(time);
+      });
+
+      wavesurfer.on("error", (error) => {
+        if (cancelled) return;
+        isInitializingRef.current = false;
+        // Ignore AbortError - it's expected when switching files or destroying WaveSurfer
+        if (error.name === "AbortError" || error.message?.includes("aborted")) {
+          console.log("WaveSurfer load aborted (expected when switching files)");
+          return;
+        }
+        console.error("WaveSurfer error:", error);
+        setErrorMessage(`Failed to load audio: ${error.message || "Unknown error"}`);
+        setIsLoading(false);
+      });
+
+      wavesurfer.on("loading", (percent) => {
+        if (cancelled) return;
+        // Ignore Infinity% which can occur when loading is aborted
+        if (isFinite(percent)) {
+          console.log("Loading:", percent + "%");
+        }
+      });
+
+      // Load audio - wrap in try-catch to handle potential promise rejections
+      try {
+        wavesurfer.load(audioUrl).catch((error) => {
+          if (cancelled) return;
+          isInitializingRef.current = false;
+          // Ignore AbortError - it's expected when switching files
+          if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+            console.error("WaveSurfer load promise rejected:", error);
+          }
+        });
+      } catch (error) {
+        if (cancelled) return;
+        isInitializingRef.current = false;
+        // Ignore AbortError during load
+        if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+          console.error("Error loading audio in WaveSurfer:", error);
+        }
+      }
+    };
+
+    // Initialize asynchronously
+    initializeWaveSurfer();
 
     // Cleanup
     return () => {
+      cancelled = true;
+      isInitializingRef.current = false;
+      // Cleanup will be handled by cleanupPrevious function
+      // But also ensure refs are cleared
       try {
-        if (wavesurfer) {
-          wavesurfer.pause();
-          wavesurfer.destroy();
+        // Remove minimap event listener if attached
+        if (minimapContainerRef.current) {
+          minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+          minimapContainerRef.current = null;
+        }
+        if (wavesurferRef.current) {
+          const instance = wavesurferRef.current;
+          wavesurferRef.current = null;
+          try {
+            instance.pause();
+          } catch (e) {
+            // Ignore errors when pausing
+          }
+          try {
+            instance.destroy();
+          } catch (e) {
+            // Ignore AbortError and other cleanup errors
+            if (e.name !== "AbortError" && !e.message?.includes("aborted")) {
+              console.error("Error destroying WaveSurfer:", e);
+            }
+          }
         }
       } catch (error) {
-        console.error("Error cleaning up WaveSurfer in effect:", error);
+        // Ignore AbortError during cleanup
+        if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+          console.error("Error cleaning up WaveSurfer in effect:", error);
+        }
       }
-      wavesurferRef.current = null;
       regionsRef.current = null;
       timelineRef.current = null;
       minimapRef.current = null;
       setIsPlaying(false);
     };
-  }, [audioUrl, normalize, fileName]);
+  }, [audioUrl, normalize, fileName]); // Removed handleMinimapMouseDown - it's attached in a separate effect
+
+  // Effect to find and attach handler to minimap element after it's created
+  useEffect(() => {
+    if (isLoading || !duration) return;
+
+    // Find the minimap element (it's created after the waveform by the plugin)
+    const findMinimap = () => {
+      if (waveformRef.current) {
+        // The minimap is typically the next sibling element
+        const minimapElement = waveformRef.current.nextElementSibling as HTMLElement;
+        if (minimapElement && minimapElement.querySelector('wave')) {
+          // Found the minimap element
+          if (minimapContainerRef.current !== minimapElement) {
+            // Remove old listener if exists
+            if (minimapContainerRef.current) {
+              minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+            }
+            minimapContainerRef.current = minimapElement;
+            minimapElement.style.cursor = "ew-resize";
+            minimapElement.addEventListener("mousedown", handleMinimapMouseDown);
+          }
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Try to find minimap immediately
+    if (!findMinimap()) {
+      // If not found, try again after a short delay
+      const timeout = setTimeout(() => {
+        findMinimap();
+      }, 200);
+      return () => clearTimeout(timeout);
+    }
+
+    return () => {
+      // Cleanup: remove event listener
+      if (minimapContainerRef.current) {
+        minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+      }
+    };
+  }, [isLoading, duration, handleMinimapMouseDown]);
 
   // Update zoom
   useEffect(() => {
@@ -368,6 +584,66 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // Handle mouse move for drag operations
+  useEffect(() => {
+    const DRAG_THRESHOLD = 5; // Pixels of movement before considering it a drag
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragStateRef.current || !wavesurferRef.current) return;
+
+      const deltaY = Math.abs(e.clientY - dragStateRef.current.startY);
+      const deltaX = Math.abs(e.clientX - dragStateRef.current.startX);
+      const hasMovedEnough = dragStateRef.current.isMinimapDrag 
+        ? deltaX > DRAG_THRESHOLD 
+        : deltaY > DRAG_THRESHOLD;
+
+      // Mark as dragging once threshold is reached
+      if (hasMovedEnough && !dragStateRef.current.isDragging) {
+        dragStateRef.current.isDragging = true;
+        dragStateRef.current.hasMoved = true;
+        // Prevent default behavior once drag is detected
+        e.preventDefault();
+      }
+
+      // Only perform drag operations if threshold is met
+      if (!dragStateRef.current.isDragging) return;
+
+      const currentDuration = wavesurferRef.current.getDuration();
+
+      if (dragStateRef.current.isMinimapDrag) {
+        // Horizontal drag on minimap - navigate the waveform
+        if (minimapContainerRef.current && currentDuration) {
+          const rect = minimapContainerRef.current.getBoundingClientRect();
+          const width = rect.width;
+          const relativeX = (e.clientX - rect.left) / width;
+          const newTime = Math.max(0, Math.min(currentDuration, relativeX * currentDuration));
+          wavesurferRef.current.seekTo(newTime / currentDuration);
+        }
+      } else {
+        // Vertical drag on main waveform - zoom in/out
+        // Dragging up (negative deltaY) = zoom in
+        // Dragging down (positive deltaY) = zoom out
+        const actualDeltaY = e.clientY - dragStateRef.current.startY;
+        const zoomDelta = -actualDeltaY * 0.5; // Scale factor for zoom sensitivity
+        const newZoom = Math.max(0, Math.min(500, dragStateRef.current.startZoom + zoomDelta));
+        setZoom(newZoom);
+      }
+    };
+
+    const handleMouseUp = () => {
+      dragStateRef.current = null;
+    };
+
+    // Always attach listeners - they'll only fire if dragStateRef.current exists
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   return (
     <div className="border-t border-border bg-card p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -398,7 +674,11 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
 
       {/* Waveform */}
       <div className="space-y-2">
-        <div ref={waveformRef} className="w-full" />
+        <div 
+          ref={waveformRef} 
+          className="w-full cursor-ns-resize" 
+          onMouseDown={handleWaveformMouseDown}
+        />
         {isLoading && (
           <div className="flex items-center justify-center py-4">
             <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />

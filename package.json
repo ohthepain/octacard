@@ -1,6 +1,6 @@
 {
   "name": "octacard",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "OctaCard - Audio file management and conversion tool",
   "author": {
     "name": "Paul Wilkinson",
@@ -20,7 +20,11 @@
     "build:electron": "npm run build && npm run build:electron:main && electron-builder",
     "build:mas": "npm run build && npm run build:electron:main && electron-builder --mac mas",
     "build:mas:arm64": "npm run build && npm run build:electron:main && electron-builder --mac mas --arm64",
-    "build:mas:x64": "npm run build && npm run build:electron:main && electron-builder --mac mas --x64"
+    "build:mas:x64": "npm run build && npm run build:electron:main && electron-builder --mac mas --x64",
+    "bump:version": "npm version patch --no-git-tag-version",
+    "bump:patch": "npm version patch --no-git-tag-version",
+    "bump:minor": "npm version minor --no-git-tag-version",
+    "bump:major": "npm version major --no-git-tag-version"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",
@@ -29,6 +33,7 @@
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-progress": "^1.1.8",
     "@radix-ui/react-radio-group": "^1.3.8",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-slider": "^1.3.6",
