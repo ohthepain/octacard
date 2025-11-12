@@ -1,4 +1,4 @@
-appId: com.thisco.octacard
+appId: com.thisco.octacard.app
 productName: OctaCard
 copyright: Copyright © 2024
 
@@ -18,13 +18,11 @@ files:
 mac:
   category: public.app-category.utilities
   target:
-    - target: mas
+    - target: default
       arch:
-        - x64
         - arm64
+        - x64
   icon: build/icon.icns
-  entitlements: build/entitlements.mas.plist
-  entitlementsInherit: build/entitlements.mas.inherit.plist
   hardenedRuntime: false
   gatekeeperAssess: false
   type: distribution
@@ -32,12 +30,15 @@ mac:
 mas:
   entitlements: build/entitlements.mas.plist
   entitlementsInherit: build/entitlements.mas.inherit.plist
-  provisioningProfile: /Users/paulwilkinson/Library/MobileDevice/Provisioning Profiles/93b46b20-fb9b-46f9-b2a8-6980da1b10cc.provisionprofile
+  provisioningProfile: /Users/paulwilkinson/Library/MobileDevice/Provisioning Profiles/Octacard_Mac_Distribution.provisionprofile
+  # Explicitly use 3rd Party Mac Developer Application certificate
+  identity: "Paul Wilkinson (RPGSNMH65P)"
   # Ensure helper apps are properly signed and consistent
-  helperBundleId: ${appId}.helper
-  helperGPUBundleId: ${appId}.helper.GPU
-  helperPluginBundleId: ${appId}.helper.Plugin
-  helperRendererBundleId: ${appId}.helper.Renderer
+  # These will match the wildcard com.thisco.octacard.* in the provisioning profile
+  helperBundleId: com.thisco.octacard.app.helper
+  helperGPUBundleId: com.thisco.octacard.app.helper.GPU
+  helperPluginBundleId: com.thisco.octacard.app.helper.Plugin
+  helperRendererBundleId: com.thisco.octacard.app.helper.Renderer
 
 dmg:
   title: ${productName}
@@ -50,4 +51,3 @@ nsis:
 publish:
   provider: generic
   url: ""
-

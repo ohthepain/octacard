@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, protocol, nativeImage } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { createReadStream } from "fs";
@@ -18,6 +18,27 @@ const __dirname = path.dirname(__filename);
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
+
+// Set app icon early (before app.whenReady)
+if (process.platform === "darwin") {
+  try {
+    const fsSync = require("fs");
+    let iconPath = path.resolve(__dirname, "..", "build", "icon.icns");
+    if (!fsSync.existsSync(iconPath)) {
+      iconPath = path.resolve(process.cwd(), "build", "icon.icns");
+    }
+    
+    if (fsSync.existsSync(iconPath) && app.dock) {
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        app.dock.setIcon(icon);
+        console.log("Early dock icon set from:", iconPath);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to set early dock icon:", error);
+  }
+}
 
 // Function to get mounted volumes (macOS and Linux)
 async function getMountedVolumes(): Promise<string[]> {
@@ -257,7 +278,38 @@ const createWindow = () => {
     // Open DevTools in development
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    // In production, use app.getAppPath() to get the correct path to app resources
+    const appPath = app.getAppPath();
+    const indexPath = path.join(appPath, "dist", "index.html");
+    console.log("App path:", appPath);
+    console.log("Loading index.html from:", indexPath);
+    
+    // Check if file exists
+    fs.access(indexPath)
+      .then(() => {
+        console.log("✓ index.html exists");
+        // Use loadURL with file:// protocol and hash for HashRouter
+        const fileUrl = `file://${indexPath}#/`;
+        console.log("Loading URL:", fileUrl);
+        mainWindow.loadURL(fileUrl).catch((error) => {
+          console.error("✗ Error loading URL:", error);
+          // Fallback to loadFile
+          mainWindow.loadFile(indexPath).catch((fallbackError) => {
+            console.error("✗ Fallback loadFile also failed:", fallbackError);
+          });
+        });
+      })
+      .catch((error) => {
+        console.error("✗ index.html NOT found at:", indexPath);
+        console.error("Error:", error);
+        // Try alternative path
+        const altPath = path.join(__dirname, "..", "dist", "index.html");
+        console.log("Trying alternative path:", altPath);
+        const altUrl = `file://${altPath}#/`;
+        mainWindow.loadURL(altUrl).catch((altError) => {
+          console.error("✗ Alternative path also failed:", altError);
+        });
+      });
   }
 };
 
@@ -968,7 +1020,37 @@ ipcMain.handle(
 );
 
 // This method will be called when Electron has finished initialization
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Set app icon again in whenReady (in case early set didn't work)
+  if (process.platform === "darwin" && app.dock) {
+    try {
+      let iconPath = isDev
+        ? path.resolve(__dirname, "..", "build", "icon.icns")
+        : path.join(process.resourcesPath, "icon.icns");
+      
+      // Verify icon exists
+      await fs.access(iconPath);
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        app.dock.setIcon(icon);
+        console.log("Dock icon set from:", iconPath);
+      }
+    } catch (error) {
+      console.error("Failed to set dock icon:", error);
+      // Try alternative path
+      try {
+        const altPath = path.resolve(process.cwd(), "build", "icon.icns");
+        await fs.access(altPath);
+        const icon = nativeImage.createFromPath(altPath);
+        if (!icon.isEmpty()) {
+          app.dock.setIcon(icon);
+          console.log("Dock icon set from alternative path:", altPath);
+        }
+      } catch (altError) {
+        console.error("Failed to set dock icon from alternative path:", altError);
+      }
+    }
+  }
   // Helper function to get MIME type from file extension
   function getMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();

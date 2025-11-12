@@ -1,6 +1,6 @@
 {
   "name": "octacard",
-  "version": "1.0.2",
+  "version": "1.0.6",
   "description": "OctaCard - Audio file management and conversion tool",
   "author": {
     "name": "Paul Wilkinson",
@@ -17,14 +17,16 @@
     "build:electron:main": "npx tsx electron/build-main.ts && vite build --config electron/vite.preload.config.ts",
     "electron": "npm run build:electron:main && electron .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run build:electron:main && electron .\"",
-    "build:electron": "npm run build && npm run build:electron:main && electron-builder",
+    "build:electron": "npm run build && npm run build:electron:main && electron-builder --mac",
     "build:mas": "npm run build && npm run build:electron:main && electron-builder --mac mas",
     "build:mas:arm64": "npm run build && npm run build:electron:main && electron-builder --mac mas --arm64",
     "build:mas:x64": "npm run build && npm run build:electron:main && electron-builder --mac mas --x64",
     "bump:version": "npm version patch --no-git-tag-version",
     "bump:patch": "npm version patch --no-git-tag-version",
     "bump:minor": "npm version minor --no-git-tag-version",
-    "bump:major": "npm version major --no-git-tag-version"
+    "bump:major": "npm version major --no-git-tag-version",
+    "clean": "rm -rf dist dist-electron release electron/*.js electron/*.js.map electron/*.map",
+    "clean:all": "npm run clean && rm -rf node_modules/.cache node_modules/.vite"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",
