@@ -1,5 +1,5 @@
 // electron/main.ts
-import { app, BrowserWindow, ipcMain, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, protocol, nativeImage } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { exec } from "child_process";
@@ -13,6 +13,24 @@ var __filename = fileURLToPath(import.meta.url);
 var __dirname = path.dirname(__filename);
 var isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 var mainWindow = null;
+if (process.platform === "darwin") {
+  try {
+    const fsSync = require2("fs");
+    let iconPath = path.resolve(__dirname, "..", "build", "icon.icns");
+    if (!fsSync.existsSync(iconPath)) {
+      iconPath = path.resolve(process.cwd(), "build", "icon.icns");
+    }
+    if (fsSync.existsSync(iconPath) && app.dock) {
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        app.dock.setIcon(icon);
+        console.log("Early dock icon set from:", iconPath);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to set early dock icon:", error);
+  }
+}
 async function getMountedVolumes() {
   try {
     if (process.platform === "darwin") {
@@ -188,7 +206,30 @@ var createWindow = () => {
     mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    const appPath = app.getAppPath();
+    const indexPath = path.join(appPath, "dist", "index.html");
+    console.log("App path:", appPath);
+    console.log("Loading index.html from:", indexPath);
+    fs.access(indexPath).then(() => {
+      console.log("\u2713 index.html exists");
+      const fileUrl = `file://${indexPath}#/`;
+      console.log("Loading URL:", fileUrl);
+      mainWindow.loadURL(fileUrl).catch((error) => {
+        console.error("\u2717 Error loading URL:", error);
+        mainWindow.loadFile(indexPath).catch((fallbackError) => {
+          console.error("\u2717 Fallback loadFile also failed:", fallbackError);
+        });
+      });
+    }).catch((error) => {
+      console.error("\u2717 index.html NOT found at:", indexPath);
+      console.error("Error:", error);
+      const altPath = path.join(__dirname, "..", "dist", "index.html");
+      console.log("Trying alternative path:", altPath);
+      const altUrl = `file://${altPath}#/`;
+      mainWindow.loadURL(altUrl).catch((altError) => {
+        console.error("\u2717 Alternative path also failed:", altError);
+      });
+    });
   }
 };
 ipcMain.handle("fs:readDirectory", async (_event, dirPath) => {
@@ -697,7 +738,31 @@ ipcMain.handle(
     }
   }
 );
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (process.platform === "darwin" && app.dock) {
+    try {
+      let iconPath = isDev ? path.resolve(__dirname, "..", "build", "icon.icns") : path.join(process.resourcesPath, "icon.icns");
+      await fs.access(iconPath);
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        app.dock.setIcon(icon);
+        console.log("Dock icon set from:", iconPath);
+      }
+    } catch (error) {
+      console.error("Failed to set dock icon:", error);
+      try {
+        const altPath = path.resolve(process.cwd(), "build", "icon.icns");
+        await fs.access(altPath);
+        const icon = nativeImage.createFromPath(altPath);
+        if (!icon.isEmpty()) {
+          app.dock.setIcon(icon);
+          console.log("Dock icon set from alternative path:", altPath);
+        }
+      } catch (altError) {
+        console.error("Failed to set dock icon from alternative path:", altError);
+      }
+    }
+  }
   function getMimeType(filePath) {
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes = {
