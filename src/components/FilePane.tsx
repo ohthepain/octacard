@@ -36,6 +36,9 @@ import { useNavigationState } from "@/hooks/use-navigation-state";
 import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
 
+// Registry to track active pane and clear selections in other panes
+const paneRegistry = new Map<string, () => void>();
+
 // Simple path join utility for cross-platform compatibility
 function joinPath(...parts: string[]): string {
   if (parts.length === 0) return "";
@@ -162,6 +165,8 @@ export const FilePane = ({
   const searchCancelledRef = useRef<boolean>(false);
   const isSearchingRef = useRef<boolean>(false);
   const currentSearchQueryRef = useRef<string>("");
+  const paneContainerRef = useRef<HTMLDivElement>(null);
+  const handleDeleteRef = useRef<((node?: FileNode) => Promise<void>) | null>(null);
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
@@ -569,6 +574,48 @@ export const FilePane = ({
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
   }, [pendingExpandedFolders, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Added isSearchingFolders to prevent running during search
+
+  // Restore selected items after expanded folders are restored
+  useEffect(() => {
+    // Only restore if we have paths to restore and expanded folders are done restoring
+    if (!selectedPathsToRestoreRef.current || isRestoringExpanded || fileTreeRef.current.length === 0) {
+      return;
+    }
+
+    // Wait a bit for the tree to stabilize after expansion
+    const timeout = setTimeout(() => {
+      const restoreSelectedItems = (nodes: FileNode[]) => {
+        const restoredIds = new Set<string>();
+        const findNodesByPath = (nodeList: FileNode[]) => {
+          for (const node of nodeList) {
+            if (selectedPathsToRestoreRef.current?.has(node.path)) {
+              restoredIds.add(node.id);
+            }
+            if (node.children) {
+              findNodesByPath(node.children);
+            }
+          }
+        };
+        findNodesByPath(nodes);
+        
+        if (restoredIds.size > 0) {
+          setSelectedItems(restoredIds);
+          const flatNodes = getFlatNodeList(nodes);
+          const firstSelectedId = Array.from(restoredIds)[0];
+          const index = flatNodes.findIndex((n) => n.id === firstSelectedId);
+          if (index >= 0) {
+            setLastSelectedIndex(index);
+          }
+        }
+        // Clear the ref after restoring
+        selectedPathsToRestoreRef.current = null;
+      };
+      restoreSelectedItems(fileTreeRef.current);
+    }, 300);
+
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRestoringExpanded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1144,6 +1191,255 @@ export const FilePane = ({
     saveCurrentPath();
   }, [currentRootPath, currentVolumeUUID, expandedFolders, saveNavigationState, paneName]);
 
+  // Store selected paths to restore after refresh
+  const selectedPathsToRestoreRef = useRef<Set<string> | null>(null);
+
+  // Refresh function that preserves expanded folders and selected items
+  const refreshCurrentDirectory = useCallback(async () => {
+    if (!currentRootPath) return;
+
+    // Save current expanded folders
+    const currentExpanded = Array.from(expandedFolders);
+    
+    // Save current selected items by path (since IDs might change after refresh)
+    const selectedPaths = new Set<string>();
+    const findSelectedPaths = (nodes: FileNode[]) => {
+      for (const node of nodes) {
+        if (selectedItems.has(node.id)) {
+          selectedPaths.add(node.path);
+        }
+        if (node.children) {
+          findSelectedPaths(node.children);
+        }
+      }
+    };
+    findSelectedPaths(fileTree);
+
+    console.log(`${paneName} - Refreshing directory while preserving ${currentExpanded.length} expanded folders and ${selectedPaths.size} selected items`);
+
+    // Store selected paths to restore later
+    selectedPathsToRestoreRef.current = selectedPaths.size > 0 ? selectedPaths : null;
+
+    // Refresh the root directory
+    await loadDirectory(currentRootPath, "root");
+
+    // Wait a bit for the file tree to update
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Restore expanded folders (this will trigger the existing restoration mechanism)
+    if (currentExpanded.length > 0) {
+      setPendingExpandedFolders(currentExpanded);
+    } else {
+      // If no expanded folders, restore selection immediately
+      if (selectedPathsToRestoreRef.current) {
+        setTimeout(() => {
+          const restoreSelectedItems = (nodes: FileNode[]) => {
+            const restoredIds = new Set<string>();
+            const findNodesByPath = (nodeList: FileNode[]) => {
+              for (const node of nodeList) {
+                if (selectedPathsToRestoreRef.current?.has(node.path)) {
+                  restoredIds.add(node.id);
+                }
+                if (node.children) {
+                  findNodesByPath(node.children);
+                }
+              }
+            };
+            findNodesByPath(nodes);
+            
+            if (restoredIds.size > 0) {
+              setSelectedItems(restoredIds);
+              const flatNodes = getFlatNodeList(nodes);
+              const firstSelectedId = Array.from(restoredIds)[0];
+              const index = flatNodes.findIndex((n) => n.id === firstSelectedId);
+              if (index >= 0) {
+                setLastSelectedIndex(index);
+              }
+            }
+            selectedPathsToRestoreRef.current = null;
+          };
+          restoreSelectedItems(fileTreeRef.current);
+        }, 100);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory]);
+
+  // Refresh current directory when app regains focus/visibility
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && currentRootPath) {
+        // App became visible, refresh the current directory
+        console.log(`${paneName} - App became visible, refreshing directory:`, currentRootPath);
+        void refreshCurrentDirectory();
+      }
+    };
+
+    const handleFocus = () => {
+      if (currentRootPath) {
+        // Window gained focus, refresh the current directory
+        console.log(`${paneName} - Window gained focus, refreshing directory:`, currentRootPath);
+        void refreshCurrentDirectory();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [currentRootPath, paneName, refreshCurrentDirectory]);
+
+  // Helper to get flat list of nodes for shift-click range selection
+  const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
+    const flat: FileNode[] = [];
+    const traverse = (nodeList: FileNode[]) => {
+      for (const node of nodeList) {
+        if (node.id !== "parent-link") {
+          flat.push(node);
+        }
+        if (node.children) {
+          traverse(node.children);
+        }
+      }
+    };
+    traverse(nodes);
+    return flat;
+  }, []);
+
+  // Register this pane's clear selection function and handle pane activation
+  useEffect(() => {
+    const clearSelection = () => {
+      setSelectedItems(new Set());
+      setLastSelectedIndex(-1);
+    };
+    paneRegistry.set(paneName, clearSelection);
+
+    return () => {
+      paneRegistry.delete(paneName);
+    };
+  }, [paneName]);
+
+  // Handle keyboard shortcuts for deleting selected items and arrow key navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input field
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable ||
+        target.closest("input") ||
+        target.closest("textarea")
+      ) {
+        return;
+      }
+
+      // Only handle keyboard events if this pane contains the active element or has selected items
+      const paneContainer = paneContainerRef.current;
+      if (!paneContainer) return;
+
+      const activeElement = document.activeElement;
+      // Check if the pane contains the active element or the event target
+      // Since we clear other panes' selections when clicking, only one pane should have selections
+      const isPaneFocused =
+        paneContainer.contains(activeElement) ||
+        paneContainer.contains(target) ||
+        selectedItems.size > 0;
+
+      if (!isPaneFocused) return;
+
+      // Handle Delete/Backspace when items are selected
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedItems.size > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Call handleDelete without arguments to delete all selected items
+        if (handleDeleteRef.current) {
+          void handleDeleteRef.current();
+        }
+        return;
+      }
+
+      // Handle Shift + Arrow Up/Down for multi-select navigation
+      if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        // Get the current file tree (accounting for search state)
+        // Compute searchResultsAsNodes if searching
+        const currentTree = searchQuery
+          ? buildFolderTreeFromSearchResults(searchResults, currentRootPath)
+          : fileTree;
+        if (currentTree.length === 0) return;
+
+        // Add parent link if needed (same logic as renderFileTree)
+        const showParentLink = currentRootPath && currentRootPath !== rootPath;
+        const itemsToRender = showParentLink
+          ? [
+              {
+                id: "parent-link",
+                name: "..",
+                type: "folder" as const,
+                path: (() => {
+                  const parts = currentRootPath.split("/").filter(Boolean);
+                  return currentRootPath.startsWith("/")
+                    ? "/" + parts.slice(0, -1).join("/")
+                    : parts.slice(0, -1).join("/") || "/";
+                })(),
+                loaded: false,
+              },
+              ...currentTree,
+            ]
+          : currentTree;
+
+        // Get flat list (excluding parent link)
+        const flatNodes = getFlatNodeList(itemsToRender.filter((n) => n.id !== "parent-link"));
+        if (flatNodes.length === 0) return;
+
+        // Find the anchor index (lastSelectedIndex or first selected item's index)
+        let anchorIndex = lastSelectedIndex;
+        if (anchorIndex < 0 || anchorIndex >= flatNodes.length) {
+          // Find first selected item's index
+          if (selectedItems.size > 0) {
+            const firstSelectedId = Array.from(selectedItems)[0];
+            anchorIndex = flatNodes.findIndex((n) => n.id === firstSelectedId);
+            if (anchorIndex < 0) return; // No valid selection found
+          } else {
+            // No selection yet - start from first item
+            anchorIndex = 0;
+          }
+        }
+
+        // Calculate new index
+        const newIndex = e.key === "ArrowUp" ? Math.max(0, anchorIndex - 1) : Math.min(flatNodes.length - 1, anchorIndex + 1);
+        if (newIndex === anchorIndex) return; // Already at boundary
+
+        // Extend selection (similar to shift-click logic)
+        const start = Math.min(anchorIndex, newIndex);
+        const end = Math.max(anchorIndex, newIndex);
+
+        setSelectedItems((prev) => {
+          const newSet = new Set(prev);
+          for (let i = start; i <= end; i++) {
+            if (flatNodes[i] && flatNodes[i].id !== "parent-link") {
+              newSet.add(flatNodes[i].id);
+            }
+          }
+          return newSet;
+        });
+
+        setLastSelectedIndex(newIndex);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedItems.size, lastSelectedIndex, fileTree, searchQuery, searchResults, currentRootPath, rootPath, getFlatNodeList]);
+
   const navigateToParent = async () => {
     if (!currentRootPath || currentRootPath === rootPath) return;
 
@@ -1229,7 +1525,8 @@ export const FilePane = ({
     async (
       items: Array<{ path: string; name: string; type: "file" | "folder" }>,
       destinationPath: string,
-      destinationNode?: FileNode
+      destinationNode?: FileNode,
+      isExternal: boolean = false
     ) => {
       if (!window.electron) return;
 
@@ -1279,7 +1576,9 @@ export const FilePane = ({
                 });
               }
 
-              const isFromDifferentPane = rootPath ? !entry.path.startsWith(rootPath) : false;
+              // For external drops (from Finder), treat as from different pane
+              // For internal drops, check if source is from different pane
+              const isFromDifferentPane = isExternal || (rootPath ? !entry.path.startsWith(rootPath) : false);
               const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(entry.path);
 
               let finalDestPath = entryDestPath;
@@ -1338,7 +1637,9 @@ export const FilePane = ({
           }
 
           // Check if file conversion is needed
-          const isFromDifferentPane = rootPath ? !item.path.startsWith(rootPath) : false;
+          // For external drops (from Finder), treat as from different pane
+          // For internal drops, check if source is from different pane
+          const isFromDifferentPane = isExternal || (rootPath ? !item.path.startsWith(rootPath) : false);
           const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
 
           let finalDestFilePath = destFilePath;
@@ -1429,6 +1730,65 @@ export const FilePane = ({
       return;
     }
 
+    if (!window.electron) {
+      console.error("Electron API not available");
+      return;
+    }
+
+    // Check for native file drops from Finder (e.dataTransfer.files)
+    const nativeFiles = e.dataTransfer.files;
+    if (nativeFiles && nativeFiles.length > 0) {
+      console.log(`${paneName} - Native file drop detected: ${nativeFiles.length} files`);
+      
+      // Convert FileList to array and get file paths
+      const items: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
+      
+      for (let i = 0; i < nativeFiles.length; i++) {
+        const file = nativeFiles[i];
+        // In Electron, File objects from native drops have a path property
+        const filePath = (file as any).path || file.name;
+        
+        // Check if it's a file or folder by checking stats
+        try {
+          const statsResult = await window.electron.fs.getFileStats(filePath);
+          if (statsResult.success && statsResult.data) {
+            items.push({
+              path: filePath,
+              name: file.name,
+              type: statsResult.data.isDirectory ? "folder" : "file",
+            });
+          }
+        } catch (error) {
+          console.error(`Error getting stats for ${filePath}:`, error);
+          // Fallback: assume it's a file
+          items.push({
+            path: filePath,
+            name: file.name,
+            type: "file",
+          });
+        }
+      }
+
+      if (items.length > 0) {
+        // For native drops from Finder:
+        // Right pane (convertFiles=true): copy with conversion
+        // Left pane (convertFiles=false): navigate to the dropped file's location
+        if (convertFiles) {
+          // Right pane: copy with conversion
+          await copyMultipleItems(items, destinationPath, destinationNode, true); // isExternal = true
+        } else {
+          // Left pane: navigate to the first dropped file's parent directory
+          const firstItem = items[0];
+          if (firstItem) {
+            const parentPath = dirname(firstItem.path);
+            console.log(`${paneName} - Navigating to dropped file's location:`, parentPath);
+            await navigateToFolder(parentPath);
+          }
+        }
+        return;
+      }
+    }
+
     // Check if this is a multiple item drag (from drag data)
     const isMultiple = e.dataTransfer.getData("isMultiple") === "true";
     if (isMultiple) {
@@ -1480,6 +1840,7 @@ export const FilePane = ({
       if (sourceType === "file") {
         // Check if file conversion is needed
         // Only convert if convertFiles is enabled AND source is from a different pane
+        // Note: This handles internal drags, not external Finder drops (those are handled above)
         const isFromDifferentPane = rootPath ? !sourcePath.startsWith(rootPath) : false;
         const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
 
@@ -1614,6 +1975,12 @@ export const FilePane = ({
       alert(errorMessage);
     }
   };
+
+  // Update ref after handleDelete is defined
+  useEffect(() => {
+    handleDeleteRef.current = handleDelete;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   const handleEject = async () => {
     if (!isCardMounted || !window.electron || !rootPath) return;
@@ -1807,23 +2174,6 @@ export const FilePane = ({
     }, []);
   };
 
-  // Helper to get flat list of nodes for shift-click range selection
-  const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
-    const flat: FileNode[] = [];
-    const traverse = (nodeList: FileNode[]) => {
-      for (const node of nodeList) {
-        if (node.id !== "parent-link") {
-          flat.push(node);
-        }
-        if (node.children) {
-          traverse(node.children);
-        }
-      }
-    };
-    traverse(nodes);
-    return flat;
-  }, []);
-
   const renderFileTree = (nodes: FileNode[], depth: number = 0): React.ReactNode => {
     // Add ".." entry if not at root
     const showParentLink = currentRootPath && currentRootPath !== rootPath;
@@ -1948,6 +2298,8 @@ export const FilePane = ({
                   // Single click: always clear previous selection and select this item
                   setSelectedItems(new Set([node.id]));
                   setLastSelectedIndex(flatNodes.findIndex((n) => n.id === node.id));
+                  // Clear selections in other panes when selecting in this pane
+                  handlePaneClick();
 
                   if (node.type === "folder") {
                     // If this is a search result folder, navigate to it and clear search
@@ -2020,6 +2372,23 @@ export const FilePane = ({
             {!isParentLink && (
               <ContextMenuContent>
                 <ContextMenuItem onClick={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
+                <ContextMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // If there are selected items, delete all selected items
+                    // Otherwise, delete just the item being right-clicked
+                    if (selectedItems.size > 0) {
+                      handleDelete();
+                    } else {
+                      handleDelete(node);
+                    }
+                  }}
+                  className="text-destructive focus:text-destructive"
+                >
+                  {selectedItems.size > 0
+                    ? `Delete ${selectedItems.size} selected item${selectedItems.size > 1 ? "s" : ""}`
+                    : "Delete"}
+                </ContextMenuItem>
               </ContextMenuContent>
             )}
           </ContextMenu>
@@ -2139,8 +2508,18 @@ export const FilePane = ({
 
   const filteredFileSystem = filterNodes(fileTree, searchQuery);
 
+  // Handle pane click to clear other panes' selections
+  const handlePaneClick = () => {
+    // Clear selections in all other panes
+    paneRegistry.forEach((clearSelection, name) => {
+      if (name !== paneName) {
+        clearSelection();
+      }
+    });
+  };
+
   return (
-    <div className="flex flex-col h-full min-w-0">
+    <div ref={paneContainerRef} className="flex flex-col h-full min-w-0">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2 flex-1">
@@ -2243,6 +2622,8 @@ export const FilePane = ({
             const target = e.target as HTMLElement;
             if (target === e.currentTarget || (!target.closest('[draggable="true"]') && !target.closest("button"))) {
               setSelectedItems(new Set());
+              // Also clear selections in other panes
+              handlePaneClick();
             }
           }}
         >
