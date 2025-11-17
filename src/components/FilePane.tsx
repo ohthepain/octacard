@@ -85,6 +85,9 @@ interface FileNode {
   format?: string;
   isLoading?: boolean;
   loaded?: boolean;
+  birthtime?: number; // Date Created (timestamp)
+  mtime?: number; // Date Modified (timestamp)
+  atime?: number; // Date Last Opened (timestamp)
 }
 
 interface VolumeOption {
@@ -183,6 +186,9 @@ export const FilePane = ({
   }> | null>(null);
   const [pendingDestinationPath, setPendingDestinationPath] = useState<string>("");
   const [pendingDestinationNode, setPendingDestinationNode] = useState<FileNode | undefined>(undefined);
+  const [sortBy, setSortBy] = useState<"name" | "dateAdded" | "dateCreated" | "dateModified" | "dateLastOpened">(
+    "name"
+  );
 
   // Helper function to recursively count files in a folder
   const countFilesRecursively = useCallback(async (folderPath: string): Promise<number> => {
@@ -436,21 +442,44 @@ export const FilePane = ({
             return true;
           });
 
-          const children: FileNode[] = filteredEntries.map((entry) => ({
-            id: `${nodeId}-${entry.path}`,
-            name: entry.name,
-            type: entry.type,
-            path: entry.path,
-            size: entry.type === "file" ? formatFileSize(entry.size) : undefined,
-            loaded: false,
-          }));
+          const children: FileNode[] = filteredEntries.map((entry) => {
+            const entryWithDates = entry as typeof entry & { birthtime?: number; mtime?: number; atime?: number };
+            return {
+              id: `${nodeId}-${entry.path}`,
+              name: entry.name,
+              type: entry.type,
+              path: entry.path,
+              size: entry.type === "file" ? formatFileSize(entry.size) : undefined,
+              loaded: false,
+              birthtime: entryWithDates.birthtime,
+              mtime: entryWithDates.mtime,
+              atime: entryWithDates.atime,
+            };
+          });
 
-          // Sort: folders first, then files, both alphabetically
+          // Sort based on selected sort option
           children.sort((a, b) => {
+            // Always show folders first
             if (a.type !== b.type) {
               return a.type === "folder" ? -1 : 1;
             }
-            return a.name.localeCompare(b.name);
+
+            // Then sort by selected criteria
+            switch (sortBy) {
+              case "name":
+                return a.name.localeCompare(b.name);
+              case "dateAdded":
+                // Date Added is typically the same as birthtime (creation date)
+                return (b.birthtime || 0) - (a.birthtime || 0);
+              case "dateCreated":
+                return (b.birthtime || 0) - (a.birthtime || 0);
+              case "dateModified":
+                return (b.mtime || 0) - (a.mtime || 0);
+              case "dateLastOpened":
+                return (b.atime || 0) - (a.atime || 0);
+              default:
+                return a.name.localeCompare(b.name);
+            }
           });
 
           setFileTree((prev) => {
@@ -492,8 +521,45 @@ export const FilePane = ({
         }
       }
     },
-    [paneName, availableVolumes]
+    [paneName, availableVolumes, sortBy]
   );
+
+  // Re-sort current directory when sort option changes
+  useEffect(() => {
+    if (fileTree.length === 0 || !currentRootPath) return;
+
+    const sortNodes = (nodes: FileNode[]): FileNode[] => {
+      return nodes
+        .map((node) => ({
+          ...node,
+          children: node.children ? sortNodes(node.children) : undefined,
+        }))
+        .sort((a, b) => {
+          // Always show folders first
+          if (a.type !== b.type) {
+            return a.type === "folder" ? -1 : 1;
+          }
+
+          // Then sort by selected criteria
+          switch (sortBy) {
+            case "name":
+              return a.name.localeCompare(b.name);
+            case "dateAdded":
+              return (b.birthtime || 0) - (a.birthtime || 0);
+            case "dateCreated":
+              return (b.birthtime || 0) - (a.birthtime || 0);
+            case "dateModified":
+              return (b.mtime || 0) - (a.mtime || 0);
+            case "dateLastOpened":
+              return (b.atime || 0) - (a.atime || 0);
+            default:
+              return a.name.localeCompare(b.name);
+          }
+        });
+    };
+
+    setFileTree((prev) => sortNodes(prev));
+  }, [sortBy, currentRootPath]);
 
   // Effect to restore expanded folders when fileTree is populated
   useEffect(() => {
@@ -2698,6 +2764,45 @@ export const FilePane = ({
               {isSearchingFolders && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />}
             </div>
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-2">
+                Sort:{" "}
+                {sortBy === "name"
+                  ? "Name"
+                  : sortBy === "dateAdded"
+                  ? "Date Added"
+                  : sortBy === "dateCreated"
+                  ? "Date Created"
+                  : sortBy === "dateModified"
+                  ? "Date Modified"
+                  : "Date Last Opened"}
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setSortBy("name")}>
+                <Check className={`w-4 h-4 mr-2 ${sortBy === "name" ? "opacity-100" : "opacity-0"}`} />
+                Name
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortBy("dateAdded")}>
+                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateAdded" ? "opacity-100" : "opacity-0"}`} />
+                Date Added
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortBy("dateCreated")}>
+                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateCreated" ? "opacity-100" : "opacity-0"}`} />
+                Date Created
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortBy("dateModified")}>
+                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateModified" ? "opacity-100" : "opacity-0"}`} />
+                Date Modified
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortBy("dateLastOpened")}>
+                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateLastOpened" ? "opacity-100" : "opacity-0"}`} />
+                Date Last Opened
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             size="sm"
             variant="ghost"
