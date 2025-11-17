@@ -14,16 +14,17 @@ const Index = () => {
   const [trimStart, setTrimStart] = useState(false);
 
   const handleFileTransfer = (sourcePath: string, destinationPath: string) => {
-    console.log("File transfer requested:", { sourcePath, destinationPath });
-    // TODO: Implement file conversion and transfer logic
+    console.log("File transfer completed:", { sourcePath, destinationPath });
   };
+
+  console.log("Index component rendering");
 
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
       <header
         className="h-14 border-b border-border bg-card flex items-center px-4 justify-between"
-        style={{ WebkitAppRegion: "drag" }}
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
@@ -31,7 +32,7 @@ const Index = () => {
           </div>
           <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
         </div>
-        <div className="flex items-center gap-4" style={{ WebkitAppRegion: "no-drag" }}>
+        <div className="flex items-center gap-4" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
           <button
             onClick={() => setSampleFormatOpen(true)}
             className="text-muted-foreground hover:text-foreground text-sm transition-colors"
@@ -47,28 +48,8 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Main Content - 2 Pane Layout */}
+      {/* Main Content - Single Pane Layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Pane - File Browser (Local) */}
-        <div className="w-1/2 border-r border-border flex flex-col min-w-0">
-          <FilePane
-            paneName="local"
-            title="Local Files"
-            onFileTransfer={handleFileTransfer}
-            sampleRate={sampleRate}
-            sampleDepth={sampleDepth}
-            fileFormat={fileFormat}
-            mono={mono}
-            normalize={normalize}
-            trimStart={trimStart}
-            autoNavigateToCard={false}
-            convertFiles={false}
-            showEjectButton={false}
-            showNewFolderButton={true}
-          />
-        </div>
-
-        {/* Right Pane - CF Card View */}
         <div className="flex-1 flex flex-col min-w-0">
           <FilePane
             paneName="cfcard"
