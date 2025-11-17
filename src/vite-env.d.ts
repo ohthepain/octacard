@@ -6,7 +6,16 @@ interface ElectronAPI {
       dirPath: string
     ) => Promise<{
       success: boolean;
-      data?: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>;
+      data?: Array<{
+        name: string;
+        path: string;
+        type: "file" | "folder";
+        size: number;
+        isDirectory: boolean;
+        birthtime?: number;
+        mtime?: number;
+        atime?: number;
+      }>;
       error?: string;
     }>;
     copyFile: (sourcePath: string, destPath: string) => Promise<{ success: boolean; error?: string }>;

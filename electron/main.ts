@@ -385,6 +385,9 @@ ipcMain.handle("fs:readDirectory", async (_event, dirPath: string) => {
           type: entry.isDirectory() ? "folder" : "file",
           size: stats.size,
           isDirectory: entry.isDirectory(),
+          birthtime: stats.birthtime.getTime(), // Date Created
+          mtime: stats.mtime.getTime(), // Date Modified
+          atime: stats.atime.getTime(), // Date Last Opened
         };
       })
     );
