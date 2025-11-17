@@ -11,6 +11,7 @@ const Index = () => {
   const [fileFormat, setFileFormat] = useState("WAV");
   const [mono, setMono] = useState(false);
   const [normalize, setNormalize] = useState(false);
+  const [trimStart, setTrimStart] = useState(false);
 
   const handleFileTransfer = (sourcePath: string, destinationPath: string) => {
     console.log("File transfer requested:", { sourcePath, destinationPath });
@@ -59,6 +60,7 @@ const Index = () => {
             fileFormat={fileFormat}
             mono={mono}
             normalize={normalize}
+            trimStart={trimStart}
             autoNavigateToCard={false}
             convertFiles={false}
             showEjectButton={false}
@@ -77,6 +79,7 @@ const Index = () => {
             fileFormat={fileFormat}
             mono={mono}
             normalize={normalize}
+            trimStart={trimStart}
             autoNavigateToCard={true}
             convertFiles={true}
             showEjectButton={true}
@@ -102,6 +105,8 @@ const Index = () => {
         onMonoChange={setMono}
         normalize={normalize}
         onNormalizeChange={setNormalize}
+        trimStart={trimStart}
+        onTrimStartChange={setTrimStart}
       />
     </div>
   );

@@ -33,7 +33,8 @@ interface ElectronAPI {
       sampleDepth?: string,
       fileFormat?: string,
       mono?: boolean,
-      normalize?: boolean
+      normalize?: boolean,
+      trimStart?: boolean
     ) => Promise<{ success: boolean; error?: string }>;
     searchFiles: (
       query: string,
@@ -60,6 +61,10 @@ interface ElectronAPI {
     sdCardRemoved: (callback: (cardPath: string, cardUUID: string) => void) => void;
   };
   removeListener: (channel: string) => void;
+  // Helper function to get file path from File object (Electron-specific)
+  getFilePath: (file: File) => string | null;
+  // Helper function to get file paths from DataTransferItemList
+  getFilePathsFromItems: (items: DataTransferItemList) => string[];
 }
 
 declare global {

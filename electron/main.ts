@@ -267,10 +267,50 @@ const createWindow = () => {
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
   });
 
+  // Log console messages from renderer for debugging
+  mainWindow.webContents.on('console-message', (event, level, message) => {
+    console.log(`[Renderer ${level}]:`, message);
+  });
+
+  // Log page load errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Page failed to load:', { errorCode, errorDescription, validatedURL });
+  });
+
   // Debug: Check if preload script exists
   fs.access(preloadPath)
     .then(() => console.log("✓ Preload script exists"))
     .catch(() => console.error("✗ Preload script NOT found at:", preloadPath));
+
+  // Suppress security warnings in development (they won't appear in production anyway)
+  // The preload script handles most of this, but we also inject a filter after page load
+  if (isDev && mainWindow) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      // Inject script to filter console.warn in the renderer (as backup to preload script)
+      mainWindow?.webContents.executeJavaScript(`
+        (function() {
+          if (window.__electronWarnFiltered) return; // Already filtered by preload
+          const originalWarn = console.warn;
+          console.warn = function(...args) {
+            const message = args.join(' ');
+            if (
+              message.includes('Electron Security Warning') &&
+              (message.includes('webSecurity') ||
+                message.includes('allowRunningInsecureContent') ||
+                message.includes('Content-Security-Policy') ||
+                message.includes('unsafe-eval'))
+            ) {
+              return; // Suppress these warnings
+            }
+            originalWarn.apply(console, args);
+          };
+          window.__electronWarnFiltered = true;
+        })();
+      `).catch(() => {
+        // Ignore errors if script injection fails
+      });
+    });
+  }
 
   // Load the app
   if (isDev) {
@@ -288,14 +328,26 @@ const createWindow = () => {
     fs.access(indexPath)
       .then(() => {
         console.log("✓ index.html exists");
-        // Use loadURL with file:// protocol and hash for HashRouter
-        const fileUrl = `file://${indexPath}#/`;
-        console.log("Loading URL:", fileUrl);
-        mainWindow.loadURL(fileUrl).catch((error) => {
-          console.error("✗ Error loading URL:", error);
-          // Fallback to loadFile
-          mainWindow.loadFile(indexPath).catch((fallbackError) => {
-            console.error("✗ Fallback loadFile also failed:", fallbackError);
+        // Use loadFile which handles relative paths correctly
+        // Set up hash navigation after page loads
+        mainWindow.webContents.once('did-finish-load', () => {
+          // Navigate to hash route for HashRouter
+          mainWindow?.webContents.executeJavaScript(`window.location.hash = '#/'`).catch((err) => {
+            console.error("Error setting hash:", err);
+          });
+        });
+        mainWindow.loadFile(indexPath).catch((error) => {
+          console.error("✗ Error loading file:", error);
+          // Try alternative path
+          const altPath = path.join(__dirname, "..", "dist", "index.html");
+          console.log("Trying alternative path:", altPath);
+          mainWindow.webContents.once('did-finish-load', () => {
+            mainWindow?.webContents.executeJavaScript(`window.location.hash = '#/'`).catch((err) => {
+              console.error("Error setting hash:", err);
+            });
+          });
+          mainWindow.loadFile(altPath).catch((altError) => {
+            console.error("✗ Alternative path also failed:", altError);
           });
         });
       })
@@ -305,8 +357,12 @@ const createWindow = () => {
         // Try alternative path
         const altPath = path.join(__dirname, "..", "dist", "index.html");
         console.log("Trying alternative path:", altPath);
-        const altUrl = `file://${altPath}#/`;
-        mainWindow.loadURL(altUrl).catch((altError) => {
+        mainWindow.webContents.once('did-finish-load', () => {
+          mainWindow?.webContents.executeJavaScript(`window.location.hash = '#/'`).catch((err) => {
+            console.error("Error setting hash:", err);
+          });
+        });
+        mainWindow.loadFile(altPath).catch((altError) => {
           console.error("✗ Alternative path also failed:", altError);
         });
       });
@@ -898,6 +954,54 @@ async function getAudioSampleRate(filePath: string): Promise<number | null> {
   }
 }
 
+// Helper function to detect silence at the start of an audio file
+async function detectSilenceStart(filePath: string): Promise<number> {
+  try {
+    const ffmpegPath = getFFmpegPath();
+    if (!ffmpegPath) {
+      return 0;
+    }
+
+    // Use silencedetect filter to find where silence ends
+    // -f null - means no output file
+    // -af silencedetect=noise=-30dB:d=0.3 - detect silence below -30dB for at least 0.3 seconds
+    // Escape file path for shell execution
+    const escapedFilePath = filePath.replace(/"/g, '\\"');
+    const command = `"${ffmpegPath}" -i "${escapedFilePath}" -af silencedetect=noise=-30dB:d=0.3 -f null - 2>&1`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    const output = stdout + stderr;
+
+    // Parse the silencedetect output to find where silence ends
+    // Format: silencedetect: silence_end: 2.5 | silence_duration: 2.5
+    // We want the first silence_end value
+    const silenceEndMatch = output.match(/silence_end:\s*([\d.]+)/);
+    if (silenceEndMatch && silenceEndMatch[1]) {
+      const silenceEnd = parseFloat(silenceEndMatch[1]);
+      // Return the silence end time (this is where audio starts)
+      return Math.max(0, silenceEnd);
+    }
+
+    // If no silence detected, check for silence_start to see if there's silence at the beginning
+    const silenceStartMatch = output.match(/silence_start:\s*([\d.]+)/);
+    if (silenceStartMatch && silenceStartMatch[1]) {
+      const silenceStart = parseFloat(silenceStartMatch[1]);
+      // If silence starts at 0 or very close to 0, find where it ends
+      if (silenceStart < 0.5) {
+        const silenceEndMatch2 = output.match(/silence_end:\s*([\d.]+)/);
+        if (silenceEndMatch2 && silenceEndMatch2[1]) {
+          return Math.max(0, parseFloat(silenceEndMatch2[1]));
+        }
+      }
+    }
+
+    return 0; // No silence detected at start
+  } catch (error) {
+    console.error("Error detecting silence:", error);
+    return 0; // Default to no trimming if detection fails
+  }
+}
+
 ipcMain.handle(
   "fs:convertAndCopyFile",
   async (
@@ -908,7 +1012,8 @@ ipcMain.handle(
     sampleDepth?: string,
     fileFormat?: string,
     mono?: boolean,
-    normalize?: boolean
+    normalize?: boolean,
+    trimStart?: boolean
   ) => {
     try {
       // Ensure destination directory exists
@@ -926,10 +1031,17 @@ ipcMain.handle(
 
       // Check if conversion is needed
       // If any conversion setting is enabled, we'll convert
-      const needsConversion = targetSampleRate || sampleDepth === "16-bit" || mono || normalize || fileFormat === "WAV";
+      const needsConversion = targetSampleRate || sampleDepth === "16-bit" || mono || normalize || fileFormat === "WAV" || trimStart;
       if (!needsConversion) {
         await fs.copyFile(sourcePath, destPath);
         return { success: true };
+      }
+
+      // Detect silence at start if trimStart is enabled
+      let silenceStartTime = 0;
+      if (trimStart) {
+        silenceStartTime = await detectSilenceStart(sourcePath);
+        console.log(`Detected silence at start: ${silenceStartTime} seconds`);
       }
 
       // Get ffmpeg path
@@ -941,11 +1053,28 @@ ipcMain.handle(
       }
 
       // Build ffmpeg command arguments
-      const ffmpegArgs: string[] = [
-        "-i",
-        sourcePath,
-        "-y", // Overwrite output file
-      ];
+      const ffmpegArgs: string[] = [];
+      
+      // If trimming start, use -ss to skip silence at the beginning
+      if (trimStart && silenceStartTime > 0) {
+        ffmpegArgs.push("-ss", silenceStartTime.toString());
+      }
+      
+      ffmpegArgs.push("-i", sourcePath);
+      ffmpegArgs.push("-y"); // Overwrite output file
+
+      // Build audio filter chain
+      const audioFilters: string[] = [];
+
+      // Add normalization (loudnorm filter)
+      if (normalize) {
+        audioFilters.push("loudnorm=I=-16:TP=-1.5:LRA=11");
+      }
+
+      // Add audio filters if any
+      if (audioFilters.length > 0) {
+        ffmpegArgs.push("-af", audioFilters.join(","));
+      }
 
       // Add sample rate conversion (always apply if targetSampleRate is set)
       if (targetSampleRate) {
@@ -955,11 +1084,6 @@ ipcMain.handle(
       // Add mono conversion
       if (mono) {
         ffmpegArgs.push("-ac", "1");
-      }
-
-      // Add normalization (loudnorm filter)
-      if (normalize) {
-        ffmpegArgs.push("-af", "loudnorm=I=-16:TP=-1.5:LRA=11");
       }
 
       // Determine audio codec based on sample depth

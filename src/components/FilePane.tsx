@@ -106,6 +106,7 @@ interface FilePaneProps {
   fileFormat?: string;
   mono?: boolean;
   normalize?: boolean;
+  trimStart?: boolean;
   autoNavigateToCard?: boolean;
   convertFiles?: boolean;
   showEjectButton?: boolean;
@@ -121,6 +122,7 @@ export const FilePane = ({
   fileFormat = "dont-change",
   mono = false,
   normalize = false,
+  trimStart = false,
   autoNavigateToCard = false,
   convertFiles = false,
   showEjectButton = false,
@@ -206,41 +208,6 @@ export const FilePane = ({
       return selected;
     },
     [selectedItems]
-  );
-
-  // Helper function to get all files from selected items (including files in folders)
-  const getAllFilesFromSelection = useCallback(
-    async (selectedNodes: FileNode[]): Promise<Array<{ path: string; name: string; type: "file" | "folder" }>> => {
-      const files: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
-
-      for (const node of selectedNodes) {
-        if (node.type === "file") {
-          files.push({ path: node.path, name: node.name, type: "file" });
-        } else if (node.type === "folder") {
-          // Recursively get all files in the folder
-          const getAllFilesInFolder = async (folderPath: string): Promise<void> => {
-            if (!window.electron) return;
-            try {
-              const result = await window.electron.fs.readDirectory(folderPath);
-              if (!result.success || !result.data) return;
-
-              for (const entry of result.data) {
-                if (entry.type === "file") {
-                  files.push({ path: entry.path, name: entry.name, type: "file" });
-                } else if (entry.type === "folder") {
-                  await getAllFilesInFolder(entry.path);
-                }
-              }
-            } catch (error) {
-              console.error("Error reading folder:", error);
-            }
-          };
-          await getAllFilesInFolder(node.path);
-        }
-      }
-      return files;
-    },
-    []
   );
 
   // Helper functions for storing/retrieving last right pane volume UUID
@@ -407,9 +374,51 @@ export const FilePane = ({
           setPathDoesNotExist(false);
 
           // Filter out hidden files/folders (starting with '.' or '~')
-          const filteredEntries = result.data.filter(
-            (entry) => !entry.name.startsWith(".") && !entry.name.startsWith("~")
-          );
+          // Also filter out volume mount points when listing root directory
+          const filteredEntries = result.data.filter((entry) => {
+            if (entry.name.startsWith(".") || entry.name.startsWith("~")) {
+              return false;
+            }
+            // On macOS, filter out volumes when listing "/" (they appear as directories)
+            // Only show standard macOS system directories - everything else is likely a volume
+            if (dirPath === "/" && entry.type === "folder") {
+              const entryPathLower = entry.path.replace(/\/+$/, "").toLowerCase();
+              const entryNameLower = entry.name.toLowerCase();
+
+              // Standard macOS system directories that should be shown
+              const allowedSystemDirs = [
+                "applications",
+                "library",
+                "system",
+                "users",
+                "bin",
+                "sbin",
+                "usr",
+                "private",
+                "cores",
+                "dev",
+                "etc",
+                "home",
+                "net",
+                "opt",
+                "tmp",
+                "var",
+              ];
+
+              // Always filter out entries in /Volumes/ directory (these are always volumes)
+              if (entryPathLower.startsWith("/volumes/")) {
+                console.log(`${paneName} - Filtering volume in /Volumes/:`, entry.name, entry.path);
+                return false;
+              }
+
+              // Only allow standard system directories - filter out everything else (volumes)
+              if (!allowedSystemDirs.includes(entryNameLower)) {
+                console.log(`${paneName} - Filtering non-system directory (likely volume):`, entry.name, entry.path);
+                return false;
+              }
+            }
+            return true;
+          });
 
           const children: FileNode[] = filteredEntries.map((entry) => ({
             id: `${nodeId}-${entry.path}`,
@@ -467,7 +476,7 @@ export const FilePane = ({
         }
       }
     },
-    [paneName]
+    [paneName, availableVolumes]
   );
 
   // Effect to restore expanded folders when fileTree is populated
@@ -1059,11 +1068,22 @@ export const FilePane = ({
       setPathDoesNotExist(false);
 
       try {
-        const resolvedUUID = volume.uuid ?? (await getVolumeUUIDForPath(volume.path));
+        // For "Local Files" (isHome), use home directory to match initialization behavior
+        let targetPath = volume.path;
+        if (volume.isHome) {
+          const homeResult = await window.electron.fs.getHomeDirectory();
+          if (homeResult.success && homeResult.data) {
+            targetPath = homeResult.data;
+          } else {
+            // Fallback to "/" if home directory can't be retrieved
+            targetPath = "/";
+          }
+        }
+        const resolvedUUID = volume.uuid ?? (await getVolumeUUIDForPath(targetPath));
         const displayName = volume.isHome ? "Local Files" : getVolumeName(volume.path);
 
-        setRootPath(volume.path);
-        rootPathRef.current = volume.path;
+        setRootPath(targetPath);
+        rootPathRef.current = targetPath;
         setDisplayTitle(displayName);
         setIsCardMounted(volume.isRemovable);
         setCurrentVolumeUUID(resolvedUUID);
@@ -1076,7 +1096,7 @@ export const FilePane = ({
           }
         }
 
-        let initialPath = volume.path;
+        let initialPath = targetPath;
         let restoredExpanded: string[] | undefined;
 
         if (resolvedUUID) {
@@ -1291,7 +1311,12 @@ export const FilePane = ({
                 convertFiles &&
                 isFromDifferentPane &&
                 isAudioFile &&
-                (fileFormat === "WAV" || sampleRate !== "dont-change" || sampleDepth === "16-bit" || mono || normalize);
+                (fileFormat === "WAV" ||
+                  sampleRate !== "dont-change" ||
+                  sampleDepth === "16-bit" ||
+                  mono ||
+                  normalize ||
+                  trimStart);
 
               let copyResult;
               if (needsConversion) {
@@ -1302,7 +1327,8 @@ export const FilePane = ({
                   sampleDepth,
                   fileFormat,
                   mono,
-                  normalize
+                  normalize,
+                  trimStart
                 );
               } else {
                 copyResult = await window.electron.fs.copyFile(entry.path, entryDestPath);
@@ -1350,7 +1376,12 @@ export const FilePane = ({
             convertFiles &&
             isFromDifferentPane &&
             isAudioFile &&
-            (fileFormat === "WAV" || sampleRate !== "dont-change" || sampleDepth === "16-bit" || mono || normalize);
+            (fileFormat === "WAV" ||
+              sampleRate !== "dont-change" ||
+              sampleDepth === "16-bit" ||
+              mono ||
+              normalize ||
+              trimStart);
 
           let result;
           if (needsConversion) {
@@ -1361,7 +1392,8 @@ export const FilePane = ({
               sampleDepth,
               fileFormat,
               mono,
-              normalize
+              normalize,
+              trimStart
             );
           } else {
             result = await window.electron.fs.copyFile(item.path, destFilePath);
@@ -1415,7 +1447,235 @@ export const FilePane = ({
     setDragOverPath(null);
     setIsDraggingOverRoot(false);
 
-    // Determine destination path
+    if (!window.electron) {
+      console.error("Electron API not available");
+      return;
+    }
+
+    // Check if this is an external file drop (from OS file system)
+    // In Electron, we need to use dataTransfer.items to access file paths
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0) {
+      // External files/folders dropped from OS
+      const externalItems: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
+
+      // Use helper function from preload script to get file paths
+      const filePaths = window.electron.getFilePathsFromItems(items);
+
+      // Process each file path
+      for (const filePath of filePaths) {
+        if (!filePath) {
+          continue;
+        }
+
+        // Normalize the path (handle any path separators)
+        const normalizedPath = filePath.replace(/\\/g, "/");
+
+        // Check if it's a file or folder
+        try {
+          const statsResult = await window.electron.fs.getFileStats(normalizedPath);
+          if (statsResult.success && statsResult.data) {
+            const itemType = statsResult.data.isDirectory ? "folder" : "file";
+            externalItems.push({
+              path: normalizedPath,
+              name: basename(normalizedPath),
+              type: itemType,
+            });
+          }
+        } catch (error) {
+          console.error("Error getting stats for dropped item:", normalizedPath, error);
+        }
+      }
+
+      if (externalItems.length === 0) {
+        console.warn("No valid external items found in drop");
+        return;
+      }
+
+      // Determine destination path
+      let destinationPath: string;
+      if (destinationNode && destinationNode.type === "folder") {
+        destinationPath = destinationNode.path;
+      } else {
+        // Drop on empty space - use current root path
+        destinationPath = currentRootPath || rootPath;
+      }
+
+      if (!destinationPath || typeof destinationPath !== "string" || destinationPath.trim() === "") {
+        console.error("No destination path available or invalid:", destinationPath);
+        return;
+      }
+
+      // Handle based on pane type
+      if (paneName === "local") {
+        // Left pane: navigate to folder containing the dropped item
+        // If dropped item is a folder, navigate to it; if it's a file, navigate to its parent folder
+        const firstItem = externalItems[0];
+        if (firstItem.type === "folder") {
+          await navigateToFolder(firstItem.path);
+        } else {
+          // File: navigate to parent folder
+          const parentPath = dirname(firstItem.path);
+          await navigateToFolder(parentPath);
+        }
+      } else if (paneName === "cfcard") {
+        // Right pane: convert and save files/folders
+        const itemsToProcess: Array<{ path: string; name: string; type: "file" | "folder"; targetDir: string }> = [];
+
+        for (const item of externalItems) {
+          if (item.type === "file") {
+            // File: convert and save in destination folder
+            itemsToProcess.push({
+              ...item,
+              targetDir: destinationPath,
+            });
+          } else {
+            // Folder: create folder with same name in destination if it doesn't exist, then convert files into it
+            const folderName = item.name;
+            const targetFolderPath = joinPath(destinationPath, folderName);
+
+            // Check if folder already exists
+            try {
+              const statsResult = await window.electron.fs.getFileStats(targetFolderPath);
+              if (!statsResult.success || !statsResult.data?.isDirectory) {
+                // Create folder if it doesn't exist
+                await window.electron.fs.createFolder(targetFolderPath);
+              }
+            } catch {
+              // Folder doesn't exist, create it
+              await window.electron.fs.createFolder(targetFolderPath);
+            }
+
+            // Get all files from the dropped folder recursively, preserving relative paths
+            const getAllFilesInFolder = async (folderPath: string, relativePath: string = ""): Promise<void> => {
+              try {
+                const result = await window.electron.fs.readDirectory(folderPath);
+                if (!result.success || !result.data) return;
+
+                for (const entry of result.data) {
+                  const entryRelativePath = relativePath ? joinPath(relativePath, entry.name) : entry.name;
+                  if (entry.type === "file") {
+                    itemsToProcess.push({
+                      path: entry.path,
+                      name: entry.name,
+                      type: "file",
+                      targetDir: joinPath(targetFolderPath, relativePath),
+                    });
+                  } else if (entry.type === "folder") {
+                    // Ensure subfolder exists in target
+                    const targetSubfolderPath = joinPath(targetFolderPath, entryRelativePath);
+                    try {
+                      await window.electron.fs.createFolder(targetSubfolderPath);
+                    } catch {
+                      // Folder might already exist, ignore
+                    }
+                    await getAllFilesInFolder(entry.path, entryRelativePath);
+                  }
+                }
+              } catch (error) {
+                console.error("Error reading folder:", error);
+              }
+            };
+
+            await getAllFilesInFolder(item.path);
+          }
+        }
+
+        // Convert and copy all files to their target destinations
+        if (itemsToProcess.length > 0) {
+          let currentFileIndex = 0;
+          const totalFiles = itemsToProcess.length;
+          const showProgress = totalFiles > 1;
+
+          if (showProgress) {
+            setCopyProgress({
+              isVisible: true,
+              current: 0,
+              total: totalFiles,
+              currentFile: "",
+            });
+          }
+
+          const errors: Array<{ name: string; error: string }> = [];
+
+          for (const item of itemsToProcess) {
+            if (item.type === "file") {
+              currentFileIndex++;
+              if (showProgress) {
+                setCopyProgress({
+                  isVisible: true,
+                  current: currentFileIndex,
+                  total: totalFiles,
+                  currentFile: item.name,
+                });
+              }
+
+              const finalDestFilePath = joinPath(item.targetDir, item.name);
+
+              // Check if file conversion is needed
+              const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
+
+              let finalDestPath = finalDestFilePath;
+              if (convertFiles && isAudioFile && fileFormat === "WAV") {
+                finalDestPath = finalDestFilePath.replace(/\.\w+$/i, ".wav");
+              }
+
+              const needsConversion =
+                convertFiles &&
+                isAudioFile &&
+                (fileFormat === "WAV" ||
+                  sampleRate !== "dont-change" ||
+                  sampleDepth === "16-bit" ||
+                  mono ||
+                  normalize ||
+                  trimStart);
+
+              let result;
+              if (needsConversion) {
+                result = await window.electron.fs.convertAndCopyFile(
+                  item.path,
+                  finalDestPath,
+                  sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
+                  sampleDepth,
+                  fileFormat,
+                  mono,
+                  normalize,
+                  trimStart
+                );
+              } else {
+                result = await window.electron.fs.copyFile(item.path, finalDestPath);
+              }
+
+              if (result.success) {
+                onFileTransfer?.(item.path, finalDestPath);
+              } else {
+                errors.push({ name: item.name, error: result.error || "Unknown error" });
+              }
+            }
+          }
+
+          if (showProgress) {
+            setCopyProgress(null);
+          }
+
+          // Refresh the destination folder
+          const nodeId = destinationNode ? destinationNode.id : "root";
+          await loadDirectory(destinationPath, nodeId);
+
+          // Show errors if any
+          if (errors.length > 0) {
+            const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
+              .map((e) => `- ${e.name}: ${e.error}`)
+              .join("\n")}`;
+            alert(errorMessage);
+          }
+        }
+      }
+
+      return;
+    }
+
+    // Determine destination path for internal drops
     let destinationPath: string;
     if (destinationNode && destinationNode.type === "folder") {
       destinationPath = destinationNode.path;
@@ -1468,11 +1728,6 @@ export const FilePane = ({
       return;
     }
 
-    if (!window.electron) {
-      console.error("Electron API not available");
-      return;
-    }
-
     try {
       const fileName = basename(sourcePath);
       const destFilePath = joinPath(destinationPath, fileName);
@@ -1493,7 +1748,12 @@ export const FilePane = ({
           convertFiles &&
           isFromDifferentPane &&
           isAudioFile &&
-          (fileFormat === "WAV" || sampleRate !== "dont-change" || sampleDepth === "16-bit" || mono || normalize);
+          (fileFormat === "WAV" ||
+            sampleRate !== "dont-change" ||
+            sampleDepth === "16-bit" ||
+            mono ||
+            normalize ||
+            trimStart);
 
         let result;
         if (needsConversion) {
@@ -1504,7 +1764,8 @@ export const FilePane = ({
             sampleDepth,
             fileFormat,
             mono,
-            normalize
+            normalize,
+            trimStart
           );
         } else {
           result = await window.electron.fs.copyFile(sourcePath, destFilePath);
