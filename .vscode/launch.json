@@ -2,19 +2,43 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Electron",
+      "name": "Debug Main Process",
       "type": "node",
       "request": "launch",
+      "cwd": "${workspaceFolder}",
       "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
-      "runtimeArgs": ["."],
+      "windows": {
+        "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron.cmd"
+      },
+      "args": [".", "--remote-debugging-port=9223"],
       "outputCapture": "std",
       "console": "integratedTerminal",
-      "sourceMaps": true,
+      "internalConsoleOptions": "neverOpen",
       "skipFiles": ["<node_internals>/**"],
-      "env": {
-        "NODE_ENV": "development"
-      },
-      "preLaunchTask": "prepare-debug-complete"
+      "sourceMaps": true,
+      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
+      "preLaunchTask": "build:electron:main"
+    },
+    {
+      "name": "Debug Renderer Process",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9223,
+      "webRoot": "${workspaceFolder}",
+      "timeout": 30000,
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack:///./~/*": "${webRoot}/node_modules/*",
+        "webpack:///./*": "${webRoot}/*",
+        "webpack:///*": "*"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug All (Main + Renderer)",
+      "configurations": ["Debug Main Process", "Debug Renderer Process"],
+      "preLaunchTask": "prepare:debug"
     }
   ]
 }
