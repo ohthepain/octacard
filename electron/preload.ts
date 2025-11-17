@@ -27,7 +27,8 @@ contextBridge.exposeInMainWorld("electron", {
       sampleDepth?: string,
       fileFormat?: string,
       mono?: boolean,
-      normalize?: boolean
+      normalize?: boolean,
+      trimStart?: boolean
     ) =>
       ipcRenderer.invoke(
         "fs:convertAndCopyFile",
@@ -37,7 +38,8 @@ contextBridge.exposeInMainWorld("electron", {
         sampleDepth,
         fileFormat,
         mono,
-        normalize
+        normalize,
+        trimStart
       ),
     searchFiles: (query: string, searchPath?: string) =>
       ipcRenderer.invoke("fs:searchFiles", query, searchPath),
@@ -54,7 +56,48 @@ contextBridge.exposeInMainWorld("electron", {
   removeListener: (channel: string) => {
     ipcRenderer.removeAllListeners(channel);
   },
+  // Helper function to get file path from File object (Electron-specific)
+  getFilePath: (file: File): string | null => {
+    // In Electron, File objects from drag-and-drop have a 'path' property
+    return (file as any).path || null;
+  },
+  // Helper function to get file paths from DataTransferItemList
+  getFilePathsFromItems: (items: DataTransferItemList): string[] => {
+    const paths: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) {
+          const path = (file as any).path;
+          if (path) {
+            paths.push(path);
+          }
+        }
+      }
+    }
+    return paths;
+  },
 });
+
+// Suppress Electron security warnings in development (they won't appear in production anyway)
+// These warnings are expected when webSecurity is disabled for file:// URLs
+// Note: In preload context, we suppress these warnings always since they're expected
+const originalWarn = console.warn;
+console.warn = function (...args: any[]) {
+  const message = args.join(" ");
+  // Filter out known Electron security warnings
+  if (
+    message.includes("Electron Security Warning") &&
+    (message.includes("webSecurity") ||
+      message.includes("allowRunningInsecureContent") ||
+      message.includes("Content-Security-Policy") ||
+      message.includes("unsafe-eval"))
+  ) {
+    return; // Suppress these warnings
+  }
+  originalWarn.apply(console, args);
+};
 
 // Log that preload script has loaded
 console.log("Preload script loaded, electron API exposed");

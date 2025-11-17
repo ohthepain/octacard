@@ -16,6 +16,8 @@ interface SampleFormatDialogProps {
   onMonoChange: (checked: boolean) => void;
   normalize: boolean;
   onNormalizeChange: (checked: boolean) => void;
+  trimStart: boolean;
+  onTrimStartChange: (checked: boolean) => void;
 }
 
 export const SampleFormatDialog = ({
@@ -31,6 +33,8 @@ export const SampleFormatDialog = ({
   onMonoChange,
   normalize,
   onNormalizeChange,
+  trimStart,
+  onTrimStartChange,
 }: SampleFormatDialogProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,6 +116,17 @@ export const SampleFormatDialog = ({
               />
               <Label htmlFor="normalize" className="text-sm font-normal cursor-pointer text-foreground">
                 Normalize
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="trimStart"
+                checked={trimStart}
+                onCheckedChange={(checked) => onTrimStartChange(checked === true)}
+              />
+              <Label htmlFor="trimStart" className="text-sm font-normal cursor-pointer text-foreground">
+                Trim Start
               </Label>
             </div>
           </DialogDescription>
