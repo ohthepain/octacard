@@ -10,6 +10,7 @@ export default defineConfig({
     },
     outDir: resolve(__dirname, "../dist-electron"),
     emptyOutDir: false,
+    sourcemap: true,
     rollupOptions: {
       external: ["electron"],
       output: {

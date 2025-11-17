@@ -2,19 +2,25 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build-electron",
+      "label": "build:electron:main",
       "type": "shell",
-      "command": "npm run build:electron:main",
-      "problemMatcher": []
+      "command": "npm",
+      "args": ["run", "build:electron:main"],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
     },
     {
-      "label": "start-vite",
+      "label": "start:dev",
       "type": "shell",
-      "command": "npm run dev",
+      "command": "npm",
+      "args": ["run", "dev"],
       "isBackground": true,
       "problemMatcher": {
         "pattern": {
-          "regexp": "^(.*)$",
+          "regexp": "^$",
           "file": 1,
           "location": 2,
           "message": 3
@@ -22,14 +28,21 @@
         "background": {
           "activeOnStart": true,
           "beginsPattern": ".*",
-          "endsPattern": ".*ready in.*"
+          "endsPattern": ".*Local:.*http://localhost:5173.*"
         }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
       }
     },
     {
-      "label": "prepare-debug-complete",
-      "dependsOn": ["build-electron", "start-vite"],
-      "dependsOrder": "sequence",
+      "label": "prepare:debug",
+      "dependsOn": [
+        "build:electron:main",
+        "start:dev"
+      ],
+      "dependsOrder": "parallel",
       "problemMatcher": []
     }
   ]

@@ -8,6 +8,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, "../dist-electron"),
     emptyOutDir: false,
+    sourcemap: true,
     rollupOptions: {
       input: resolve(__dirname, "main.ts"),
       external: [
