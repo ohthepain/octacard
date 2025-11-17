@@ -11,6 +11,7 @@ import {
   Loader2,
   XCircle,
   ArrowUp,
+  RotateCw,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
+import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -172,6 +174,15 @@ export const FilePane = ({
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
+  const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
+  const [pendingConversionItems, setPendingConversionItems] = useState<Array<{
+    path: string;
+    name: string;
+    type: "file" | "folder";
+    targetDir: string;
+  }> | null>(null);
+  const [pendingDestinationPath, setPendingDestinationPath] = useState<string>("");
+  const [pendingDestinationNode, setPendingDestinationNode] = useState<FileNode | undefined>(undefined);
 
   // Helper function to recursively count files in a folder
   const countFilesRecursively = useCallback(async (folderPath: string): Promise<number> => {
@@ -606,7 +617,7 @@ export const FilePane = ({
           }
         };
         findNodesByPath(nodes);
-        
+
         if (restoredIds.size > 0) {
           setSelectedItems(restoredIds);
           const flatNodes = getFlatNodeList(nodes);
@@ -1143,17 +1154,24 @@ export const FilePane = ({
           }
         }
 
+        // For "Local Files", always start at the home directory root (don't restore saved subdirectory)
+        // For removable volumes, restore saved navigation state if available
         let initialPath = targetPath;
         let restoredExpanded: string[] | undefined;
 
-        if (resolvedUUID) {
+        if (!volume.isHome && resolvedUUID) {
+          // Only restore saved state for non-home volumes (removable drives)
           const savedState = getNavigationState(resolvedUUID);
           if (savedState?.currentPath) {
             try {
               const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
               if (statsResult.success && statsResult.data?.isDirectory) {
-                initialPath = savedState.currentPath;
-                restoredExpanded = savedState.expandedFolders;
+                // Verify the saved path is on the same volume
+                const savedPathVolumeUUID = await getVolumeUUIDForPath(savedState.currentPath);
+                if (savedPathVolumeUUID === resolvedUUID) {
+                  initialPath = savedState.currentPath;
+                  restoredExpanded = savedState.expandedFolders;
+                }
               }
             } catch {
               // Ignore errors restoring saved path
@@ -1161,6 +1179,7 @@ export const FilePane = ({
           }
         }
 
+        // Ensure currentRootPath matches rootPath for home directory (no ".." link)
         setCurrentRootPath(initialPath);
         currentRootPathRef.current = initialPath;
         setExpandedFolders(new Set());
@@ -1220,7 +1239,7 @@ export const FilePane = ({
 
     // Save current expanded folders
     const currentExpanded = Array.from(expandedFolders);
-    
+
     // Save current selected items by path (since IDs might change after refresh)
     const selectedPaths = new Set<string>();
     const findSelectedPaths = (nodes: FileNode[]) => {
@@ -1235,7 +1254,9 @@ export const FilePane = ({
     };
     findSelectedPaths(fileTree);
 
-    console.log(`${paneName} - Refreshing directory while preserving ${currentExpanded.length} expanded folders and ${selectedPaths.size} selected items`);
+    console.log(
+      `${paneName} - Refreshing directory while preserving ${currentExpanded.length} expanded folders and ${selectedPaths.size} selected items`
+    );
 
     // Store selected paths to restore later
     selectedPathsToRestoreRef.current = selectedPaths.size > 0 ? selectedPaths : null;
@@ -1266,7 +1287,7 @@ export const FilePane = ({
               }
             };
             findNodesByPath(nodes);
-            
+
             if (restoredIds.size > 0) {
               setSelectedItems(restoredIds);
               const flatNodes = getFlatNodeList(nodes);
@@ -1284,33 +1305,6 @@ export const FilePane = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory]);
-
-  // Refresh current directory when app regains focus/visibility
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && currentRootPath) {
-        // App became visible, refresh the current directory
-        console.log(`${paneName} - App became visible, refreshing directory:`, currentRootPath);
-        void refreshCurrentDirectory();
-      }
-    };
-
-    const handleFocus = () => {
-      if (currentRootPath) {
-        // Window gained focus, refresh the current directory
-        console.log(`${paneName} - Window gained focus, refreshing directory:`, currentRootPath);
-        void refreshCurrentDirectory();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", handleFocus);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [currentRootPath, paneName, refreshCurrentDirectory]);
 
   // Helper to get flat list of nodes for shift-click range selection
   const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
@@ -1365,9 +1359,7 @@ export const FilePane = ({
       // Check if the pane contains the active element or the event target
       // Since we clear other panes' selections when clicking, only one pane should have selections
       const isPaneFocused =
-        paneContainer.contains(activeElement) ||
-        paneContainer.contains(target) ||
-        selectedItems.size > 0;
+        paneContainer.contains(activeElement) || paneContainer.contains(target) || selectedItems.size > 0;
 
       if (!isPaneFocused) return;
 
@@ -1386,9 +1378,7 @@ export const FilePane = ({
       if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         // Get the current file tree (accounting for search state)
         // Compute searchResultsAsNodes if searching
-        const currentTree = searchQuery
-          ? buildFolderTreeFromSearchResults(searchResults, currentRootPath)
-          : fileTree;
+        const currentTree = searchQuery ? buildFolderTreeFromSearchResults(searchResults, currentRootPath) : fileTree;
         if (currentTree.length === 0) return;
 
         // Add parent link if needed (same logic as renderFileTree)
@@ -1430,7 +1420,8 @@ export const FilePane = ({
         }
 
         // Calculate new index
-        const newIndex = e.key === "ArrowUp" ? Math.max(0, anchorIndex - 1) : Math.min(flatNodes.length - 1, anchorIndex + 1);
+        const newIndex =
+          e.key === "ArrowUp" ? Math.max(0, anchorIndex - 1) : Math.min(flatNodes.length - 1, anchorIndex + 1);
         if (newIndex === anchorIndex) return; // Already at boundary
 
         // Extend selection (similar to shift-click logic)
@@ -1458,7 +1449,16 @@ export const FilePane = ({
       window.removeEventListener("keydown", handleKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedItems.size, lastSelectedIndex, fileTree, searchQuery, searchResults, currentRootPath, rootPath, getFlatNodeList]);
+  }, [
+    selectedItems.size,
+    lastSelectedIndex,
+    fileTree,
+    searchQuery,
+    searchResults,
+    currentRootPath,
+    rootPath,
+    getFlatNodeList,
+  ]);
 
   const navigateToParent = async () => {
     if (!currentRootPath || currentRootPath === rootPath) return;
@@ -1807,307 +1807,130 @@ export const FilePane = ({
         return;
       }
 
-      // Handle based on pane type
-      if (paneName === "local") {
-        // Left pane: navigate to folder containing the dropped item
-        // If dropped item is a folder, navigate to it; if it's a file, navigate to its parent folder
-        const firstItem = externalItems[0];
-        if (firstItem.type === "folder") {
-          await navigateToFolder(firstItem.path);
+      // Always convert and save files/folders (single pane design)
+      const itemsToProcess: Array<{ path: string; name: string; type: "file" | "folder"; targetDir: string }> = [];
+
+      for (const item of externalItems) {
+        if (item.type === "file") {
+          // File: convert and save in destination folder
+          itemsToProcess.push({
+            ...item,
+            targetDir: destinationPath,
+          });
         } else {
-          // File: navigate to parent folder
-          const parentPath = dirname(firstItem.path);
-          await navigateToFolder(parentPath);
-        }
-      } else if (paneName === "cfcard") {
-        // Right pane: convert and save files/folders
-        const itemsToProcess: Array<{ path: string; name: string; type: "file" | "folder"; targetDir: string }> = [];
+          // Folder: create folder with same name in destination if it doesn't exist, then convert files into it
+          const folderName = item.name;
+          const targetFolderPath = joinPath(destinationPath, folderName);
 
-        for (const item of externalItems) {
-          if (item.type === "file") {
-            // File: convert and save in destination folder
-            itemsToProcess.push({
-              ...item,
-              targetDir: destinationPath,
-            });
-          } else {
-            // Folder: create folder with same name in destination if it doesn't exist, then convert files into it
-            const folderName = item.name;
-            const targetFolderPath = joinPath(destinationPath, folderName);
-
-            // Check if folder already exists
-            try {
-              const statsResult = await window.electron.fs.getFileStats(targetFolderPath);
-              if (!statsResult.success || !statsResult.data?.isDirectory) {
-                // Create folder if it doesn't exist
-                await window.electron.fs.createFolder(targetFolderPath);
-              }
-            } catch {
-              // Folder doesn't exist, create it
+          // Check if folder already exists
+          try {
+            const statsResult = await window.electron.fs.getFileStats(targetFolderPath);
+            if (!statsResult.success || !statsResult.data?.isDirectory) {
+              // Create folder if it doesn't exist
               await window.electron.fs.createFolder(targetFolderPath);
             }
+          } catch {
+            // Folder doesn't exist, create it
+            await window.electron.fs.createFolder(targetFolderPath);
+          }
 
-            // Get all files from the dropped folder recursively, preserving relative paths
-            const getAllFilesInFolder = async (folderPath: string, relativePath: string = ""): Promise<void> => {
-              try {
-                const result = await window.electron.fs.readDirectory(folderPath);
-                if (!result.success || !result.data) return;
+          // Get all files from the dropped folder recursively, preserving relative paths
+          const getAllFilesInFolder = async (folderPath: string, relativePath: string = ""): Promise<void> => {
+            try {
+              const result = await window.electron.fs.readDirectory(folderPath);
+              if (!result.success || !result.data) return;
 
-                for (const entry of result.data) {
-                  const entryRelativePath = relativePath ? joinPath(relativePath, entry.name) : entry.name;
-                  if (entry.type === "file") {
-                    itemsToProcess.push({
-                      path: entry.path,
-                      name: entry.name,
-                      type: "file",
-                      targetDir: joinPath(targetFolderPath, relativePath),
-                    });
-                  } else if (entry.type === "folder") {
-                    // Ensure subfolder exists in target
-                    const targetSubfolderPath = joinPath(targetFolderPath, entryRelativePath);
-                    try {
-                      await window.electron.fs.createFolder(targetSubfolderPath);
-                    } catch {
-                      // Folder might already exist, ignore
-                    }
-                    await getAllFilesInFolder(entry.path, entryRelativePath);
+              for (const entry of result.data) {
+                const entryRelativePath = relativePath ? joinPath(relativePath, entry.name) : entry.name;
+                if (entry.type === "file") {
+                  itemsToProcess.push({
+                    path: entry.path,
+                    name: entry.name,
+                    type: "file",
+                    targetDir: joinPath(targetFolderPath, relativePath),
+                  });
+                } else if (entry.type === "folder") {
+                  // Ensure subfolder exists in target
+                  const targetSubfolderPath = joinPath(targetFolderPath, entryRelativePath);
+                  try {
+                    await window.electron.fs.createFolder(targetSubfolderPath);
+                  } catch {
+                    // Folder might already exist, ignore
                   }
+                  await getAllFilesInFolder(entry.path, entryRelativePath);
                 }
-              } catch (error) {
-                console.error("Error reading folder:", error);
               }
-            };
-
-            await getAllFilesInFolder(item.path);
-          }
-        }
-
-        // Convert and copy all files to their target destinations
-        if (itemsToProcess.length > 0) {
-          let currentFileIndex = 0;
-          const totalFiles = itemsToProcess.length;
-          const showProgress = totalFiles > 1;
-
-          if (showProgress) {
-            setCopyProgress({
-              isVisible: true,
-              current: 0,
-              total: totalFiles,
-              currentFile: "",
-            });
-          }
-
-          const errors: Array<{ name: string; error: string }> = [];
-
-          for (const item of itemsToProcess) {
-            if (item.type === "file") {
-              currentFileIndex++;
-              if (showProgress) {
-                setCopyProgress({
-                  isVisible: true,
-                  current: currentFileIndex,
-                  total: totalFiles,
-                  currentFile: item.name,
-                });
-              }
-
-              const finalDestFilePath = joinPath(item.targetDir, item.name);
-
-              // Check if file conversion is needed
-              const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
-
-              let finalDestPath = finalDestFilePath;
-              if (convertFiles && isAudioFile && fileFormat === "WAV") {
-                finalDestPath = finalDestFilePath.replace(/\.\w+$/i, ".wav");
-              }
-
-              const needsConversion =
-                convertFiles &&
-                isAudioFile &&
-                (fileFormat === "WAV" ||
-                  sampleRate !== "dont-change" ||
-                  sampleDepth === "16-bit" ||
-                  mono ||
-                  normalize ||
-                  trimStart);
-
-              let result;
-              if (needsConversion) {
-                result = await window.electron.fs.convertAndCopyFile(
-                  item.path,
-                  finalDestPath,
-                  sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
-                  sampleDepth,
-                  fileFormat,
-                  mono,
-                  normalize,
-                  trimStart
-                );
-              } else {
-                result = await window.electron.fs.copyFile(item.path, finalDestPath);
-              }
-
-              if (result.success) {
-                onFileTransfer?.(item.path, finalDestPath);
-              } else {
-                errors.push({ name: item.name, error: result.error || "Unknown error" });
-              }
+            } catch (error) {
+              console.error("Error reading folder:", error);
             }
-          }
+          };
 
-          if (showProgress) {
-            setCopyProgress(null);
-          }
-
-          // Refresh the destination folder
-          const nodeId = destinationNode ? destinationNode.id : "root";
-          await loadDirectory(destinationPath, nodeId);
-
-          // Show errors if any
-          if (errors.length > 0) {
-            const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
-              .map((e) => `- ${e.name}: ${e.error}`)
-              .join("\n")}`;
-            alert(errorMessage);
-          }
+          await getAllFilesInFolder(item.path);
         }
+      }
+
+      // Show confirmation dialog before converting
+      if (itemsToProcess.length > 0) {
+        setPendingConversionItems(itemsToProcess);
+        setPendingDestinationPath(destinationPath);
+        setPendingDestinationNode(destinationNode);
+        setConversionConfirmOpen(true);
       }
 
       return;
     }
+  };
 
-    // Determine destination path for internal drops
-    let destinationPath: string;
-    if (destinationNode && destinationNode.type === "folder") {
-      destinationPath = destinationNode.path;
-    } else {
-      // Drop on empty space - use current root path
-      destinationPath = currentRootPath || rootPath;
-    }
-
-    if (!destinationPath || typeof destinationPath !== "string" || destinationPath.trim() === "") {
-      console.error("No destination path available or invalid:", destinationPath);
+  // Process conversion after user confirms
+  const handleConversionConfirm = useCallback(async () => {
+    if (!pendingConversionItems || !pendingDestinationPath || !window.electron) {
       return;
     }
 
-    if (!window.electron) {
-      console.error("Electron API not available");
-      return;
+    setConversionConfirmOpen(false);
+    const itemsToProcess = pendingConversionItems;
+    const destinationPath = pendingDestinationPath;
+    const destinationNode = pendingDestinationNode;
+
+    let currentFileIndex = 0;
+    const totalFiles = itemsToProcess.length;
+    const showProgress = totalFiles > 1;
+
+    if (showProgress) {
+      setCopyProgress({
+        isVisible: true,
+        current: 0,
+        total: totalFiles,
+        currentFile: "",
+      });
     }
 
-    // Check for native file drops from Finder (e.dataTransfer.files)
-    const nativeFiles = e.dataTransfer.files;
-    if (nativeFiles && nativeFiles.length > 0) {
-      console.log(`${paneName} - Native file drop detected: ${nativeFiles.length} files`);
-      
-      // Convert FileList to array and get file paths
-      const items: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
-      
-      for (let i = 0; i < nativeFiles.length; i++) {
-        const file = nativeFiles[i];
-        // In Electron, File objects from native drops have a path property
-        const filePath = (file as any).path || file.name;
-        
-        // Check if it's a file or folder by checking stats
-        try {
-          const statsResult = await window.electron.fs.getFileStats(filePath);
-          if (statsResult.success && statsResult.data) {
-            items.push({
-              path: filePath,
-              name: file.name,
-              type: statsResult.data.isDirectory ? "folder" : "file",
-            });
-          }
-        } catch (error) {
-          console.error(`Error getting stats for ${filePath}:`, error);
-          // Fallback: assume it's a file
-          items.push({
-            path: filePath,
-            name: file.name,
-            type: "file",
+    const errors: Array<{ name: string; error: string }> = [];
+
+    for (const item of itemsToProcess) {
+      if (item.type === "file") {
+        currentFileIndex++;
+        if (showProgress) {
+          setCopyProgress({
+            isVisible: true,
+            current: currentFileIndex,
+            total: totalFiles,
+            currentFile: item.name,
           });
         }
-      }
 
-      if (items.length > 0) {
-        // For native drops from Finder:
-        // Right pane (convertFiles=true): copy with conversion
-        // Left pane (convertFiles=false): navigate to the dropped file's location
-        if (convertFiles) {
-          // Right pane: copy with conversion
-          await copyMultipleItems(items, destinationPath, destinationNode, true); // isExternal = true
-        } else {
-          // Left pane: navigate to the first dropped file's parent directory
-          const firstItem = items[0];
-          if (firstItem) {
-            const parentPath = dirname(firstItem.path);
-            console.log(`${paneName} - Navigating to dropped file's location:`, parentPath);
-            await navigateToFolder(parentPath);
-          }
-        }
-        return;
-      }
-    }
+        const finalDestFilePath = joinPath(item.targetDir, item.name);
 
-    // Check if this is a multiple item drag (from drag data)
-    const isMultiple = e.dataTransfer.getData("isMultiple") === "true";
-    if (isMultiple) {
-      const multipleItemsData = e.dataTransfer.getData("multipleItems");
-      if (multipleItemsData) {
-        try {
-          const items: Array<{ path: string; name: string; type: "file" | "folder" }> = JSON.parse(multipleItemsData);
-          await copyMultipleItems(items, destinationPath, destinationNode);
-          setSelectedItems(new Set()); // Clear selection after copy
-          return;
-        } catch (error) {
-          console.error("Error parsing multiple items data:", error);
-        }
-      }
-    }
-
-    // Check if we have selected items to copy (fallback for when selection state is preserved)
-    const selectedNodes = getSelectedNodes(fileTree);
-    if (selectedNodes.length > 0) {
-      // Convert selected nodes to items array
-      const items: Array<{ path: string; name: string; type: "file" | "folder" }> = selectedNodes.map((node) => ({
-        path: node.path,
-        name: node.name,
-        type: node.type,
-      }));
-      await copyMultipleItems(items, destinationPath, destinationNode);
-      setSelectedItems(new Set()); // Clear selection after copy
-      return;
-    }
-
-    // Fallback to drag-and-drop behavior (single item)
-    const sourcePath = e.dataTransfer.getData("sourcePath");
-    const sourceType = e.dataTransfer.getData("sourceType");
-
-    if (!sourcePath || !sourceType) {
-      console.error("No source path or type in drag data");
-      return;
-    }
-
-    try {
-      const fileName = basename(sourcePath);
-      const destFilePath = joinPath(destinationPath, fileName);
-
-      if (sourceType === "file") {
         // Check if file conversion is needed
-        // Only convert if convertFiles is enabled AND source is from a different pane
-        // Note: This handles internal drags, not external Finder drops (those are handled above)
-        const isFromDifferentPane = rootPath ? !sourcePath.startsWith(rootPath) : false;
-        const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(sourcePath);
+        const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
 
-        // Determine destination file path - if fileFormat is WAV, change extension to .wav
-        let finalDestFilePath = destFilePath;
-        if (convertFiles && isFromDifferentPane && isAudioFile && fileFormat === "WAV") {
-          finalDestFilePath = destFilePath.replace(/\.\w+$/i, ".wav");
+        let finalDestPath = finalDestFilePath;
+        if (isAudioFile && fileFormat === "WAV") {
+          finalDestPath = finalDestFilePath.replace(/\.\w+$/i, ".wav");
         }
 
+        // Always convert audio files according to settings
         const needsConversion =
-          convertFiles &&
-          isFromDifferentPane &&
           isAudioFile &&
           (fileFormat === "WAV" ||
             sampleRate !== "dont-change" ||
@@ -2119,8 +1942,8 @@ export const FilePane = ({
         let result;
         if (needsConversion) {
           result = await window.electron.fs.convertAndCopyFile(
-            sourcePath,
-            finalDestFilePath,
+            item.path,
+            finalDestPath,
             sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
             sampleDepth,
             fileFormat,
@@ -2129,35 +1952,50 @@ export const FilePane = ({
             trimStart
           );
         } else {
-          result = await window.electron.fs.copyFile(sourcePath, destFilePath);
+          result = await window.electron.fs.copyFile(item.path, finalDestPath);
         }
 
         if (result.success) {
-          // Refresh the destination folder
-          const nodeId = destinationNode ? destinationNode.id : "root";
-          await loadDirectory(destinationPath, nodeId);
-          onFileTransfer?.(sourcePath, destinationPath);
+          onFileTransfer?.(item.path, finalDestPath);
         } else {
-          console.error("Failed to copy file:", result.error);
-          alert(`Failed to copy file: ${result.error}`);
-        }
-      } else if (sourceType === "folder") {
-        const result = await window.electron.fs.copyFolder(sourcePath, destFilePath);
-        if (result.success) {
-          // Refresh the destination folder
-          const nodeId = destinationNode ? destinationNode.id : "root";
-          await loadDirectory(destinationPath, nodeId);
-          onFileTransfer?.(sourcePath, destinationPath);
-        } else {
-          console.error("Failed to copy folder:", result.error);
-          alert(`Failed to copy folder: ${result.error}`);
+          errors.push({ name: item.name, error: result.error || "Unknown error" });
         }
       }
-    } catch (error) {
-      console.error("Error copying file/folder:", error);
-      alert(`Error copying: ${error}`);
     }
-  };
+
+    if (showProgress) {
+      setCopyProgress(null);
+    }
+
+    // Refresh the destination folder
+    const nodeId = destinationNode ? destinationNode.id : "root";
+    await loadDirectory(destinationPath, nodeId);
+
+    // Show errors if any
+    if (errors.length > 0) {
+      const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
+        .map((e) => `- ${e.name}: ${e.error}`)
+        .join("\n")}`;
+      alert(errorMessage);
+    }
+
+    // Clear pending state
+    setPendingConversionItems(null);
+    setPendingDestinationPath("");
+    setPendingDestinationNode(undefined);
+  }, [
+    pendingConversionItems,
+    pendingDestinationPath,
+    pendingDestinationNode,
+    fileFormat,
+    sampleRate,
+    sampleDepth,
+    mono,
+    normalize,
+    trimStart,
+    loadDirectory,
+    onFileTransfer,
+  ]);
 
   const handleDelete = async (node?: FileNode) => {
     if (!window.electron) return;
@@ -2779,6 +2617,11 @@ export const FilePane = ({
     });
   };
 
+  // Debug: Log when component renders
+  useEffect(() => {
+    console.log("FilePane rendering, loading:", loading, "rootPath:", rootPath);
+  });
+
   return (
     <div ref={paneContainerRef} className="flex flex-col h-full min-w-0">
       {/* Header */}
@@ -2855,6 +2698,16 @@ export const FilePane = ({
               {isSearchingFolders && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />}
             </div>
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0"
+            onClick={() => refreshCurrentDirectory()}
+            title="Refresh"
+            disabled={!currentRootPath || loading}
+          >
+            <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
           {showNewFolderButton && (
             <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
               <FolderPlus className="w-4 h-4" />
@@ -2891,10 +2744,18 @@ export const FilePane = ({
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
             </div>
           ) : !window.electron ? (
             <div className="text-center py-8 text-sm text-red-500">
               Electron API not available. Please run in Electron environment.
+            </div>
+          ) : pathDoesNotExist ? (
+            <div className="text-center py-8">
+              <div className="text-sm text-muted-foreground mb-2">Path does not exist</div>
+              <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
+                Navigate to nearest existing folder
+              </Button>
             </div>
           ) : isSearchingFolders ? (
             <div className="flex items-center justify-center py-8">
@@ -3040,6 +2901,24 @@ export const FilePane = ({
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Conversion Confirmation Dialog */}
+      {pendingConversionItems && (
+        <ConversionConfirmDialog
+          open={conversionConfirmOpen}
+          onOpenChange={setConversionConfirmOpen}
+          onConfirm={handleConversionConfirm}
+          fileCount={pendingConversionItems.length}
+          settings={{
+            sampleRate,
+            sampleDepth,
+            fileFormat,
+            mono,
+            normalize,
+            trimStart,
+          }}
+        />
       )}
     </div>
   );
