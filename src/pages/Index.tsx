@@ -50,7 +50,7 @@ const Index = () => {
 
       {/* Main Content - Single Pane Layout */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 h-full">
           <FilePane
             paneName="cfcard"
             title="CF Card"
