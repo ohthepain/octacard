@@ -12,6 +12,7 @@ import {
   XCircle,
   ArrowUp,
   RotateCw,
+  Star,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useNavigationState } from "@/hooks/use-navigation-state";
+import { useFavorites } from "@/hooks/use-favorites";
 import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
@@ -175,6 +177,7 @@ export const FilePane = ({
   const paneContainerRef = useRef<HTMLDivElement>(null);
   const handleDeleteRef = useRef<((node?: FileNode) => Promise<void>) | null>(null);
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
+  const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneName);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
@@ -2537,6 +2540,19 @@ export const FilePane = ({
             {!isParentLink && (
               <ContextMenuContent>
                 <ContextMenuItem onClick={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
+                {node.type === "folder" && (
+                  <ContextMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isFavorite(node.path)) {
+                        addFavorite(node.path, node.name);
+                      }
+                    }}
+                    disabled={isFavorite(node.path)}
+                  >
+                    {isFavorite(node.path) ? "Already in Favorites" : "Add to Favorites"}
+                  </ContextMenuItem>
+                )}
                 <ContextMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
@@ -2688,231 +2704,297 @@ export const FilePane = ({
     console.log("FilePane rendering, loading:", loading, "rootPath:", rootPath);
   });
 
+  // Handler for navigating to a favorite
+  const handleFavoriteClick = async (favoritePath: string) => {
+    if (!window.electron) return;
+    await navigateToFolder(favoritePath);
+  };
+
   return (
-    <div ref={paneContainerRef} className="flex flex-col h-full min-w-0">
-      {/* Header */}
-      <div className="p-4 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-2 flex-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm px-1 py-0.5 transition-colors"
-              >
-                <span>{displayTitle}</span>
-                <ChevronDown className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
-              {availableVolumes.length === 0 ? (
-                <DropdownMenuItem disabled>No volumes detected</DropdownMenuItem>
-              ) : (
-                availableVolumes.map((volume) => {
-                  const isActive = normalizeVolumePath(rootPath) === normalizeVolumePath(volume.path);
-                  return (
-                    <DropdownMenuItem
-                      key={`${volume.uuid ?? volume.path}`}
-                      disabled={isActive}
-                      onSelect={() => {
-                        if (!isActive) {
-                          void handleVolumeSelect(volume);
-                        }
-                      }}
-                      className="flex items-start gap-2 py-2"
-                    >
-                      <span className="mt-0.5 h-4 w-4 text-primary">
-                        {isActive ? <Check className="w-4 h-4" /> : null}
-                      </span>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium">{volume.name}</span>
-                        <span className="text-xs text-muted-foreground break-all">{volume.path}</span>
+    <div ref={paneContainerRef} className="flex h-full w-full min-w-0 bg-background overflow-hidden">
+      {/* Left Sidebar - Finder style */}
+      <div className="w-56 bg-muted border-r border-border flex flex-col shrink-0 h-full overflow-hidden">
+        <ScrollArea className="flex-1 h-full">
+          <div className="p-2 space-y-4">
+            {/* Volumes Section */}
+            <div>
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Volumes
+              </div>
+              <div className="space-y-0.5 mt-1">
+                {availableVolumes.length === 0 ? (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground">No volumes detected</div>
+                ) : (
+                  availableVolumes.map((volume) => {
+                    const isActive = normalizeVolumePath(rootPath) === normalizeVolumePath(volume.path);
+                    return (
+                      <div
+                        key={`${volume.uuid ?? volume.path}`}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
+                          isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted/50"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isActive) {
+                              void handleVolumeSelect(volume);
+                            }
+                          }}
+                          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                        >
+                          <span className="h-4 w-4 flex items-center justify-center shrink-0">
+                            {isActive ? <Check className="w-3 h-3" /> : <Folder className="w-3 h-3" />}
+                          </span>
+                          <span className="truncate">{volume.name}</span>
+                        </button>
+                        {showEjectButton && isActive && volume.isRemovable && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 p-0 shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEject();
+                            }}
+                            disabled={!isCardMounted}
+                            title={isCardMounted ? "Eject card" : "No card mounted"}
+                          >
+                            <XCircle
+                              className={`w-3 h-3 ${
+                                isCardMounted
+                                  ? "text-muted-foreground hover:text-foreground"
+                                  : "text-muted-foreground/50"
+                              }`}
+                            />
+                          </Button>
+                        )}
                       </div>
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {showEjectButton && (
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Favorites Section */}
+            <div>
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Favorites
+              </div>
+              <div className="space-y-0.5 mt-1">
+                {favorites.length === 0 ? (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground">No favorites</div>
+                ) : (
+                  favorites.map((favorite) => {
+                    const isActive = currentRootPath === favorite.path;
+                    return (
+                      <div
+                        key={favorite.path}
+                        className={`group flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
+                          isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted/50"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleFavoriteClick(favorite.path)}
+                          className="flex items-center gap-2 flex-1 min-w-0 shrink-0"
+                        >
+                          <Star className="w-3 h-3 shrink-0 fill-current" />
+                          <span className="truncate text-left">{favorite.name}</span>
+                        </button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-5 w-5 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFavorite(favorite.path);
+                          }}
+                          title="Remove from favorites"
+                        >
+                          <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                        </Button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex flex-col flex-1 min-w-0 h-full bg-background overflow-hidden">
+        {/* Header */}
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-1">
+            <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{displayTitle}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search files..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-9 w-48"
+              />
+              {/* Reserve space for loader to prevent layout shifts */}
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 flex items-center justify-center">
+                {isSearchingFolders && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />}
+              </div>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="gap-2">
+                  Sort:{" "}
+                  {sortBy === "name"
+                    ? "Name"
+                    : sortBy === "dateAdded"
+                    ? "Date Added"
+                    : sortBy === "dateCreated"
+                    ? "Date Created"
+                    : sortBy === "dateModified"
+                    ? "Date Modified"
+                    : "Date Last Opened"}
+                  <ChevronDown className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setSortBy("name")}>
+                  <Check className={`w-4 h-4 mr-2 ${sortBy === "name" ? "opacity-100" : "opacity-0"}`} />
+                  Name
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("dateAdded")}>
+                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateAdded" ? "opacity-100" : "opacity-0"}`} />
+                  Date Added
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("dateCreated")}>
+                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateCreated" ? "opacity-100" : "opacity-0"}`} />
+                  Date Created
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("dateModified")}>
+                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateModified" ? "opacity-100" : "opacity-0"}`} />
+                  Date Modified
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortBy("dateLastOpened")}>
+                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateLastOpened" ? "opacity-100" : "opacity-0"}`} />
+                  Date Last Opened
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 w-6 p-0"
-              onClick={handleEject}
-              disabled={!isCardMounted}
-              title={isCardMounted ? "Eject card" : "No card mounted"}
+              className="h-8 w-8 p-0"
+              onClick={() => refreshCurrentDirectory()}
+              title="Refresh"
+              disabled={!currentRootPath || loading}
             >
-              <XCircle
-                className={`w-4 h-4 ${
-                  isCardMounted ? "text-muted-foreground hover:text-foreground" : "text-muted-foreground/50"
-                }`}
-              />
+              <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </Button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search files..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-9 w-48"
-            />
-            {/* Reserve space for loader to prevent layout shifts */}
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 flex items-center justify-center">
-              {isSearchingFolders && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />}
-            </div>
+            {showNewFolderButton && (
+              <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
+                <FolderPlus className="w-4 h-4" />
+                New Folder
+              </Button>
+            )}
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="gap-2">
-                Sort:{" "}
-                {sortBy === "name"
-                  ? "Name"
-                  : sortBy === "dateAdded"
-                  ? "Date Added"
-                  : sortBy === "dateCreated"
-                  ? "Date Created"
-                  : sortBy === "dateModified"
-                  ? "Date Modified"
-                  : "Date Last Opened"}
-                <ChevronDown className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setSortBy("name")}>
-                <Check className={`w-4 h-4 mr-2 ${sortBy === "name" ? "opacity-100" : "opacity-0"}`} />
-                Name
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortBy("dateAdded")}>
-                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateAdded" ? "opacity-100" : "opacity-0"}`} />
-                Date Added
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortBy("dateCreated")}>
-                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateCreated" ? "opacity-100" : "opacity-0"}`} />
-                Date Created
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortBy("dateModified")}>
-                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateModified" ? "opacity-100" : "opacity-0"}`} />
-                Date Modified
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortBy("dateLastOpened")}>
-                <Check className={`w-4 h-4 mr-2 ${sortBy === "dateLastOpened" ? "opacity-100" : "opacity-0"}`} />
-                Date Last Opened
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            onClick={() => refreshCurrentDirectory()}
-            title="Refresh"
-            disabled={!currentRootPath || loading}
-          >
-            <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-          {showNewFolderButton && (
-            <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
-              <FolderPlus className="w-4 h-4" />
-              New Folder
-            </Button>
-          )}
         </div>
-      </div>
 
-      {/* File Tree */}
-      <ScrollArea className="flex-1">
-        <div
-          className={`p-2 h-full min-h-full ${isDraggingOverRoot ? "bg-primary/5" : ""}`}
-          onDragOver={handleContainerDragOver}
-          onDragLeave={handleContainerDragLeave}
-          onDrop={(e) => {
-            // Only handle drop on empty space if we're not dropping on a folder
-            // The folder's drop handler will stop propagation if it handles the drop
-            if (!dragOverPath) {
-              e.stopPropagation();
-              handleDrop(e);
-            }
-          }}
-          onClick={(e) => {
-            // Clear selection when clicking on empty space (not on a file/folder item)
-            const target = e.target as HTMLElement;
-            if (target === e.currentTarget || (!target.closest('[draggable="true"]') && !target.closest("button"))) {
-              setSelectedItems(new Set());
-              // Also clear selections in other panes
-              handlePaneClick();
-            }
-          }}
-        >
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
-            </div>
-          ) : !window.electron ? (
-            <div className="text-center py-8 text-sm text-red-500">
-              Electron API not available. Please run in Electron environment.
-            </div>
-          ) : pathDoesNotExist ? (
-            <div className="text-center py-8">
-              <div className="text-sm text-muted-foreground mb-2">Path does not exist</div>
-              <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
-                Navigate to nearest existing folder
-              </Button>
-            </div>
-          ) : isSearchingFolders ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="flex flex-col items-center gap-2">
+        {/* File Tree */}
+        <ScrollArea className="flex-1 h-full">
+          <div
+            className={`p-2 h-full min-h-full ${isDraggingOverRoot ? "bg-primary/5" : ""}`}
+            onDragOver={handleContainerDragOver}
+            onDragLeave={handleContainerDragLeave}
+            onDrop={(e) => {
+              // Only handle drop on empty space if we're not dropping on a folder
+              // The folder's drop handler will stop propagation if it handles the drop
+              if (!dragOverPath) {
+                e.stopPropagation();
+                handleDrop(e);
+              }
+            }}
+            onClick={(e) => {
+              // Clear selection when clicking on empty space (not on a file/folder item)
+              const target = e.target as HTMLElement;
+              if (target === e.currentTarget || (!target.closest('[draggable="true"]') && !target.closest("button"))) {
+                setSelectedItems(new Set());
+                // Also clear selections in other panes
+                handlePaneClick();
+              }
+            }}
+          >
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                <div className="text-sm text-muted-foreground">Searching...</div>
+                <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
               </div>
-            </div>
-          ) : searchQuery && searchResultsAsNodes.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">
-              No files found matching &quot;{searchQuery}&quot;
-            </div>
-          ) : filteredFileSystem.length === 0 ? (
-            <>
-              {/* Render file tree with empty array - renderFileTree will add parent link if needed */}
-              {!searchQuery && renderFileTree([])}
-              <div
-                className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
-                  isDraggingOverRoot ? "border-primary bg-primary/10" : "border-muted text-muted-foreground"
-                }`}
-              >
-                {pathDoesNotExist ? (
-                  <div className="space-y-3">
-                    <div className="text-amber-600 dark:text-amber-500">
-                      Directory does not exist: {currentRootPath || rootPath}
+            ) : !window.electron ? (
+              <div className="text-center py-8 text-sm text-red-500">
+                Electron API not available. Please run in Electron environment.
+              </div>
+            ) : pathDoesNotExist ? (
+              <div className="text-center py-8">
+                <div className="text-sm text-muted-foreground mb-2">Path does not exist</div>
+                <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
+                  Navigate to nearest existing folder
+                </Button>
+              </div>
+            ) : isSearchingFolders ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <div className="text-sm text-muted-foreground">Searching...</div>
+                </div>
+              </div>
+            ) : searchQuery && searchResultsAsNodes.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground">
+                No files found matching &quot;{searchQuery}&quot;
+              </div>
+            ) : filteredFileSystem.length === 0 ? (
+              <>
+                {/* Render file tree with empty array - renderFileTree will add parent link if needed */}
+                {!searchQuery && renderFileTree([])}
+                <div
+                  className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
+                    isDraggingOverRoot ? "border-primary bg-primary/10" : "border-muted text-muted-foreground"
+                  }`}
+                >
+                  {pathDoesNotExist ? (
+                    <div className="space-y-3">
+                      <div className="text-amber-600 dark:text-amber-500">
+                        Directory does not exist: {currentRootPath || rootPath}
+                      </div>
+                      {currentRootPath && currentRootPath !== rootPath ? (
+                        <Button size="sm" variant="outline" onClick={navigateToParent} className="gap-2">
+                          <ArrowUp className="w-4 h-4" />
+                          Go to Parent Folder
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
+                          <ArrowUp className="w-4 h-4" />
+                          Navigate to Nearest Existing Parent
+                        </Button>
+                      )}
                     </div>
-                    {currentRootPath && currentRootPath !== rootPath ? (
-                      <Button size="sm" variant="outline" onClick={navigateToParent} className="gap-2">
-                        <ArrowUp className="w-4 h-4" />
-                        Go to Parent Folder
-                      </Button>
-                    ) : (
-                      <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
-                        <ArrowUp className="w-4 h-4" />
-                        Navigate to Nearest Existing Parent
-                      </Button>
-                    )}
-                  </div>
-                ) : searchQuery ? (
-                  <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-                ) : (
-                  <div className="text-muted-foreground">No files found</div>
-                )}
-              </div>
-            </>
-          ) : searchQuery ? (
-            renderFileTree(searchResultsAsNodes)
-          ) : (
-            renderFileTree(filteredFileSystem)
-          )}
-        </div>
-      </ScrollArea>
+                  ) : searchQuery ? (
+                    <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
+                  ) : (
+                    <div className="text-muted-foreground">No files found</div>
+                  )}
+                </div>
+              </>
+            ) : searchQuery ? (
+              renderFileTree(searchResultsAsNodes)
+            ) : (
+              renderFileTree(filteredFileSystem)
+            )}
+          </div>
+        </ScrollArea>
+      </div>
 
       {/* New Folder Dialog */}
       <Dialog

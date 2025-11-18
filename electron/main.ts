@@ -27,7 +27,7 @@ if (process.platform === "darwin") {
     if (!fsSync.existsSync(iconPath)) {
       iconPath = path.resolve(process.cwd(), "build", "icon.icns");
     }
-    
+
     if (fsSync.existsSync(iconPath) && app.dock) {
       const icon = nativeImage.createFromPath(iconPath);
       if (!icon.isEmpty()) {
@@ -268,13 +268,13 @@ const createWindow = () => {
   });
 
   // Log console messages from renderer for debugging
-  mainWindow.webContents.on('console-message', (event, level, message) => {
+  mainWindow.webContents.on("console-message", (event, level, message) => {
     console.log(`[Renderer ${level}]:`, message);
   });
 
   // Log page load errors
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    console.error('Page failed to load:', { errorCode, errorDescription, validatedURL });
+  mainWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL) => {
+    console.error("Page failed to load:", { errorCode, errorDescription, validatedURL });
   });
 
   // Debug: Check if preload script exists
@@ -285,9 +285,11 @@ const createWindow = () => {
   // Suppress security warnings in development (they won't appear in production anyway)
   // The preload script handles most of this, but we also inject a filter after page load
   if (isDev && mainWindow) {
-    mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.on("did-finish-load", () => {
       // Inject script to filter console.warn in the renderer (as backup to preload script)
-      mainWindow?.webContents.executeJavaScript(`
+      mainWindow?.webContents
+        .executeJavaScript(
+          `
         (function() {
           if (window.__electronWarnFiltered) return; // Already filtered by preload
           const originalWarn = console.warn;
@@ -306,9 +308,11 @@ const createWindow = () => {
           };
           window.__electronWarnFiltered = true;
         })();
-      `).catch(() => {
-        // Ignore errors if script injection fails
-      });
+      `
+        )
+        .catch(() => {
+          // Ignore errors if script injection fails
+        });
     });
   }
 
@@ -323,14 +327,14 @@ const createWindow = () => {
     const indexPath = path.join(appPath, "dist", "index.html");
     console.log("App path:", appPath);
     console.log("Loading index.html from:", indexPath);
-    
+
     // Check if file exists
     fs.access(indexPath)
       .then(() => {
         console.log("✓ index.html exists");
         // Use loadFile which handles relative paths correctly
         // Set up hash navigation after page loads
-        mainWindow.webContents.once('did-finish-load', () => {
+        mainWindow.webContents.once("did-finish-load", () => {
           // Navigate to hash route for HashRouter
           mainWindow?.webContents.executeJavaScript(`window.location.hash = '#/'`).catch((err) => {
             console.error("Error setting hash:", err);
@@ -341,7 +345,7 @@ const createWindow = () => {
           // Try alternative path
           const altPath = path.join(__dirname, "..", "dist", "index.html");
           console.log("Trying alternative path:", altPath);
-          mainWindow.webContents.once('did-finish-load', () => {
+          mainWindow.webContents.once("did-finish-load", () => {
             mainWindow?.webContents.executeJavaScript(`window.location.hash = '#/'`).catch((err) => {
               console.error("Error setting hash:", err);
             });
@@ -357,7 +361,7 @@ const createWindow = () => {
         // Try alternative path
         const altPath = path.join(__dirname, "..", "dist", "index.html");
         console.log("Trying alternative path:", altPath);
-        mainWindow.webContents.once('did-finish-load', () => {
+        mainWindow.webContents.once("did-finish-load", () => {
           mainWindow?.webContents.executeJavaScript(`window.location.hash = '#/'`).catch((err) => {
             console.error("Error setting hash:", err);
           });
@@ -624,6 +628,21 @@ ipcMain.handle("fs:getAvailableVolumes", async () => {
 
       const volumeName = path.basename(rawVolumePath) || rawVolumePath;
       if (volumeName.startsWith(".")) {
+        continue;
+      }
+
+      // Filter out system volumes that shouldn't be shown to users
+      const systemVolumeNames = [
+        "nix",
+        "nix-store",
+        "Nix Store",
+        ".Trashes",
+        ".fseventsd",
+        ".Spotlight-V100",
+        ".TemporaryItems",
+      ];
+      const lowerVolumeName = volumeName.toLowerCase();
+      if (systemVolumeNames.some((sysName) => lowerVolumeName === sysName.toLowerCase())) {
         continue;
       }
 
@@ -971,7 +990,7 @@ async function detectSilenceStart(filePath: string): Promise<number> {
     // Escape file path for shell execution
     const escapedFilePath = filePath.replace(/"/g, '\\"');
     const command = `"${ffmpegPath}" -i "${escapedFilePath}" -af silencedetect=noise=-30dB:d=0.3 -f null - 2>&1`;
-    
+
     const { stdout, stderr } = await execAsync(command);
     const output = stdout + stderr;
 
@@ -1034,7 +1053,8 @@ ipcMain.handle(
 
       // Check if conversion is needed
       // If any conversion setting is enabled, we'll convert
-      const needsConversion = targetSampleRate || sampleDepth === "16-bit" || mono || normalize || fileFormat === "WAV" || trimStart;
+      const needsConversion =
+        targetSampleRate || sampleDepth === "16-bit" || mono || normalize || fileFormat === "WAV" || trimStart;
       if (!needsConversion) {
         await fs.copyFile(sourcePath, destPath);
         return { success: true };
@@ -1057,12 +1077,12 @@ ipcMain.handle(
 
       // Build ffmpeg command arguments
       const ffmpegArgs: string[] = [];
-      
+
       // If trimming start, use -ss to skip silence at the beginning
       if (trimStart && silenceStartTime > 0) {
         ffmpegArgs.push("-ss", silenceStartTime.toString());
       }
-      
+
       ffmpegArgs.push("-i", sourcePath);
       ffmpegArgs.push("-y"); // Overwrite output file
 
@@ -1154,7 +1174,7 @@ app.whenReady().then(async () => {
       let iconPath = isDev
         ? path.resolve(__dirname, "..", "build", "icon.icns")
         : path.join(process.resourcesPath, "icon.icns");
-      
+
       // Verify icon exists
       await fs.access(iconPath);
       const icon = nativeImage.createFromPath(iconPath);
