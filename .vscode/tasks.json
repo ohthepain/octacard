@@ -2,17 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build:electron:main",
-      "type": "shell",
-      "command": "npm",
-      "args": ["run", "build:electron:main"],
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "silent",
-        "panel": "shared"
-      }
-    },
-    {
       "label": "start:dev",
       "type": "shell",
       "command": "npm",
@@ -28,7 +17,7 @@
         "background": {
           "activeOnStart": true,
           "beginsPattern": ".*",
-          "endsPattern": ".*Local:.*http://localhost:5173.*"
+          "endsPattern": ".*http://(localhost|127\\.0\\.0\\.1):3000.*"
         }
       },
       "presentation": {
@@ -37,12 +26,10 @@
       }
     },
     {
-      "label": "prepare:debug",
-      "dependsOn": [
-        "build:electron:main",
-        "start:dev"
-      ],
-      "dependsOrder": "parallel",
+      "label": "build:web",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "build"],
       "problemMatcher": []
     }
   ]

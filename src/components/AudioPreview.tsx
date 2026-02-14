@@ -109,17 +109,11 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
   // which work with Fetch API (unlike custom protocol URLs)
   useEffect(() => {
     async function loadAudioUrl() {
-      // Set breakpoint here - this function is now a named function for better debugging
-      if (!window.electron) {
-        console.error("Electron API not available");
-        setErrorMessage("Electron API not available");
-        setIsLoading(false);
-        return;
-      }
-
       try {
+        const { fileSystemService } = await import("@/lib/fileSystem");
+        
         // Check file size first to avoid loading huge files
-        const statsResult = await window.electron.fs.getFileStats(filePath);
+        const statsResult = await fileSystemService.getFileStats(filePath);
         if (statsResult.success && statsResult.data) {
           const fileSizeMB = statsResult.data.size / (1024 * 1024);
           // Warn for very large files but still try to load
@@ -128,10 +122,8 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
           }
         }
 
-        // Set breakpoint here - before IPC call
-        const result = await window.electron.fs.getAudioFileBlob(filePath);
+        const result = await fileSystemService.getAudioFileBlob(filePath);
 
-        // Set breakpoint here - after IPC call
         if (result.success && result.data) {
           console.log("AudioPreview - Got audio blob data URL for file:", filePath);
           setAudioUrl(result.data);
