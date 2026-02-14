@@ -2,43 +2,47 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Main Process",
-      "type": "node",
+      "name": "Web: Launch Chrome (Vite)",
+      "type": "chrome",
       "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
-      "windows": {
-        "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron.cmd"
-      },
-      "args": [".", "--remote-debugging-port=9223"],
-      "outputCapture": "std",
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "skipFiles": ["<node_internals>/**"],
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "start:dev",
       "sourceMaps": true,
-      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"],
-      "preLaunchTask": "build:electron:main"
+      "skipFiles": ["<node_internals>/**"],
+      "runtimeArgs": ["--new-window"],
+      "userDataDir": "${workspaceFolder}/.vscode/.chrome"
     },
     {
-      "name": "Debug Renderer Process",
+      "name": "Web: Launch Edge (Vite)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "start:dev",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**"],
+      "runtimeArgs": ["--new-window"],
+      "userDataDir": "${workspaceFolder}/.vscode/.edge"
+    },
+    {
+      "name": "Web: Attach Chrome (manual)",
       "type": "chrome",
       "request": "attach",
-      "port": 9223,
+      "port": 9222,
       "webRoot": "${workspaceFolder}",
-      "timeout": 30000,
       "sourceMaps": true,
-      "sourceMapPathOverrides": {
-        "webpack:///./~/*": "${webRoot}/node_modules/*",
-        "webpack:///./*": "${webRoot}/*",
-        "webpack:///*": "*"
-      }
+      "skipFiles": ["<node_internals>/**"]
     }
   ],
   "compounds": [
     {
-      "name": "Debug All (Main + Renderer)",
-      "configurations": ["Debug Main Process", "Debug Renderer Process"],
-      "preLaunchTask": "prepare:debug"
+      "name": "Web: Debug (Chrome)",
+      "configurations": ["Web: Launch Chrome (Vite)"]
+    },
+    {
+      "name": "Web: Debug (Edge)",
+      "configurations": ["Web: Launch Edge (Vite)"]
     }
   ]
 }

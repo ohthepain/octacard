@@ -39,6 +39,7 @@ import { useFavorites } from "@/hooks/use-favorites";
 import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
+import { fileSystemService } from "@/lib/fileSystem";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -186,6 +187,8 @@ export const FilePane = ({
     name: string;
     type: "file" | "folder";
     targetDir: string;
+    file?: File;
+    handle?: FileSystemDirectoryHandle;
   }> | null>(null);
   const [pendingDestinationPath, setPendingDestinationPath] = useState<string>("");
   const [pendingDestinationNode, setPendingDestinationNode] = useState<FileNode | undefined>(undefined);
@@ -195,9 +198,8 @@ export const FilePane = ({
 
   // Helper function to recursively count files in a folder
   const countFilesRecursively = useCallback(async (folderPath: string): Promise<number> => {
-    if (!window.electron) return 0;
     try {
-      const result = await window.electron.fs.readDirectory(folderPath);
+      const result = await fileSystemService.readDirectory(folderPath);
       if (!result.success || !result.data) return 0;
 
       let count = 0;
@@ -286,28 +288,58 @@ export const FilePane = ({
     return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   }, []);
 
+  // Refresh the "available volumes" list.
+  // In the web app we cannot enumerate OS volumes like Electron could, so we treat the
+  // user-selected root directory as a single "Local Files" volume.
   const refreshAvailableVolumes = useCallback(async () => {
-    if (!window.electron) return;
     try {
-      const result = await window.electron.fs.getAvailableVolumes();
-      if (result.success && result.data) {
-        setAvailableVolumes(
-          result.data.map((volume) => ({
-            ...volume,
-            name: volume.isHome ? "Local Files" : getVolumeName(volume.path),
-          }))
-        );
-      } else if (result.error) {
-        console.error("Failed to fetch available volumes:", result.error);
+      if (!fileSystemService.hasRootDirectory()) {
+        setAvailableVolumes([]);
+        return;
       }
-    } catch (error) {
-      console.error("Failed to fetch available volumes:", error);
-    }
-  }, [getVolumeName]);
 
+      const rootName = fileSystemService.getRootDirectoryName() || "Local Files";
+      const volumes: VolumeOption[] = [
+        {
+          path: "/",
+          uuid: null,
+          name: rootName,
+          isRemovable: false,
+          isHome: true,
+        },
+      ];
+
+      setAvailableVolumes(volumes);
+    } catch (error) {
+      console.error("Failed to refresh available volumes:", error);
+    }
+  }, []);
+
+  // Request root directory on mount if not set
+  const requestRootDirectory = useCallback(async () => {
+    const result = await fileSystemService.requestRootDirectory();
+    if (result.success && result.data) {
+      setRootPath("/");
+      setCurrentRootPath("/");
+      setDisplayTitle(fileSystemService.getRootDirectoryName());
+      await refreshAvailableVolumes();
+      await loadDirectory("/", "root");
+    }
+  }, []);
+
+  // Check if root directory is set on mount
   useEffect(() => {
-    void refreshAvailableVolumes();
-  }, [refreshAvailableVolumes]);
+    if (!fileSystemService.hasRootDirectory()) {
+      setLoading(false);
+      setPathDoesNotExist(true);
+    } else {
+      setRootPath("/");
+      setCurrentRootPath("/");
+      setDisplayTitle(fileSystemService.getRootDirectoryName());
+      void refreshAvailableVolumes();
+      loadDirectory("/", "root");
+    }
+  }, []);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -326,25 +358,14 @@ export const FilePane = ({
     isSearchingRef.current = !!searchQuery;
   }, [searchQuery]);
 
-  // Helper function to get volume UUID for a path
-  const getVolumeUUIDForPath = async (path: string): Promise<string | null> => {
-    if (!window.electron) return null;
-    try {
-      const result = await window.electron.fs.getVolumeInfo(path);
-      if (result.success && result.data) {
-        return result.data.uuid;
-      }
-    } catch (error) {
-      console.error("Failed to get volume UUID:", error);
-    }
+  // Helper function to get volume UUID for a path (not available in web)
+  const getVolumeUUIDForPath = async (_path: string): Promise<string | null> => {
     return null;
   };
 
   // Find the nearest existing parent folder
   const findNearestExistingParent = useCallback(
     async (dirPath: string): Promise<string | null> => {
-      if (!window.electron) return null;
-
       const parts = dirPath.split("/").filter(Boolean);
       if (parts.length === 0) return null;
 
@@ -353,7 +374,7 @@ export const FilePane = ({
         const parentPath = dirPath.startsWith("/") ? "/" + parts.slice(0, i).join("/") : parts.slice(0, i).join("/");
 
         try {
-          const statsResult = await window.electron.fs.getFileStats(parentPath);
+          const statsResult = await fileSystemService.getFileStats(parentPath);
           if (statsResult.success && statsResult.data?.isDirectory) {
             return parentPath;
           }
@@ -366,7 +387,7 @@ export const FilePane = ({
       // If no parent found, try root path
       if (rootPath) {
         try {
-          const statsResult = await window.electron.fs.getFileStats(rootPath);
+          const statsResult = await fileSystemService.getFileStats(rootPath);
           if (statsResult.success && statsResult.data?.isDirectory) {
             return rootPath;
           }
@@ -382,7 +403,11 @@ export const FilePane = ({
 
   const loadDirectory = useCallback(
     async (dirPath: string, nodeId: string) => {
-      if (!window.electron) return;
+      // Check if root directory is set
+      if (!fileSystemService.hasRootDirectory()) {
+        setLoading(false);
+        return;
+      }
 
       // Validate that dirPath is a valid string
       if (!dirPath || typeof dirPath !== "string" || dirPath.trim() === "") {
@@ -392,7 +417,7 @@ export const FilePane = ({
 
       try {
         console.log(`${paneName} - Loading directory:`, dirPath);
-        const result = await window.electron.fs.readDirectory(dirPath);
+        const result = await fileSystemService.readDirectory(dirPath);
         console.log(`${paneName} - Directory read result:`, result);
         if (result.success && result.data) {
           // Directory exists, clear the error state
@@ -743,25 +768,8 @@ export const FilePane = ({
           const lastRightPaneUUID = getLastRightPaneVolumeUUID();
           console.log(`${paneName} - Last right pane volume UUID:`, lastRightPaneUUID);
 
-          // Check for existing SD/CF cards with timeout
-          const cardsResultPromise = window.electron.fs.getSDCFCards();
-          const timeoutPromise = new Promise((_, reject) => {
-            const timeout = setTimeout(() => reject(new Error("getSDCFCards timeout")), 5000);
-            timeouts.push(timeout);
-          });
-
-          let cardsResult;
-          try {
-            cardsResult = (await Promise.race([cardsResultPromise, timeoutPromise])) as Awaited<
-              ReturnType<typeof window.electron.fs.getSDCFCards>
-            >;
-          } catch (error) {
-            console.error(`${paneName} - Error or timeout getting cards:`, error);
-            cardsResult = { success: false, error: String(error) };
-          }
-
-          console.log(`${paneName} - Cards detection result:`, cardsResult);
-          const availableCards = cardsResult.success && cardsResult.data ? cardsResult.data : [];
+          // SD card detection not available in web - skip auto-navigation
+          const availableCards: Array<{ path: string; uuid: string }> = [];
 
           // Try to find the saved last volume UUID in available cards
           let selectedCard: { path: string; uuid: string } | null = null;
@@ -803,7 +811,7 @@ export const FilePane = ({
               // Verify the saved path still exists, is accessible, AND is on the same volume as the card
               try {
                 console.log(`${paneName} - Verifying saved path exists:`, savedState.currentPath);
-                const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+                const statsResult = await fileSystemService.getFileStats(savedState.currentPath);
                 console.log(`${paneName} - Stats result:`, statsResult);
 
                 if (statsResult.success && statsResult.data?.isDirectory) {
@@ -879,7 +887,8 @@ export const FilePane = ({
 
         // Fallback to home directory (when no card detected or autoNavigateToCard is false)
         console.log(`${paneName} - No card detected or not auto-navigating, falling back to home directory`);
-        const homeResult = await window.electron.fs.getHomeDirectory();
+        // Home directory not available in web - use root
+        const homeResult = { success: true, data: "/" };
         console.log(`${paneName} - Home directory result:`, homeResult);
         if (homeResult.success && homeResult.data) {
           const homePath = homeResult.data;
@@ -905,7 +914,7 @@ export const FilePane = ({
             if (savedState) {
               // Verify the saved path still exists and is accessible
               try {
-                const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+                const statsResult = await fileSystemService.getFileStats(savedState.currentPath);
                 if (statsResult.success && statsResult.data?.isDirectory) {
                   initialPath = savedState.currentPath;
                   console.log(
@@ -1054,7 +1063,7 @@ export const FilePane = ({
                 const savedState = getNavigationState(volumeUUID);
                 if (savedState) {
                   try {
-                    const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+                    const statsResult = await fileSystemService.getFileStats(savedState.currentPath);
                     if (statsResult.success && statsResult.data?.isDirectory) {
                       initialPath = savedState.currentPath;
                       console.log(
@@ -1198,7 +1207,8 @@ export const FilePane = ({
         // For "Local Files" (isHome), use home directory to match initialization behavior
         let targetPath = volume.path;
         if (volume.isHome) {
-          const homeResult = await window.electron.fs.getHomeDirectory();
+          // Home directory not available in web - use root
+        const homeResult = { success: true, data: "/" };
           if (homeResult.success && homeResult.data) {
             targetPath = homeResult.data;
           } else {
@@ -1647,10 +1657,10 @@ export const FilePane = ({
       const copyFolderWithProgress = async (sourceFolder: string, destFolder: string): Promise<void> => {
         if (!window.electron) return;
         try {
-          const result = await window.electron.fs.readDirectory(sourceFolder);
+          const result = await fileSystemService.readDirectory(sourceFolder);
           if (!result.success || !result.data) return;
 
-          await window.electron.fs.createFolder(destFolder);
+          await fileSystemService.createFolder(destFolder, basename(destFolder));
 
           for (const entry of result.data) {
             const entryDestPath = joinPath(destFolder, entry.name);
@@ -1690,7 +1700,8 @@ export const FilePane = ({
               if (needsConversion) {
                 copyResult = await window.electron.fs.convertAndCopyFile(
                   entry.path,
-                  finalDestPath,
+                  dirname(finalDestPath),
+                  basename(finalDestPath),
                   sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
                   sampleDepth,
                   fileFormat,
@@ -1699,7 +1710,7 @@ export const FilePane = ({
                   trimStart
                 );
               } else {
-                copyResult = await window.electron.fs.copyFile(entry.path, entryDestPath);
+                copyResult = await fileSystemService.copyFile(entry.path, dirname(entryDestPath), basename(entryDestPath));
               }
 
               if (!copyResult.success) {
@@ -1757,7 +1768,8 @@ export const FilePane = ({
           if (needsConversion) {
             result = await window.electron.fs.convertAndCopyFile(
               item.path,
-              finalDestFilePath,
+              dirname(finalDestFilePath),
+              basename(finalDestFilePath),
               sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
               sampleDepth,
               fileFormat,
@@ -1766,7 +1778,7 @@ export const FilePane = ({
               trimStart
             );
           } else {
-            result = await window.electron.fs.copyFile(item.path, destFilePath);
+            result = await fileSystemService.copyFile(item.path, dirname(destFilePath), basename(destFilePath));
           }
 
           if (!result.success) {
@@ -1817,43 +1829,75 @@ export const FilePane = ({
     setDragOverPath(null);
     setIsDraggingOverRoot(false);
 
-    if (!window.electron) {
-      console.error("Electron API not available");
+    if (!fileSystemService.hasRootDirectory()) {
+      console.error("No root directory selected");
       return;
     }
 
     // Check if this is an external file drop (from OS file system)
-    // In Electron, we need to use dataTransfer.items to access file paths
     const items = e.dataTransfer.items;
+    const files = e.dataTransfer.files;
+    
     if (items && items.length > 0) {
       // External files/folders dropped from OS
-      const externalItems: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
+      const externalItems: Array<{ file?: File; handle?: FileSystemDirectoryHandle; name: string; type: "file" | "folder" }> = [];
 
-      // Use helper function from preload script to get file paths
-      const filePaths = window.electron.getFilePathsFromItems(items);
-
-      // Process each file path
-      for (const filePath of filePaths) {
-        if (!filePath) {
-          continue;
-        }
-
-        // Normalize the path (handle any path separators)
-        const normalizedPath = filePath.replace(/\\/g, "/");
-
-        // Check if it's a file or folder
-        try {
-          const statsResult = await window.electron.fs.getFileStats(normalizedPath);
-          if (statsResult.success && statsResult.data) {
-            const itemType = statsResult.data.isDirectory ? "folder" : "file";
-            externalItems.push({
-              path: normalizedPath,
-              name: basename(normalizedPath),
-              type: itemType,
-            });
+      // Process each item
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        
+        if (item.kind === "file") {
+          // Try to get FileSystemHandle if available (for folders)
+          try {
+            const handle = await (item as any).getAsFileSystemHandle?.();
+            if (handle) {
+              if (handle.kind === "directory") {
+                externalItems.push({
+                  handle: handle as FileSystemDirectoryHandle,
+                  name: handle.name,
+                  type: "folder",
+                });
+              } else {
+                const file = await (handle as FileSystemFileHandle).getFile();
+                externalItems.push({
+                  file,
+                  name: file.name,
+                  type: "file",
+                });
+              }
+            } else {
+              // Fallback to File object
+              const file = item.getAsFile();
+              if (file) {
+                externalItems.push({
+                  file,
+                  name: file.name,
+                  type: "file",
+                });
+              }
+            }
+          } catch {
+            // Fallback to File object
+            const file = item.getAsFile();
+            if (file) {
+              externalItems.push({
+                file,
+                name: file.name,
+                type: "file",
+              });
+            }
           }
-        } catch (error) {
-          console.error("Error getting stats for dropped item:", normalizedPath, error);
+        }
+      }
+
+      // Also check files array as fallback
+      if (externalItems.length === 0 && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          externalItems.push({
+            file: files[i],
+            name: files[i].name,
+            type: "file",
+          });
         }
       }
 
@@ -1877,56 +1921,59 @@ export const FilePane = ({
       }
 
       // Always convert and save files/folders (single pane design)
-      const itemsToProcess: Array<{ path: string; name: string; type: "file" | "folder"; targetDir: string }> = [];
+      const itemsToProcess: Array<{ file?: File; handle?: FileSystemDirectoryHandle; name: string; type: "file" | "folder"; targetDir: string }> = [];
 
       for (const item of externalItems) {
-        if (item.type === "file") {
+        if (item.type === "file" && item.file) {
           // File: convert and save in destination folder
           itemsToProcess.push({
-            ...item,
+            file: item.file,
+            name: item.name,
+            type: "file",
             targetDir: destinationPath,
           });
-        } else {
+        } else if (item.type === "folder" && item.handle) {
           // Folder: create folder with same name in destination if it doesn't exist, then convert files into it
           const folderName = item.name;
           const targetFolderPath = joinPath(destinationPath, folderName);
 
           // Check if folder already exists
           try {
-            const statsResult = await window.electron.fs.getFileStats(targetFolderPath);
+            const statsResult = await fileSystemService.getFileStats(targetFolderPath);
             if (!statsResult.success || !statsResult.data?.isDirectory) {
               // Create folder if it doesn't exist
-              await window.electron.fs.createFolder(targetFolderPath);
+              await fileSystemService.createFolder(dirname(targetFolderPath), basename(targetFolderPath));
             }
           } catch {
             // Folder doesn't exist, create it
-            await window.electron.fs.createFolder(targetFolderPath);
+            await fileSystemService.createFolder(dirname(targetFolderPath), basename(targetFolderPath));
           }
 
           // Get all files from the dropped folder recursively, preserving relative paths
-          const getAllFilesInFolder = async (folderPath: string, relativePath: string = ""): Promise<void> => {
+          const getAllFilesInFolder = async (handle: FileSystemDirectoryHandle, relativePath: string = ""): Promise<void> => {
             try {
-              const result = await window.electron.fs.readDirectory(folderPath);
-              if (!result.success || !result.data) return;
-
-              for (const entry of result.data) {
-                const entryRelativePath = relativePath ? joinPath(relativePath, entry.name) : entry.name;
-                if (entry.type === "file") {
+              // Some TS setups don't include `dom.iterable`, so `entries()` may be missing from the type.
+              for await (const [name, entryHandle] of (handle as any).entries()) {
+                if (entryHandle.kind === "file") {
+                  const fileHandle = entryHandle as FileSystemFileHandle;
+                  const file = await fileHandle.getFile();
                   itemsToProcess.push({
-                    path: entry.path,
-                    name: entry.name,
+                    file,
+                    name,
                     type: "file",
                     targetDir: joinPath(targetFolderPath, relativePath),
                   });
-                } else if (entry.type === "folder") {
+                } else if (entryHandle.kind === "directory") {
+                  const dirHandle = entryHandle as FileSystemDirectoryHandle;
+                  const entryRelativePath = relativePath ? joinPath(relativePath, name) : name;
                   // Ensure subfolder exists in target
                   const targetSubfolderPath = joinPath(targetFolderPath, entryRelativePath);
                   try {
-                    await window.electron.fs.createFolder(targetSubfolderPath);
+                    await fileSystemService.createFolder(dirname(targetSubfolderPath), basename(targetSubfolderPath));
                   } catch {
                     // Folder might already exist, ignore
                   }
-                  await getAllFilesInFolder(entry.path, entryRelativePath);
+                  await getAllFilesInFolder(dirHandle, entryRelativePath);
                 }
               }
             } catch (error) {
@@ -1934,13 +1981,14 @@ export const FilePane = ({
             }
           };
 
-          await getAllFilesInFolder(item.path);
+          await getAllFilesInFolder(item.handle);
         }
       }
 
       // Show confirmation dialog before converting
       if (itemsToProcess.length > 0) {
-        setPendingConversionItems(itemsToProcess);
+        // Store items with File objects/handles
+        setPendingConversionItems(itemsToProcess as any);
         setPendingDestinationPath(destinationPath);
         setPendingDestinationNode(destinationNode);
         setConversionConfirmOpen(true);
@@ -1952,7 +2000,7 @@ export const FilePane = ({
 
   // Process conversion after user confirms
   const handleConversionConfirm = useCallback(async () => {
-    if (!pendingConversionItems || !pendingDestinationPath || !window.electron) {
+    if (!pendingConversionItems || !pendingDestinationPath || !fileSystemService.hasRootDirectory()) {
       return;
     }
 
@@ -1988,14 +2036,25 @@ export const FilePane = ({
           });
         }
 
+        // Get File object from item (either directly or from handle)
+        let file: File | null = null;
+        if (item.file) {
+          file = item.file;
+        } else if ((item as any).handle && (item as any).handle.kind === "file") {
+          file = await ((item as any).handle as FileSystemFileHandle).getFile();
+        } else {
+          errors.push({ name: item.name, error: "File object not available" });
+          continue;
+        }
+
         const finalDestFilePath = joinPath(item.targetDir, item.name);
 
         // Check if file conversion is needed
-        const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
+        const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.name);
 
-        let finalDestPath = finalDestFilePath;
+        let finalDestFileName = item.name;
         if (isAudioFile && fileFormat === "WAV") {
-          finalDestPath = finalDestFilePath.replace(/\.\w+$/i, ".wav");
+          finalDestFileName = item.name.replace(/\.\w+$/i, ".wav");
         }
 
         // Always convert audio files according to settings
@@ -2010,22 +2069,33 @@ export const FilePane = ({
 
         let result;
         if (needsConversion) {
-          result = await window.electron.fs.convertAndCopyFile(
-            item.path,
-            finalDestPath,
-            sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
-            sampleDepth,
-            fileFormat,
-            mono,
-            normalize,
-            trimStart
-          );
+          // Add file first, then convert it
+          const addResult = await fileSystemService.addFileFromDrop(file, item.targetDir);
+          if (addResult.success && addResult.data) {
+            // Now convert the file we just added
+            result = await fileSystemService.convertAndCopyFile(
+              addResult.data,
+              item.targetDir,
+              finalDestFileName,
+              sampleRate !== "dont-change" ? parseFloat(sampleRate) * 1000 : undefined,
+              sampleDepth,
+              fileFormat,
+              mono,
+              normalize,
+              trimStart
+            );
+          } else {
+            result = addResult;
+          }
         } else {
-          result = await window.electron.fs.copyFile(item.path, finalDestPath);
+          result = await fileSystemService.addFileFromDrop(file, item.targetDir);
         }
 
         if (result.success) {
-          onFileTransfer?.(item.path, finalDestPath);
+          const finalPath = needsConversion 
+            ? joinPath(item.targetDir, finalDestFileName)
+            : joinPath(item.targetDir, item.name);
+          onFileTransfer?.(finalPath, finalPath);
         } else {
           errors.push({ name: item.name, error: result.error || "Unknown error" });
         }
@@ -2092,9 +2162,9 @@ export const FilePane = ({
       try {
         let result;
         if (nodeToDelete.type === "file") {
-          result = await window.electron.fs.deleteFile(nodeToDelete.path);
+          result = await fileSystemService.deleteFile(nodeToDelete.path);
         } else {
-          result = await window.electron.fs.deleteFolder(nodeToDelete.path);
+          result = await fileSystemService.deleteFolder(nodeToDelete.path);
         }
 
         if (result.success) {
@@ -2155,7 +2225,8 @@ export const FilePane = ({
 
     try {
       console.log(`${paneName} - Ejecting volume:`, rootPath);
-      const ejectResult = await window.electron.fs.ejectVolume(rootPath);
+      // Eject not available in web
+      const ejectResult = { success: false, error: "Eject not available in web browser" };
 
       if (!ejectResult.success) {
         console.error("Failed to eject volume:", ejectResult.error);
@@ -2164,7 +2235,7 @@ export const FilePane = ({
       }
 
       // Then navigate back to home directory
-      const homeResult = await window.electron.fs.getHomeDirectory();
+          const homeResult = { success: true, data: "/" };
       if (homeResult?.success && homeResult.data) {
         const homePath = homeResult.data;
         const volumeUUID = await getVolumeUUIDForPath(homePath);
@@ -2221,11 +2292,11 @@ export const FilePane = ({
   };
 
   const handleCreateFolder = async () => {
-    if (!newFolderName.trim() || !window.electron) return;
+    if (!newFolderName.trim() || !fileSystemService.hasRootDirectory()) return;
 
     try {
       const folderPath = joinPath(currentRootPath || rootPath, newFolderName.trim());
-      const result = await window.electron.fs.createFolder(folderPath);
+      const result = await fileSystemService.createFolder(dirname(folderPath), basename(folderPath));
 
       if (result.success) {
         // Refresh the current directory
@@ -2286,7 +2357,7 @@ export const FilePane = ({
         console.log("Searching with mdfind:", currentSearchQuery);
         // Optionally limit search to current root path or search entire system
         const searchPath = currentRootPath || undefined;
-        const result = await window.electron.fs.searchFiles(currentSearchQuery, searchPath);
+        const result = await fileSystemService.searchFiles(currentSearchQuery, searchPath);
 
         // Double-check this search is still valid (query hasn't changed)
         if (cancelled || currentSearchQueryRef.current !== currentSearchQuery) {
@@ -2378,7 +2449,8 @@ export const FilePane = ({
         if (!window.electron || isParentLink) return;
 
         try {
-          const result = await window.electron.fs.revealInFinder(node.path);
+          // Reveal in Finder not available in web
+          const result = { success: false, error: "Reveal in Finder not available in web browser" };
           if (!result.success) {
             console.error("Failed to reveal in finder:", result.error);
           }
@@ -2706,7 +2778,7 @@ export const FilePane = ({
 
   // Handler for navigating to a favorite
   const handleFavoriteClick = async (favoritePath: string) => {
-    if (!window.electron) return;
+    if (!fileSystemService.hasRootDirectory()) return;
     await navigateToFolder(favoritePath);
   };
 
@@ -2716,62 +2788,29 @@ export const FilePane = ({
       <div className="w-56 bg-muted border-r border-border flex flex-col shrink-0 h-full overflow-hidden">
         <ScrollArea className="flex-1 h-full">
           <div className="p-2 space-y-4">
-            {/* Volumes Section */}
+            {/* Directory Selection Section */}
             <div>
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Volumes
+                Directory
               </div>
               <div className="space-y-0.5 mt-1">
-                {availableVolumes.length === 0 ? (
-                  <div className="px-2 py-1.5 text-sm text-muted-foreground">No volumes detected</div>
+                {fileSystemService.hasRootDirectory() ? (
+                  <div className="px-2 py-1.5 text-sm text-foreground">
+                    <div className="flex items-center gap-2">
+                      <Folder className="w-4 h-4" />
+                      <span className="truncate">{fileSystemService.getRootDirectoryName()}</span>
+                    </div>
+                  </div>
                 ) : (
-                  availableVolumes.map((volume) => {
-                    const isActive = normalizeVolumePath(rootPath) === normalizeVolumePath(volume.path);
-                    return (
-                      <div
-                        key={`${volume.uuid ?? volume.path}`}
-                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-                          isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted/50"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!isActive) {
-                              void handleVolumeSelect(volume);
-                            }
-                          }}
-                          className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                        >
-                          <span className="h-4 w-4 flex items-center justify-center shrink-0">
-                            {isActive ? <Check className="w-3 h-3" /> : <Folder className="w-3 h-3" />}
-                          </span>
-                          <span className="truncate">{volume.name}</span>
-                        </button>
-                        {showEjectButton && isActive && volume.isRemovable && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0 shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEject();
-                            }}
-                            disabled={!isCardMounted}
-                            title={isCardMounted ? "Eject card" : "No card mounted"}
-                          >
-                            <XCircle
-                              className={`w-3 h-3 ${
-                                isCardMounted
-                                  ? "text-muted-foreground hover:text-foreground"
-                                  : "text-muted-foreground/50"
-                              }`}
-                            />
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={requestRootDirectory}
+                  >
+                    <FolderPlus className="w-4 h-4 mr-2" />
+                    Select Directory
+                  </Button>
                 )}
               </div>
             </div>
