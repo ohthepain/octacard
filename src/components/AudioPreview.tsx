@@ -26,9 +26,10 @@ interface AudioPreviewProps {
   filePath: string;
   fileName: string;
   onClose: () => void;
+  paneType?: "source" | "dest";
 }
 
-export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps) => {
+export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" }: AudioPreviewProps) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
@@ -113,7 +114,7 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
         const { fileSystemService } = await import("@/lib/fileSystem");
         
         // Check file size first to avoid loading huge files
-        const statsResult = await fileSystemService.getFileStats(filePath);
+        const statsResult = await fileSystemService.getFileStats(filePath, paneType);
         if (statsResult.success && statsResult.data) {
           const fileSizeMB = statsResult.data.size / (1024 * 1024);
           // Warn for very large files but still try to load
@@ -122,7 +123,7 @@ export const AudioPreview = ({ filePath, fileName, onClose }: AudioPreviewProps)
           }
         }
 
-        const result = await fileSystemService.getAudioFileBlob(filePath);
+        const result = await fileSystemService.getAudioFileBlob(filePath, paneType);
 
         if (result.success && result.data) {
           console.log("AudioPreview - Got audio blob data URL for file:", filePath);

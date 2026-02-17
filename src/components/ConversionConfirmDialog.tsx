@@ -34,7 +34,8 @@ export const ConversionConfirmDialog = ({
     const parts: string[] = [];
     
     if (settings.sampleRate !== "dont-change") {
-      parts.push(`Sample Rate: ${settings.sampleRate} kHz`);
+      const hz = parseInt(settings.sampleRate, 10);
+      parts.push(`Sample Rate: ${hz >= 1000 ? hz / 1000 + " kHz" : hz + " Hz"}`);
     }
     if (settings.sampleDepth !== "dont-change") {
       parts.push(`Bit Depth: ${settings.sampleDepth}`);
@@ -62,8 +63,8 @@ export const ConversionConfirmDialog = ({
           <DialogTitle>Convert Files?</DialogTitle>
           <DialogDescription>
             {fileCount === 1
-              ? "1 file will be converted and saved to the CF Card."
-              : `${fileCount} files will be converted and saved to the CF Card.`}
+              ? "1 file will be converted and saved to the destination."
+              : `${fileCount} files will be converted and saved to the destination.`}
           </DialogDescription>
         </DialogHeader>
         <div className="py-4">
