@@ -75,9 +75,9 @@ export const SampleFormatDialog = ({
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="44.1" id="44.1" />
-                  <Label htmlFor="44.1" className="text-sm font-normal cursor-pointer text-foreground">
-                    44.1 kHz
+                  <RadioGroupItem value="44100" id="44100" />
+                  <Label htmlFor="44100" className="text-sm font-normal cursor-pointer text-foreground">
+                    44100 Hz
                   </Label>
                 </div>
               </RadioGroup>
@@ -119,16 +119,16 @@ export const SampleFormatDialog = ({
               </Label>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="trimStart"
-                checked={trimStart}
-                onCheckedChange={(checked) => onTrimStartChange(checked === true)}
-              />
-              <Label htmlFor="trimStart" className="text-sm font-normal cursor-pointer text-foreground">
-                Trim Start
-              </Label>
-            </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="trimStart"
+                    checked={trimStart}
+                    onCheckedChange={(checked) => onTrimStartChange(checked === true)}
+                  />
+                  <Label htmlFor="trimStart" className="text-sm font-normal cursor-pointer text-foreground">
+                    Trim silence
+                  </Label>
+                </div>
           </DialogDescription>
         </DialogHeader>
       </DialogContent>

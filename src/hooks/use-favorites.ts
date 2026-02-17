@@ -7,59 +7,74 @@ export interface Favorite {
   name: string;
 }
 
+/** Get storage key for favorites: per pane type (source/dest) and per volume */
+function getStorageKey(paneType: "source" | "dest", volumeId: string): string {
+  const vol = volumeId || "_default";
+  return `${STORAGE_KEY}_${paneType}_${vol}`;
+}
+
 /**
- * Hook for managing favorites per pane
+ * Hook for managing favorites per pane type (source/dest) and per volume
  */
-export function useFavorites(paneName: string) {
+export function useFavorites(paneType: "source" | "dest", volumeId: string) {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
 
-  // Load favorites from localStorage on mount
+  // Load favorites from localStorage on mount or when volume changes
   useEffect(() => {
     try {
-      const key = `${STORAGE_KEY}_${paneName}`;
+      const key = getStorageKey(paneType, volumeId);
       const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved) as Favorite[];
         setFavorites(parsed);
+      } else {
+        setFavorites([]);
       }
     } catch (error) {
       console.error("Failed to load favorites:", error);
     }
-  }, [paneName]);
+  }, [paneType, volumeId]);
 
   // Save favorites to localStorage whenever they change
   const saveFavorites = useCallback(
     (newFavorites: Favorite[]) => {
       try {
-        const key = `${STORAGE_KEY}_${paneName}`;
+        const key = getStorageKey(paneType, volumeId);
         localStorage.setItem(key, JSON.stringify(newFavorites));
         setFavorites(newFavorites);
       } catch (error) {
         console.error("Failed to save favorites:", error);
       }
     },
-    [paneName]
+    [paneType, volumeId]
   );
 
   const addFavorite = useCallback(
     (path: string, name: string) => {
       const newFavorite: Favorite = { path, name };
-      const updated = [...favorites, newFavorite];
-      // Remove duplicates based on path
-      const unique = Array.from(
-        new Map(updated.map((fav) => [fav.path, fav])).values()
-      );
-      saveFavorites(unique);
+      setFavorites((prev) => {
+        const updated = [...prev, newFavorite];
+        const unique = Array.from(
+          new Map(updated.map((fav) => [fav.path, fav])).values()
+        );
+        const key = getStorageKey(paneType, volumeId);
+        localStorage.setItem(key, JSON.stringify(unique));
+        return unique;
+      });
     },
-    [favorites, saveFavorites]
+    [paneType, volumeId]
   );
 
   const removeFavorite = useCallback(
     (path: string) => {
-      const updated = favorites.filter((fav) => fav.path !== path);
-      saveFavorites(updated);
+      setFavorites((prev) => {
+        const updated = prev.filter((fav) => fav.path !== path);
+        const key = getStorageKey(paneType, volumeId);
+        localStorage.setItem(key, JSON.stringify(updated));
+        return updated;
+      });
     },
-    [favorites, saveFavorites]
+    [paneType, volumeId]
   );
 
   const isFavorite = useCallback(

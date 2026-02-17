@@ -15,9 +15,10 @@ interface VideoPreviewProps {
   filePath: string;
   fileName: string;
   onClose: () => void;
+  paneType?: "source" | "dest";
 }
 
-export const VideoPreview = ({ filePath, fileName, onClose }: VideoPreviewProps) => {
+export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" }: VideoPreviewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -31,16 +32,10 @@ export const VideoPreview = ({ filePath, fileName, onClose }: VideoPreviewProps)
   // Get video file as blob data URL
   useEffect(() => {
     async function loadVideoUrl() {
-      if (!window.electron) {
-        console.error("Electron API not available");
-        setErrorMessage("Electron API not available");
-        setIsLoading(false);
-        return;
-      }
-
       try {
+        const { fileSystemService } = await import("@/lib/fileSystem");
         // Check file size first to avoid loading huge files
-        const statsResult = await window.electron.fs.getFileStats(filePath);
+        const statsResult = await fileSystemService.getFileStats(filePath, paneType);
         if (statsResult.success && statsResult.data) {
           const fileSizeMB = statsResult.data.size / (1024 * 1024);
           // Warn for very large files but still try to load
@@ -50,16 +45,8 @@ export const VideoPreview = ({ filePath, fileName, onClose }: VideoPreviewProps)
         }
 
         // For video files, use blob approach for better codec support
-        // Custom protocols don't work well with Electron's video codec support
-        // Blob URLs work better for video playback
         console.log("VideoPreview - Using blob approach for video file");
-        let result = await window.electron.fs.getVideoFileBlob(filePath);
-        
-        // Fallback to URL if blob fails (for very large files)
-        if (!result.success || !result.data) {
-          console.log("VideoPreview - Blob approach failed, trying URL approach");
-          result = await window.electron.fs.getVideoFileUrl(filePath);
-        }
+        const result = await fileSystemService.getVideoFileBlob(filePath, paneType);
 
         if (result.success && result.data) {
           console.log("VideoPreview - Got video URL/blob for file:", filePath);
@@ -79,7 +66,7 @@ export const VideoPreview = ({ filePath, fileName, onClose }: VideoPreviewProps)
     }
 
     loadVideoUrl();
-  }, [filePath]);
+  }, [filePath, paneType]);
 
   // Cleanup video URL when component unmounts or file changes
   useEffect(() => {

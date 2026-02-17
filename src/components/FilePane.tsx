@@ -8,6 +8,7 @@ import {
   Search,
   Trash2,
   FolderPlus,
+  FolderOpen,
   Loader2,
   XCircle,
   ArrowUp,
@@ -110,7 +111,7 @@ function formatFileSize(bytes: number): string {
 
 interface FilePaneProps {
   paneName: string;
-  title: string;
+  title?: string;
   onFileTransfer?: (sourcePath: string, destinationPath: string) => void;
   sampleRate?: string;
   sampleDepth?: string;
@@ -122,11 +123,22 @@ interface FilePaneProps {
   convertFiles?: boolean;
   showEjectButton?: boolean;
   showNewFolderButton?: boolean;
+  /** When false, hide the left sidebar (Directory + Favorites). Use when pane is inside a layout with external favorites columns. */
+  showSidebar?: boolean;
+  /** Called when current path or volume changes - for syncing with external favorites columns */
+  onPathChange?: (path: string, volumeId: string) => void;
+  /** When true, dropping a folder navigates to it instead of converting */
+  dropMode?: "navigate" | "convert";
+  /** When set, navigate to this path (e.g. from favorites column). Parent should clear via onRequestedPathHandled. */
+  requestedPath?: string | null;
+  onRequestedPathHandled?: () => void;
+  /** When provided, enables "Browse for folder" to open a folder picker and navigate to the selected folder */
+  onBrowseForFolder?: () => void;
 }
 
 export const FilePane = ({
   paneName,
-  title,
+  title = "Files",
   onFileTransfer,
   sampleRate = "dont-change",
   sampleDepth = "dont-change",
@@ -138,6 +150,12 @@ export const FilePane = ({
   convertFiles = false,
   showEjectButton = false,
   showNewFolderButton = false,
+  showSidebar = true,
+  onPathChange,
+  dropMode = "convert",
+  requestedPath,
+  onRequestedPathHandled,
+  onBrowseForFolder,
 }: FilePaneProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -178,10 +196,13 @@ export const FilePane = ({
   const paneContainerRef = useRef<HTMLDivElement>(null);
   const handleDeleteRef = useRef<((node?: FileNode) => Promise<void>) | null>(null);
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
-  const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneName);
+  const paneType = (paneName === "dest" ? "dest" : "source") as "source" | "dest";
+  const volumeId = currentVolumeUUID ?? "_default";
+  const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
+  const [treeViewMode, setTreeViewMode] = useState<"all" | "folders">("all");
   const [pendingConversionItems, setPendingConversionItems] = useState<Array<{
     path: string;
     name: string;
@@ -193,29 +214,32 @@ export const FilePane = ({
   const [pendingDestinationPath, setPendingDestinationPath] = useState<string>("");
   const [pendingDestinationNode, setPendingDestinationNode] = useState<FileNode | undefined>(undefined);
   const [sortBy, setSortBy] = useState<"name" | "dateAdded" | "dateCreated" | "dateModified" | "dateLastOpened">(
-    "name"
+    "name",
   );
 
   // Helper function to recursively count files in a folder
-  const countFilesRecursively = useCallback(async (folderPath: string): Promise<number> => {
-    try {
-      const result = await fileSystemService.readDirectory(folderPath);
-      if (!result.success || !result.data) return 0;
+  const countFilesRecursively = useCallback(
+    async (folderPath: string, sourcePane?: "source" | "dest"): Promise<number> => {
+      try {
+        const result = await fileSystemService.readDirectory(folderPath, sourcePane ?? paneType);
+        if (!result.success || !result.data) return 0;
 
-      let count = 0;
-      for (const entry of result.data) {
-        if (entry.type === "file") {
-          count++;
-        } else if (entry.type === "folder") {
-          count += await countFilesRecursively(entry.path);
+        let count = 0;
+        for (const entry of result.data) {
+          if (entry.type === "file") {
+            count++;
+          } else if (entry.type === "folder") {
+            count += await countFilesRecursively(entry.path, sourcePane ?? paneType);
+          }
         }
+        return count;
+      } catch (error) {
+        console.error("Error counting files:", error);
+        return 0;
       }
-      return count;
-    } catch (error) {
-      console.error("Error counting files:", error);
-      return 0;
-    }
-  }, []);
+    },
+    [paneType],
+  );
 
   // Helper function to get all selected nodes from the file tree
   const getSelectedNodes = useCallback(
@@ -234,7 +258,7 @@ export const FilePane = ({
       findNodes(nodes);
       return selected;
     },
-    [selectedItems]
+    [selectedItems],
   );
 
   // Helper functions for storing/retrieving last right pane volume UUID
@@ -293,12 +317,12 @@ export const FilePane = ({
   // user-selected root directory as a single "Local Files" volume.
   const refreshAvailableVolumes = useCallback(async () => {
     try {
-      if (!fileSystemService.hasRootDirectory()) {
+      if (!fileSystemService.hasRootForPane(paneType)) {
         setAvailableVolumes([]);
         return;
       }
 
-      const rootName = fileSystemService.getRootDirectoryName() || "Local Files";
+      const rootName = fileSystemService.getRootDirectoryName(paneType) || "Local Files";
       const volumes: VolumeOption[] = [
         {
           path: "/",
@@ -321,7 +345,7 @@ export const FilePane = ({
     if (result.success && result.data) {
       setRootPath("/");
       setCurrentRootPath("/");
-      setDisplayTitle(fileSystemService.getRootDirectoryName());
+      setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
       await refreshAvailableVolumes();
       await loadDirectory("/", "root");
     }
@@ -329,13 +353,13 @@ export const FilePane = ({
 
   // Check if root directory is set on mount
   useEffect(() => {
-    if (!fileSystemService.hasRootDirectory()) {
+    if (!fileSystemService.hasRootForPane(paneType)) {
       setLoading(false);
       setPathDoesNotExist(true);
     } else {
       setRootPath("/");
       setCurrentRootPath("/");
-      setDisplayTitle(fileSystemService.getRootDirectoryName());
+      setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
       void refreshAvailableVolumes();
       loadDirectory("/", "root");
     }
@@ -374,7 +398,7 @@ export const FilePane = ({
         const parentPath = dirPath.startsWith("/") ? "/" + parts.slice(0, i).join("/") : parts.slice(0, i).join("/");
 
         try {
-          const statsResult = await fileSystemService.getFileStats(parentPath);
+          const statsResult = await fileSystemService.getFileStats(parentPath, paneType);
           if (statsResult.success && statsResult.data?.isDirectory) {
             return parentPath;
           }
@@ -387,7 +411,7 @@ export const FilePane = ({
       // If no parent found, try root path
       if (rootPath) {
         try {
-          const statsResult = await fileSystemService.getFileStats(rootPath);
+          const statsResult = await fileSystemService.getFileStats(rootPath, paneType);
           if (statsResult.success && statsResult.data?.isDirectory) {
             return rootPath;
           }
@@ -398,13 +422,13 @@ export const FilePane = ({
 
       return null;
     },
-    [rootPath]
+    [rootPath],
   );
 
   const loadDirectory = useCallback(
     async (dirPath: string, nodeId: string) => {
       // Check if root directory is set
-      if (!fileSystemService.hasRootDirectory()) {
+      if (!fileSystemService.hasRootForPane(paneType)) {
         setLoading(false);
         return;
       }
@@ -417,55 +441,18 @@ export const FilePane = ({
 
       try {
         console.log(`${paneName} - Loading directory:`, dirPath);
-        const result = await fileSystemService.readDirectory(dirPath);
+        const result = await fileSystemService.readDirectory(dirPath, paneType);
         console.log(`${paneName} - Directory read result:`, result);
         if (result.success && result.data) {
           // Directory exists, clear the error state
           setPathDoesNotExist(false);
 
           // Filter out hidden files/folders (starting with '.' or '~')
-          // Also filter out volume mount points when listing root directory
+          // Note: In web/File System Access API, "/" is the user's selected folder - show all contents.
+          // The macOS volume filter was for Electron's full filesystem view and doesn't apply here.
           const filteredEntries = result.data.filter((entry) => {
             if (entry.name.startsWith(".") || entry.name.startsWith("~")) {
               return false;
-            }
-            // On macOS, filter out volumes when listing "/" (they appear as directories)
-            // Only show standard macOS system directories - everything else is likely a volume
-            if (dirPath === "/" && entry.type === "folder") {
-              const entryPathLower = entry.path.replace(/\/+$/, "").toLowerCase();
-              const entryNameLower = entry.name.toLowerCase();
-
-              // Standard macOS system directories that should be shown
-              const allowedSystemDirs = [
-                "applications",
-                "library",
-                "system",
-                "users",
-                "bin",
-                "sbin",
-                "usr",
-                "private",
-                "cores",
-                "dev",
-                "etc",
-                "home",
-                "net",
-                "opt",
-                "tmp",
-                "var",
-              ];
-
-              // Always filter out entries in /Volumes/ directory (these are always volumes)
-              if (entryPathLower.startsWith("/volumes/")) {
-                console.log(`${paneName} - Filtering volume in /Volumes/:`, entry.name, entry.path);
-                return false;
-              }
-
-              // Only allow standard system directories - filter out everything else (volumes)
-              if (!allowedSystemDirs.includes(entryNameLower)) {
-                console.log(`${paneName} - Filtering non-system directory (likely volume):`, entry.name, entry.path);
-                return false;
-              }
             }
             return true;
           });
@@ -549,7 +536,7 @@ export const FilePane = ({
         }
       }
     },
-    [paneName, availableVolumes, sortBy]
+    [paneName, availableVolumes, sortBy],
   );
 
   // Re-sort current directory when sort option changes
@@ -811,7 +798,7 @@ export const FilePane = ({
               // Verify the saved path still exists, is accessible, AND is on the same volume as the card
               try {
                 console.log(`${paneName} - Verifying saved path exists:`, savedState.currentPath);
-                const statsResult = await fileSystemService.getFileStats(savedState.currentPath);
+                const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
                 console.log(`${paneName} - Stats result:`, statsResult);
 
                 if (statsResult.success && statsResult.data?.isDirectory) {
@@ -826,18 +813,18 @@ export const FilePane = ({
                       `${paneName} - Restored navigation state for card UUID:`,
                       cardUUID,
                       "to:",
-                      savedState.currentPath
+                      savedState.currentPath,
                     );
                   } else {
                     console.log(
                       `${paneName} - Saved path is on different volume (${savedPathVolumeUUID} vs ${cardUUID}), using card root:`,
-                      cardPath
+                      cardPath,
                     );
                   }
                 } else {
                   console.log(
                     `${paneName} - Saved path exists but is not a directory (success: ${statsResult.success}), using card root:`,
-                    cardPath
+                    cardPath,
                   );
                 }
               } catch (error) {
@@ -914,14 +901,14 @@ export const FilePane = ({
             if (savedState) {
               // Verify the saved path still exists and is accessible
               try {
-                const statsResult = await fileSystemService.getFileStats(savedState.currentPath);
+                const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
                 if (statsResult.success && statsResult.data?.isDirectory) {
                   initialPath = savedState.currentPath;
                   console.log(
                     `${paneName} - Restored navigation state for home volume UUID:`,
                     volumeUUID,
                     "to:",
-                    savedState.currentPath
+                    savedState.currentPath,
                   );
                 } else {
                   console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
@@ -1011,11 +998,11 @@ export const FilePane = ({
                   `${paneName} - Restored navigation state for card UUID:`,
                   cardUUID,
                   "to:",
-                  savedState.currentPath
+                  savedState.currentPath,
                 );
               } else {
                 console.log(
-                  `${paneName} - Saved path is on different volume (${savedPathVolumeUUID} vs ${cardUUID}), using card root`
+                  `${paneName} - Saved path is on different volume (${savedPathVolumeUUID} vs ${cardUUID}), using card root`,
                 );
               }
             } else {
@@ -1063,14 +1050,14 @@ export const FilePane = ({
                 const savedState = getNavigationState(volumeUUID);
                 if (savedState) {
                   try {
-                    const statsResult = await fileSystemService.getFileStats(savedState.currentPath);
+                    const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
                     if (statsResult.success && statsResult.data?.isDirectory) {
                       initialPath = savedState.currentPath;
                       console.log(
                         `${paneName} - Restored navigation state for home volume UUID:`,
                         volumeUUID,
                         "to:",
-                        savedState.currentPath
+                        savedState.currentPath,
                       );
                     } else {
                       console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
@@ -1208,7 +1195,7 @@ export const FilePane = ({
         let targetPath = volume.path;
         if (volume.isHome) {
           // Home directory not available in web - use root
-        const homeResult = { success: true, data: "/" };
+          const homeResult = { success: true, data: "/" };
           if (homeResult.success && homeResult.data) {
             targetPath = homeResult.data;
           } else {
@@ -1243,7 +1230,7 @@ export const FilePane = ({
           const savedState = getNavigationState(resolvedUUID);
           if (savedState?.currentPath) {
             try {
-              const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+              const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
               if (statsResult.success && statsResult.data?.isDirectory) {
                 // Verify the saved path is on the same volume
                 const savedPathVolumeUUID = await getVolumeUUIDForPath(savedState.currentPath);
@@ -1287,7 +1274,7 @@ export const FilePane = ({
       refreshAvailableVolumes,
       rootPath,
       saveLastRightPaneVolumeUUID,
-    ]
+    ],
   );
 
   // Save navigation state whenever currentRootPath or expandedFolders changes
@@ -1301,13 +1288,28 @@ export const FilePane = ({
           `${paneName} - Auto-saved navigation state for volume UUID:`,
           currentVolumeUUID,
           "path:",
-          currentRootPath
+          currentRootPath,
         );
       }
     };
 
     saveCurrentPath();
   }, [currentRootPath, currentVolumeUUID, expandedFolders, saveNavigationState, paneName]);
+
+  // Notify parent of path/volume changes for external favorites columns
+  useEffect(() => {
+    if (onPathChange && currentRootPath) {
+      onPathChange(currentRootPath, volumeId);
+    }
+  }, [currentRootPath, volumeId, onPathChange]);
+
+  // Navigate when requestedPath is set (e.g. from favorites column)
+  useEffect(() => {
+    if (requestedPath && requestedPath !== currentRootPath) {
+      void navigateToFolder(requestedPath);
+      onRequestedPathHandled?.();
+    }
+  }, [requestedPath, currentRootPath, navigateToFolder, onRequestedPathHandled]);
 
   // Store selected paths to restore after refresh
   const selectedPathsToRestoreRef = useRef<Set<string> | null>(null);
@@ -1334,7 +1336,7 @@ export const FilePane = ({
     findSelectedPaths(fileTree);
 
     console.log(
-      `${paneName} - Refreshing directory while preserving ${currentExpanded.length} expanded folders and ${selectedPaths.size} selected items`
+      `${paneName} - Refreshing directory while preserving ${currentExpanded.length} expanded folders and ${selectedPaths.size} selected items`,
     );
 
     // Store selected paths to restore later
@@ -1565,14 +1567,29 @@ export const FilePane = ({
         type: n.type,
       }));
       e.dataTransfer.setData("multipleItems", JSON.stringify(selectedItemsData));
+      e.dataTransfer.setData("sourcePane", paneType);
       e.dataTransfer.setData("isMultiple", "true");
     } else {
       // Single item drag
       e.dataTransfer.setData("sourcePath", node.path);
       e.dataTransfer.setData("sourceType", node.type);
+      e.dataTransfer.setData("sourcePane", paneType);
       e.dataTransfer.setData("isMultiple", "false");
     }
     e.dataTransfer.effectAllowed = "copy";
+    // #region agent log
+    fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "FilePane.tsx:handleDragStart",
+        message: "dragStart",
+        data: { path: node.path, type: node.type },
+        timestamp: Date.now(),
+        hypothesisId: "H3",
+      }),
+    }).catch(() => {});
+    // #endregion
   };
 
   const handleDragOver = (e: React.DragEvent, node?: FileNode) => {
@@ -1625,7 +1642,8 @@ export const FilePane = ({
       items: Array<{ path: string; name: string; type: "file" | "folder" }>,
       destinationPath: string,
       destinationNode?: FileNode,
-      isExternal: boolean = false
+      isExternal: boolean = false,
+      sourcePane: "source" | "dest" = "source",
     ) => {
       if (!window.electron) return;
 
@@ -1657,10 +1675,10 @@ export const FilePane = ({
       const copyFolderWithProgress = async (sourceFolder: string, destFolder: string): Promise<void> => {
         if (!window.electron) return;
         try {
-          const result = await fileSystemService.readDirectory(sourceFolder);
+          const result = await fileSystemService.readDirectory(sourceFolder, "source");
           if (!result.success || !result.data) return;
 
-          await fileSystemService.createFolder(destFolder, basename(destFolder));
+          await fileSystemService.createFolder(destFolder, basename(destFolder), "dest");
 
           for (const entry of result.data) {
             const entryDestPath = joinPath(destFolder, entry.name);
@@ -1698,7 +1716,7 @@ export const FilePane = ({
 
               let copyResult;
               if (needsConversion) {
-                copyResult = await window.electron.fs.convertAndCopyFile(
+                copyResult = await fileSystemService.convertAndCopyFile(
                   entry.path,
                   dirname(finalDestPath),
                   basename(finalDestPath),
@@ -1707,10 +1725,18 @@ export const FilePane = ({
                   fileFormat,
                   mono,
                   normalize,
-                  trimStart
+                  trimStart,
+                  "source",
+                  "dest",
                 );
               } else {
-                copyResult = await fileSystemService.copyFile(entry.path, dirname(entryDestPath), basename(entryDestPath));
+                copyResult = await fileSystemService.copyFile(
+                  entry.path,
+                  dirname(entryDestPath),
+                  basename(entryDestPath),
+                  "source",
+                  "dest",
+                );
               }
 
               if (!copyResult.success) {
@@ -1766,7 +1792,7 @@ export const FilePane = ({
 
           let result;
           if (needsConversion) {
-            result = await window.electron.fs.convertAndCopyFile(
+            result = await fileSystemService.convertAndCopyFile(
               item.path,
               dirname(finalDestFilePath),
               basename(finalDestFilePath),
@@ -1775,10 +1801,18 @@ export const FilePane = ({
               fileFormat,
               mono,
               normalize,
-              trimStart
+              trimStart,
+              sourcePane,
+              "dest",
             );
           } else {
-            result = await fileSystemService.copyFile(item.path, dirname(destFilePath), basename(destFilePath));
+            result = await fileSystemService.copyFile(
+              item.path,
+              dirname(destFilePath),
+              basename(destFilePath),
+              sourcePane,
+              "dest",
+            );
           }
 
           if (!result.success) {
@@ -1820,7 +1854,7 @@ export const FilePane = ({
       rootPath,
       sampleDepth,
       sampleRate,
-    ]
+    ],
   );
 
   const handleDrop = async (e: React.DragEvent, destinationNode?: FileNode) => {
@@ -1829,23 +1863,57 @@ export const FilePane = ({
     setDragOverPath(null);
     setIsDraggingOverRoot(false);
 
-    if (!fileSystemService.hasRootDirectory()) {
+    if (!fileSystemService.hasRootForPane(paneType)) {
       console.error("No root directory selected");
       return;
+    }
+
+    // When dropMode is "navigate", navigate to dropped folder instead of converting
+    if (dropMode === "navigate") {
+      const sourcePath = e.dataTransfer.getData("sourcePath");
+      const sourceType = e.dataTransfer.getData("sourceType");
+      if (sourcePath && sourceType === "folder") {
+        await navigateToFolder(sourcePath);
+        return;
+      }
+      // Try OS drop - get path from directory handle if it's under our root
+      const items = e.dataTransfer.items;
+      if (items && items.length > 0) {
+        const item = items[0];
+        if (item.kind === "file") {
+          try {
+            const handle = await (item as any).getAsFileSystemHandle?.();
+            if (handle?.kind === "directory") {
+              const path = fileSystemService.getVirtualPath(handle as FileSystemDirectoryHandle, paneType);
+              if (path) {
+                await navigateToFolder(path);
+                return;
+              }
+            }
+          } catch {
+            // Fall through to normal handling
+          }
+        }
+      }
     }
 
     // Check if this is an external file drop (from OS file system)
     const items = e.dataTransfer.items;
     const files = e.dataTransfer.files;
-    
+
     if (items && items.length > 0) {
       // External files/folders dropped from OS
-      const externalItems: Array<{ file?: File; handle?: FileSystemDirectoryHandle; name: string; type: "file" | "folder" }> = [];
+      const externalItems: Array<{
+        file?: File;
+        handle?: FileSystemDirectoryHandle;
+        name: string;
+        type: "file" | "folder";
+      }> = [];
 
       // Process each item
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        
+
         if (item.kind === "file") {
           // Try to get FileSystemHandle if available (for folders)
           try {
@@ -1921,7 +1989,13 @@ export const FilePane = ({
       }
 
       // Always convert and save files/folders (single pane design)
-      const itemsToProcess: Array<{ file?: File; handle?: FileSystemDirectoryHandle; name: string; type: "file" | "folder"; targetDir: string }> = [];
+      const itemsToProcess: Array<{
+        file?: File;
+        handle?: FileSystemDirectoryHandle;
+        name: string;
+        type: "file" | "folder";
+        targetDir: string;
+      }> = [];
 
       for (const item of externalItems) {
         if (item.type === "file" && item.file) {
@@ -1939,18 +2013,21 @@ export const FilePane = ({
 
           // Check if folder already exists
           try {
-            const statsResult = await fileSystemService.getFileStats(targetFolderPath);
+            const statsResult = await fileSystemService.getFileStats(targetFolderPath, paneType);
             if (!statsResult.success || !statsResult.data?.isDirectory) {
               // Create folder if it doesn't exist
-              await fileSystemService.createFolder(dirname(targetFolderPath), basename(targetFolderPath));
+              await fileSystemService.createFolder(dirname(targetFolderPath), basename(targetFolderPath), paneType);
             }
           } catch {
             // Folder doesn't exist, create it
-            await fileSystemService.createFolder(dirname(targetFolderPath), basename(targetFolderPath));
+            await fileSystemService.createFolder(dirname(targetFolderPath), basename(targetFolderPath), paneType);
           }
 
           // Get all files from the dropped folder recursively, preserving relative paths
-          const getAllFilesInFolder = async (handle: FileSystemDirectoryHandle, relativePath: string = ""): Promise<void> => {
+          const getAllFilesInFolder = async (
+            handle: FileSystemDirectoryHandle,
+            relativePath: string = "",
+          ): Promise<void> => {
             try {
               // Some TS setups don't include `dom.iterable`, so `entries()` may be missing from the type.
               for await (const [name, entryHandle] of (handle as any).entries()) {
@@ -1969,7 +2046,7 @@ export const FilePane = ({
                   // Ensure subfolder exists in target
                   const targetSubfolderPath = joinPath(targetFolderPath, entryRelativePath);
                   try {
-                    await fileSystemService.createFolder(dirname(targetSubfolderPath), basename(targetSubfolderPath));
+                    await fileSystemService.createFolder(dirname(targetSubfolderPath), basename(targetSubfolderPath), paneType);
                   } catch {
                     // Folder might already exist, ignore
                   }
@@ -2000,7 +2077,7 @@ export const FilePane = ({
 
   // Process conversion after user confirms
   const handleConversionConfirm = useCallback(async () => {
-    if (!pendingConversionItems || !pendingDestinationPath || !fileSystemService.hasRootDirectory()) {
+    if (!pendingConversionItems || !pendingDestinationPath || !fileSystemService.hasRootForPane(paneType)) {
       return;
     }
 
@@ -2070,7 +2147,7 @@ export const FilePane = ({
         let result;
         if (needsConversion) {
           // Add file first, then convert it
-          const addResult = await fileSystemService.addFileFromDrop(file, item.targetDir);
+          const addResult = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
           if (addResult.success && addResult.data) {
             // Now convert the file we just added
             result = await fileSystemService.convertAndCopyFile(
@@ -2082,17 +2159,19 @@ export const FilePane = ({
               fileFormat,
               mono,
               normalize,
-              trimStart
+              trimStart,
+              paneType,
+              paneType,
             );
           } else {
             result = addResult;
           }
         } else {
-          result = await fileSystemService.addFileFromDrop(file, item.targetDir);
+          result = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
         }
 
         if (result.success) {
-          const finalPath = needsConversion 
+          const finalPath = needsConversion
             ? joinPath(item.targetDir, finalDestFileName)
             : joinPath(item.targetDir, item.name);
           onFileTransfer?.(finalPath, finalPath);
@@ -2162,9 +2241,9 @@ export const FilePane = ({
       try {
         let result;
         if (nodeToDelete.type === "file") {
-          result = await fileSystemService.deleteFile(nodeToDelete.path);
+          result = await fileSystemService.deleteFile(nodeToDelete.path, paneType);
         } else {
-          result = await fileSystemService.deleteFolder(nodeToDelete.path);
+          result = await fileSystemService.deleteFolder(nodeToDelete.path, paneType);
         }
 
         if (result.success) {
@@ -2235,7 +2314,7 @@ export const FilePane = ({
       }
 
       // Then navigate back to home directory
-          const homeResult = { success: true, data: "/" };
+      const homeResult = { success: true, data: "/" };
       if (homeResult?.success && homeResult.data) {
         const homePath = homeResult.data;
         const volumeUUID = await getVolumeUUIDForPath(homePath);
@@ -2251,14 +2330,14 @@ export const FilePane = ({
           const savedState = getNavigationState(volumeUUID);
           if (savedState) {
             try {
-              const statsResult = await window.electron.fs.getFileStats(savedState.currentPath);
+              const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
               if (statsResult.success && statsResult.data?.isDirectory) {
                 initialPath = savedState.currentPath;
                 console.log(
                   `${paneName} - Restored navigation state for home volume UUID:`,
                   volumeUUID,
                   "to:",
-                  savedState.currentPath
+                  savedState.currentPath,
                 );
               } else {
                 console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
@@ -2296,7 +2375,7 @@ export const FilePane = ({
 
     try {
       const folderPath = joinPath(currentRootPath || rootPath, newFolderName.trim());
-      const result = await fileSystemService.createFolder(dirname(folderPath), basename(folderPath));
+      const result = await fileSystemService.createFolder(dirname(folderPath), basename(folderPath), paneType);
 
       if (result.success) {
         // Refresh the current directory
@@ -2357,7 +2436,7 @@ export const FilePane = ({
         console.log("Searching with mdfind:", currentSearchQuery);
         // Optionally limit search to current root path or search entire system
         const searchPath = currentRootPath || undefined;
-        const result = await fileSystemService.searchFiles(currentSearchQuery, searchPath);
+        const result = await fileSystemService.searchFiles(currentSearchQuery, searchPath, paneType);
 
         // Double-check this search is still valid (query hasn't changed)
         if (cancelled || currentSearchQueryRef.current !== currentSearchQuery) {
@@ -2488,8 +2567,8 @@ export const FilePane = ({
                   isDragOver && node.type === "folder" && !isParentLink
                     ? "bg-primary/20 border border-primary"
                     : isSelected && !isParentLink
-                    ? "bg-primary/10 border border-primary/30"
-                    : "hover:bg-secondary/50"
+                      ? "bg-primary/10 border border-primary/30"
+                      : "hover:bg-secondary/50"
                 }`}
                 style={{ paddingLeft: `${depth * 16 + 8}px` }}
                 onClick={(e) => {
@@ -2622,7 +2701,7 @@ export const FilePane = ({
                     }}
                     disabled={isFavorite(node.path)}
                   >
-                    {isFavorite(node.path) ? "Already in Favorites" : "Add to Favorites"}
+                    {isFavorite(node.path) ? "Already in favourites" : "Add favourite"}
                   </ContextMenuItem>
                 )}
                 <ContextMenuItem
@@ -2656,7 +2735,7 @@ export const FilePane = ({
   // Convert search results to folder tree structure - only show folders containing matches
   const buildFolderTreeFromSearchResults = (
     results: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>,
-    searchRootPath?: string
+    searchRootPath?: string,
   ): FileNode[] => {
     if (results.length === 0) return [];
 
@@ -2761,6 +2840,20 @@ export const FilePane = ({
 
   const filteredFileSystem = filterNodes(fileTree, searchQuery);
 
+  const filterFoldersOnly = useCallback((nodes: FileNode[]): FileNode[] => {
+    return nodes
+      .filter((n) => n.type === "folder")
+      .map((n) => ({
+        ...n,
+        children: n.children ? filterFoldersOnly(n.children) : n.children,
+      }));
+  }, []);
+
+  const filteredTreeNodes = treeViewMode === "folders" ? filterFoldersOnly(filteredFileSystem) : filteredFileSystem;
+  const searchTreeNodes =
+    treeViewMode === "folders" ? searchResultsAsNodes.filter((n) => n.type === "folder") : searchResultsAsNodes;
+  const activeTreeNodes = searchQuery ? searchTreeNodes : filteredTreeNodes;
+
   // Handle pane click to clear other panes' selections
   const handlePaneClick = () => {
     // Clear selections in all other panes
@@ -2778,90 +2871,87 @@ export const FilePane = ({
 
   // Handler for navigating to a favorite
   const handleFavoriteClick = async (favoritePath: string) => {
-    if (!fileSystemService.hasRootDirectory()) return;
+    if (!fileSystemService.hasRootForPane(paneType)) return;
     await navigateToFolder(favoritePath);
   };
 
   return (
     <div ref={paneContainerRef} className="flex h-full w-full min-w-0 bg-background overflow-hidden">
-      {/* Left Sidebar - Finder style */}
-      <div className="w-56 bg-muted border-r border-border flex flex-col shrink-0 h-full overflow-hidden">
-        <ScrollArea className="flex-1 h-full">
-          <div className="p-2 space-y-4">
-            {/* Directory Selection Section */}
-            <div>
-              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Directory
-              </div>
-              <div className="space-y-0.5 mt-1">
-                {fileSystemService.hasRootDirectory() ? (
-                  <div className="px-2 py-1.5 text-sm text-foreground">
-                    <div className="flex items-center gap-2">
-                      <Folder className="w-4 h-4" />
-                      <span className="truncate">{fileSystemService.getRootDirectoryName()}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={requestRootDirectory}
-                  >
-                    <FolderPlus className="w-4 h-4 mr-2" />
-                    Select Directory
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Favorites Section */}
-            <div>
-              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Favorites
-              </div>
-              <div className="space-y-0.5 mt-1">
-                {favorites.length === 0 ? (
-                  <div className="px-2 py-1.5 text-sm text-muted-foreground">No favorites</div>
-                ) : (
-                  favorites.map((favorite) => {
-                    const isActive = currentRootPath === favorite.path;
-                    return (
-                      <div
-                        key={favorite.path}
-                        className={`group flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-                          isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted/50"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => handleFavoriteClick(favorite.path)}
-                          className="flex items-center gap-2 flex-1 min-w-0 shrink-0"
-                        >
-                          <Star className="w-3 h-3 shrink-0 fill-current" />
-                          <span className="truncate text-left">{favorite.name}</span>
-                        </button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-5 w-5 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeFavorite(favorite.path);
-                          }}
-                          title="Remove from favorites"
-                        >
-                          <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
-                        </Button>
+      {/* Left Sidebar - Finder style (hidden when showSidebar=false) */}
+      {showSidebar && (
+        <div className="w-56 bg-muted border-r border-border flex flex-col shrink-0 h-full overflow-hidden">
+          <ScrollArea className="flex-1 h-full">
+            <div className="p-2 space-y-4">
+              {/* Directory Selection Section */}
+              <div>
+                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Directory
+                </div>
+                <div className="space-y-0.5 mt-1">
+                  {fileSystemService.hasRootForPane(paneType) ? (
+                    <div className="px-2 py-1.5 text-sm text-foreground">
+                      <div className="flex items-center gap-2">
+                        <Folder className="w-4 h-4" />
+                        <span className="truncate">{fileSystemService.getRootDirectoryName(paneType)}</span>
                       </div>
-                    );
-                  })
-                )}
+                    </div>
+                  ) : (
+                    <Button variant="outline" size="sm" className="w-full justify-start" onClick={requestRootDirectory}>
+                      <FolderPlus className="w-4 h-4 mr-2" />
+                      Select Directory
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Favorites Section */}
+              <div>
+                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Favorites
+                </div>
+                <div className="space-y-0.5 mt-1">
+                  {favorites.length === 0 ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">No favorites</div>
+                  ) : (
+                    favorites.map((favorite) => {
+                      const isActive = currentRootPath === favorite.path;
+                      return (
+                        <div
+                          key={favorite.path}
+                          className={`group flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
+                            isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted/50"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleFavoriteClick(favorite.path)}
+                            className="flex items-center gap-2 flex-1 min-w-0 shrink-0"
+                          >
+                            <Star className="w-3 h-3 shrink-0 fill-current" />
+                            <span className="truncate text-left">{favorite.name}</span>
+                          </button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-5 w-5 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFavorite(favorite.path);
+                            }}
+                            title="Remove from favorites"
+                          >
+                            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </ScrollArea>
-      </div>
+          </ScrollArea>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex flex-col flex-1 min-w-0 h-full bg-background overflow-hidden">
@@ -2871,6 +2961,26 @@ export const FilePane = ({
             <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{displayTitle}</div>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-md border border-border overflow-hidden">
+              <Button
+                size="sm"
+                variant={treeViewMode === "all" ? "secondary" : "ghost"}
+                className="rounded-none"
+                onClick={() => setTreeViewMode("all")}
+                title="Show files and folders"
+              >
+                All
+              </Button>
+              <Button
+                size="sm"
+                variant={treeViewMode === "folders" ? "secondary" : "ghost"}
+                className="rounded-none"
+                onClick={() => setTreeViewMode("folders")}
+                title="Show folders only"
+              >
+                Folders
+              </Button>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -2891,12 +3001,12 @@ export const FilePane = ({
                   {sortBy === "name"
                     ? "Name"
                     : sortBy === "dateAdded"
-                    ? "Date Added"
-                    : sortBy === "dateCreated"
-                    ? "Date Created"
-                    : sortBy === "dateModified"
-                    ? "Date Modified"
-                    : "Date Last Opened"}
+                      ? "Date Added"
+                      : sortBy === "dateCreated"
+                        ? "Date Created"
+                        : sortBy === "dateModified"
+                          ? "Date Modified"
+                          : "Date Last Opened"}
                   <ChevronDown className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -2933,6 +3043,18 @@ export const FilePane = ({
             >
               <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </Button>
+            {onBrowseForFolder && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={onBrowseForFolder}
+                title="Browse for folder to navigate to"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Browse for folder
+              </Button>
+            )}
             {showNewFolderButton && (
               <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
                 <FolderPlus className="w-4 h-4" />
@@ -2978,9 +3100,31 @@ export const FilePane = ({
             ) : pathDoesNotExist ? (
               <div className="text-center py-8">
                 <div className="text-sm text-muted-foreground mb-2">Path does not exist</div>
-                <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
-                  Navigate to nearest existing folder
-                </Button>
+                {onBrowseForFolder ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="gap-2">
+                        <FolderOpen className="w-4 h-4" />
+                        Choose folder to navigate to
+                        <ChevronDown className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center">
+                      <DropdownMenuItem onClick={onBrowseForFolder}>
+                        <FolderOpen className="w-4 h-4 mr-2" />
+                        Browse for folder...
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={navigateToNearestExistingParent}>
+                        <ArrowUp className="w-4 h-4 mr-2" />
+                        Navigate to nearest existing folder
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
+                    Navigate to nearest existing folder
+                  </Button>
+                )}
               </div>
             ) : isSearchingFolders ? (
               <div className="flex items-center justify-center py-8">
@@ -2993,7 +3137,7 @@ export const FilePane = ({
               <div className="text-center py-8 text-sm text-muted-foreground">
                 No files found matching &quot;{searchQuery}&quot;
               </div>
-            ) : filteredFileSystem.length === 0 ? (
+            ) : activeTreeNodes.length === 0 ? (
               <>
                 {/* Render file tree with empty array - renderFileTree will add parent link if needed */}
                 {!searchQuery && renderFileTree([])}
@@ -3012,6 +3156,26 @@ export const FilePane = ({
                           <ArrowUp className="w-4 h-4" />
                           Go to Parent Folder
                         </Button>
+                      ) : onBrowseForFolder ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="outline" className="gap-2">
+                              <FolderOpen className="w-4 h-4" />
+                              Choose folder to navigate to
+                              <ChevronDown className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="center">
+                            <DropdownMenuItem onClick={onBrowseForFolder}>
+                              <FolderOpen className="w-4 h-4 mr-2" />
+                              Browse for folder...
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={navigateToNearestExistingParent}>
+                              <ArrowUp className="w-4 h-4 mr-2" />
+                              Navigate to nearest existing folder
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       ) : (
                         <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
                           <ArrowUp className="w-4 h-4" />
@@ -3022,14 +3186,16 @@ export const FilePane = ({
                   ) : searchQuery ? (
                     <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
                   ) : (
-                    <div className="text-muted-foreground">No files found</div>
+                    <div className="text-muted-foreground">
+                      {treeViewMode === "folders" ? "No folders found" : "No files found"}
+                    </div>
                   )}
                 </div>
               </>
             ) : searchQuery ? (
-              renderFileTree(searchResultsAsNodes)
+              renderFileTree(searchTreeNodes)
             ) : (
-              renderFileTree(filteredFileSystem)
+              renderFileTree(filteredTreeNodes)
             )}
           </div>
         </ScrollArea>
@@ -3090,6 +3256,7 @@ export const FilePane = ({
           filePath={selectedAudioFile.path}
           fileName={selectedAudioFile.name}
           onClose={() => setSelectedAudioFile(null)}
+          paneType={paneType}
         />
       )}
 
@@ -3099,6 +3266,7 @@ export const FilePane = ({
           filePath={selectedVideoFile.path}
           fileName={selectedVideoFile.name}
           onClose={() => setSelectedVideoFile(null)}
+          paneType={paneType}
         />
       )}
 
