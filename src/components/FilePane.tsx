@@ -135,8 +135,8 @@ interface FilePaneProps {
   /** When set, reveal this folder in its parent listing and expand/select it. */
   requestedRevealPath?: string | null;
   onRequestedRevealPathHandled?: () => void;
-  /** When provided, enables "Browse for folder" to open a folder picker and navigate to the selected folder */
-  onBrowseForFolder?: () => void;
+  /** When provided, enables "Browse for folder" to open a folder picker and navigate to the selected folder. Receives current path so picker can start there. */
+  onBrowseForFolder?: (currentPath?: string) => void;
 }
 
 export const FilePane = ({
@@ -2865,14 +2865,14 @@ export const FilePane = ({
         <div className="border-b border-border flex flex-col shrink-0">
           <div className="p-4 pb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {onBrowseForFolder && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                  onClick={onBrowseForFolder}
-                  title="Browse for folder to navigate to"
-                >
+            {onBrowseForFolder && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => onBrowseForFolder(currentRootPath || "/")}
+                title="Browse for folder to navigate to"
+              >
                   <FolderOpen className="w-4 h-4" />
                 </Button>
               )}
@@ -3040,7 +3040,7 @@ export const FilePane = ({
                     variant="outline"
                     className="gap-2"
                     data-testid={`select-folder-${paneName}`}
-                    onClick={onBrowseForFolder}
+                    onClick={() => onBrowseForFolder(currentRootPath || "/")}
                   >
                     <FolderOpen className="w-4 h-4" />
                     Select folder
@@ -3091,7 +3091,7 @@ export const FilePane = ({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="center">
-                            <DropdownMenuItem onClick={onBrowseForFolder}>
+                            <DropdownMenuItem onClick={() => onBrowseForFolder(currentRootPath || "/")}>
                               <FolderOpen className="w-4 h-4 mr-2" />
                               Browse for folder...
                             </DropdownMenuItem>

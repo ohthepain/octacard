@@ -51,7 +51,7 @@ class HandleRegistry {
 
     // Normalize path
     const normalizedPath = this.normalizePath(virtualPath);
-    
+
     // Check cache
     if (this.handles.has(normalizedPath)) {
       return this.handles.get(normalizedPath)!;
@@ -108,7 +108,7 @@ class HandleRegistry {
 
     const normalizedPath = this.normalizePath(virtualPath);
     const parts = normalizedPath.split("/").filter(Boolean);
-    
+
     if (parts.length === 0) {
       throw new Error("Invalid file path");
     }
@@ -206,20 +206,27 @@ class FileSystemService {
     return paneType === "source" ? this.sourceRegistry : this.destRegistry;
   }
 
-  private async pickDirectoryHandle(): Promise<FileSystemDirectoryHandle> {
+  private async pickDirectoryHandle(startIn?: FileSystemDirectoryHandle): Promise<FileSystemDirectoryHandle> {
     const testPicker = (window as any).__octacardPickDirectory;
+    console.log("testPicker", testPicker);
+    console.log("startIn", startIn);
     if (typeof testPicker === "function") {
-      return await testPicker();
+      return await testPicker(startIn);
     }
-    return await (window as any).showDirectoryPicker();
+    const options: { startIn?: FileSystemDirectoryHandle } = {};
+    if (startIn) {
+      options.startIn = startIn;
+    }
+    return await (window as any).showDirectoryPicker(options);
   }
 
   /** Request root directory - sets BOTH source and dest to the same folder (for initial setup) */
   async requestRootDirectory(): Promise<FileSystemResult<FileSystemDirectoryHandle>> {
-    if (!('showDirectoryPicker' in window) && typeof (window as any).__octacardPickDirectory !== "function") {
+    console.log("requestRootDirectory");
+    if (!("showDirectoryPicker" in window) && typeof (window as any).__octacardPickDirectory !== "function") {
       return {
         success: false,
-        error: 'File System Access API not supported in this browser',
+        error: "File System Access API not supported in this browser",
       };
     }
 
@@ -232,10 +239,10 @@ class FileSystemService {
         data: handle,
       };
     } catch (error: any) {
-      if (error.name === 'AbortError') {
+      if (error.name === "AbortError") {
         return {
           success: false,
-          error: 'User cancelled directory selection',
+          error: "User cancelled directory selection",
         };
       }
       return {
@@ -245,18 +252,34 @@ class FileSystemService {
     }
   }
 
-  /** Request directory for a specific pane - only that pane navigates to the selected folder */
-  async requestDirectoryForPane(paneType: PaneType): Promise<FileSystemResult<PaneDirectorySelection>> {
-    if (!('showDirectoryPicker' in window) && typeof (window as any).__octacardPickDirectory !== "function") {
+  /** Request directory for a specific pane - only that pane navigates to the selected folder.
+   * @param startInPath - Optional virtual path (e.g. "/" or "/subfolder") to open the picker in that folder. */
+  async requestDirectoryForPane(
+    paneType: PaneType,
+    startInPath?: string,
+  ): Promise<FileSystemResult<PaneDirectorySelection>> {
+    if (!("showDirectoryPicker" in window) && typeof (window as any).__octacardPickDirectory !== "function") {
       return {
         success: false,
-        error: 'File System Access API not supported in this browser',
+        error: "File System Access API not supported in this browser",
       };
     }
 
     try {
       const registry = this.getRegistry(paneType);
-      const handle = await this.pickDirectoryHandle();
+      let startIn: FileSystemDirectoryHandle | undefined;
+      // Try pane's registry first; if no root (e.g. after refresh or favorites from other pane), try the other pane's registry
+      const registryToUse = registry.hasRoot()
+        ? registry
+        : this.getRegistry(paneType === "source" ? "dest" : "source");
+      if (startInPath && registryToUse.hasRoot()) {
+        try {
+          startIn = await registryToUse.getDirectoryHandle(startInPath);
+        } catch {
+          // Path may not exist; fall back to default picker location
+        }
+      }
+      const handle = await this.pickDirectoryHandle(startIn);
       const virtualPath = await registry.resolvePathFromRoot(handle);
 
       if (virtualPath) {
@@ -280,10 +303,10 @@ class FileSystemService {
         },
       };
     } catch (error: any) {
-      if (error.name === 'AbortError') {
+      if (error.name === "AbortError") {
         return {
           success: false,
-          error: 'User cancelled directory selection',
+          error: "User cancelled directory selection",
         };
       }
       return {
@@ -324,7 +347,10 @@ class FileSystemService {
     return { success: true, data: "/" };
   }
 
-  async readDirectory(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult<FileSystemEntry[]>> {
+  async readDirectory(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<FileSystemEntry[]>> {
     try {
       const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
       const entries: FileSystemEntry[] = [];
@@ -335,9 +361,7 @@ class FileSystemService {
           continue;
         }
 
-        const entryPath = virtualPath === "/" 
-          ? `/${name}` 
-          : `${virtualPath}/${name}`;
+        const entryPath = virtualPath === "/" ? `/${name}` : `${virtualPath}/${name}`;
 
         if (handle.kind === "directory") {
           entries.push({
@@ -389,7 +413,10 @@ class FileSystemService {
     }
   }
 
-  async getFileStats(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult<{ size: number; isDirectory: boolean; isFile: boolean }>> {
+  async getFileStats(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<{ size: number; isDirectory: boolean; isFile: boolean }>> {
     try {
       const registry = this.getRegistry(paneType);
       // Try as file first
@@ -424,7 +451,11 @@ class FileSystemService {
     }
   }
 
-  async createFolder(virtualPath: string, folderName: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
+  async createFolder(
+    virtualPath: string,
+    folderName: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult> {
     try {
       const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
       await dirHandle.getDirectoryHandle(folderName, { create: true });
@@ -476,15 +507,15 @@ class FileSystemService {
     destVirtualPath: string,
     fileName?: string,
     sourcePane: PaneType = "source",
-    destPane: PaneType = "dest"
+    destPane: PaneType = "dest",
   ): Promise<FileSystemResult> {
     try {
       const sourceFileHandle = await this.getRegistry(sourcePane).getFileHandle(sourceVirtualPath);
       const sourceFile = await sourceFileHandle.getFile();
-      
+
       const destDirHandle = await this.getRegistry(destPane).getDirectoryHandle(destVirtualPath);
       const finalFileName = fileName || sourceFile.name;
-      
+
       // Check if file already exists and remove it
       try {
         await destDirHandle.removeEntry(finalFileName);
@@ -511,7 +542,7 @@ class FileSystemService {
     sourceVirtualPath: string,
     destVirtualPath: string,
     sourcePane: PaneType = "source",
-    destPane: PaneType = "dest"
+    destPane: PaneType = "dest",
   ): Promise<FileSystemResult> {
     try {
       const sourceDirHandle = await this.getRegistry(sourcePane).getDirectoryHandle(sourceVirtualPath);
@@ -535,7 +566,7 @@ class FileSystemService {
 
   private async copyFolderRecursive(
     sourceHandle: FileSystemDirectoryHandle,
-    destHandle: FileSystemDirectoryHandle
+    destHandle: FileSystemDirectoryHandle,
   ): Promise<void> {
     for await (const [name, handle] of sourceHandle.entries()) {
       if (handle.kind === "directory") {
@@ -557,10 +588,10 @@ class FileSystemService {
       const fileHandle = await this.getRegistry(paneType).getFileHandle(virtualPath);
       const file = await fileHandle.getFile();
       const blob = new Blob([file], { type: file.type });
-      
+
       // Create object URL
       const objectUrl = URL.createObjectURL(blob);
-      
+
       return {
         success: true,
         data: objectUrl,
@@ -592,7 +623,7 @@ class FileSystemService {
     normalize?: boolean,
     trimStart?: boolean,
     sourcePane: PaneType = "source",
-    destPane: PaneType = "dest"
+    destPane: PaneType = "dest",
   ): Promise<FileSystemResult> {
     try {
       // Get source file
@@ -619,14 +650,14 @@ class FileSystemService {
 
       // Perform conversion if needed
       if (needsConversion) {
-        const { convertAudio } = await import('./audioConverter');
+        const { convertAudio } = await import("./audioConverter");
         const convertedBlob = await convertAudio(sourceFile, {
           sampleRate: targetSampleRate,
-          bitDepth: sampleDepth as '16-bit' | 'dont-change',
+          bitDepth: sampleDepth as "16-bit" | "dont-change",
           mono,
           normalize,
           trimStart,
-          format: fileFormat as 'WAV' | 'dont-change',
+          format: fileFormat as "WAV" | "dont-change",
         });
 
         // Update filename extension if converting to WAV
@@ -639,7 +670,7 @@ class FileSystemService {
 
       // Write to destination (ensure nested dirs exist)
       const destDirHandle = await this.getRegistry(destPane).ensureDirectory(destVirtualPath);
-      
+
       // Remove existing file if it exists
       try {
         await destDirHandle.removeEntry(finalFileName);
@@ -649,13 +680,13 @@ class FileSystemService {
 
       const destFileHandle = await destDirHandle.getFileHandle(finalFileName, { create: true });
       const writable = await destFileHandle.createWritable();
-      
+
       if (finalFile instanceof File) {
         await writable.write(finalFile);
       } else {
         await writable.write(finalFile);
       }
-      
+
       await writable.close();
 
       return { success: true };
@@ -667,7 +698,11 @@ class FileSystemService {
     }
   }
 
-  async searchFiles(query: string, searchPath?: string, paneType: PaneType = "source"): Promise<FileSystemResult<FileSystemEntry[]>> {
+  async searchFiles(
+    query: string,
+    searchPath?: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<FileSystemEntry[]>> {
     // Simple recursive search implementation
     try {
       const startPath = searchPath || "/";
@@ -691,7 +726,7 @@ class FileSystemService {
     virtualPath: string,
     query: string,
     results: FileSystemEntry[],
-    paneType: PaneType
+    paneType: PaneType,
   ): Promise<void> {
     try {
       const entries = await this.readDirectory(virtualPath, paneType);
@@ -717,7 +752,7 @@ class FileSystemService {
 
   async listAudioFilesRecursively(
     startPath: string,
-    paneType: PaneType = "source"
+    paneType: PaneType = "source",
   ): Promise<FileSystemResult<FileSystemEntry[]>> {
     try {
       const results: FileSystemEntry[] = [];
@@ -735,7 +770,7 @@ class FileSystemService {
   private async collectAudioFilesRecursive(
     virtualPath: string,
     results: FileSystemEntry[],
-    paneType: PaneType
+    paneType: PaneType,
   ): Promise<void> {
     try {
       const entries = await this.readDirectory(virtualPath, paneType);
@@ -767,7 +802,7 @@ class FileSystemService {
   async addFileFromDrop(
     file: File,
     destVirtualPath: string,
-    paneType: PaneType = "dest"
+    paneType: PaneType = "dest",
   ): Promise<FileSystemResult<string>> {
     try {
       const destDirHandle = await this.getRegistry(paneType).getDirectoryHandle(destVirtualPath);
@@ -776,9 +811,7 @@ class FileSystemService {
       await writable.write(file);
       await writable.close();
 
-      const newPath = destVirtualPath === "/" 
-        ? `/${file.name}` 
-        : `${destVirtualPath}/${file.name}`;
+      const newPath = destVirtualPath === "/" ? `/${file.name}` : `${destVirtualPath}/${file.name}`;
 
       return {
         success: true,

@@ -143,20 +143,34 @@ const Index = () => {
     }
   };
 
-  const handleBrowseForFolder = async (paneType: "source" | "dest") => {
-    const result = await fileSystemService.requestDirectoryForPane(paneType);
-    if (result.success && result.data) {
-      if (paneType === "source") {
-        if (!result.data.reusedExistingRoot) {
-          setSourceRootVersion((v) => v + 1);
-        }
-        setRequestedSourceRevealPath(result.data.virtualPath);
-      } else {
-        if (!result.data.reusedExistingRoot) {
-          setDestRootVersion((v) => v + 1);
-        }
-        setRequestedDestRevealPath(result.data.virtualPath);
+  const applyBrowseSelection = (
+    paneType: "source" | "dest",
+    selection: { reusedExistingRoot: boolean; virtualPath: string }
+  ) => {
+    if (paneType === "source") {
+      if (!selection.reusedExistingRoot) {
+        setSourceRootVersion((v) => v + 1);
       }
+      setRequestedSourceRevealPath(selection.virtualPath);
+    } else {
+      if (!selection.reusedExistingRoot) {
+        setDestRootVersion((v) => v + 1);
+      }
+      setRequestedDestRevealPath(selection.virtualPath);
+    }
+  };
+
+  const handleBrowseForFolder = async (paneType: "source" | "dest", currentPath?: string) => {
+    const result = await fileSystemService.requestDirectoryForPane(paneType, currentPath);
+    if (result.success && result.data) {
+      applyBrowseSelection(paneType, result.data);
+    }
+  };
+
+  const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
+    const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
+    if (result.success && result.data) {
+      applyBrowseSelection(paneType, result.data);
     }
   };
 
@@ -205,6 +219,7 @@ const Index = () => {
               volumeId={sourceVolumeId}
               currentPath={sourcePath}
               onNavigate={setRequestedSourcePath}
+              onBrowseFromFavorite={(path) => handleBrowseFromFavorite("source", path)}
               title="Source Favorites"
             />
           </ResizablePanel>
@@ -232,7 +247,7 @@ const Index = () => {
               convertFiles={false}
               showEjectButton={false}
               showNewFolderButton={false}
-              onBrowseForFolder={() => handleBrowseForFolder("source")}
+              onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
             />
           </ResizablePanel>
           <ResizableHandle withHandle />
@@ -261,7 +276,7 @@ const Index = () => {
               convertFiles={true}
               showEjectButton={true}
               showNewFolderButton={true}
-              onBrowseForFolder={() => handleBrowseForFolder("dest")}
+              onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
             />
           </ResizablePanel>
           <ResizableHandle withHandle />
@@ -273,6 +288,7 @@ const Index = () => {
               volumeId={destVolumeId}
               currentPath={destPath}
               onNavigate={(path) => setRequestedDestPath(path)}
+              onBrowseFromFavorite={(path) => handleBrowseFromFavorite("dest", path)}
               title="Dest Favorites"
             />
           </ResizablePanel>

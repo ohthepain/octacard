@@ -15,6 +15,7 @@ interface FavoritesColumnProps {
   volumeId: string;
   currentPath: string;
   onNavigate: (path: string) => void;
+  onBrowseFromFavorite?: (path: string) => void;
   onDropFolder?: (path: string, name: string) => void;
   title?: string;
 }
@@ -24,6 +25,7 @@ export function FavoritesColumn({
   volumeId,
   currentPath,
   onNavigate,
+  onBrowseFromFavorite,
   onDropFolder,
   title,
 }: FavoritesColumnProps) {
@@ -112,8 +114,10 @@ export function FavoritesColumn({
             favorites.map((favorite) => (
               <FavoriteItem
                 key={favorite.path}
+                paneType={paneType}
                 favorite={favorite}
                 isActive={currentPath === favorite.path}
+                onBrowseFromFavorite={onBrowseFromFavorite ? () => onBrowseFromFavorite(favorite.path) : undefined}
                 onNavigate={() => onNavigate(favorite.path)}
                 onRemove={() => removeFavorite(favorite.path)}
               />
@@ -126,13 +130,17 @@ export function FavoritesColumn({
 }
 
 function FavoriteItem({
+  paneType,
   favorite,
   isActive,
+  onBrowseFromFavorite,
   onNavigate,
   onRemove,
 }: {
+  paneType: "source" | "dest";
   favorite: Favorite;
   isActive: boolean;
+  onBrowseFromFavorite?: () => void;
   onNavigate: () => void;
   onRemove: () => void;
 }) {
@@ -149,8 +157,9 @@ function FavoriteItem({
         >
           <button
             type="button"
-            onClick={onNavigate}
+            onClick={onBrowseFromFavorite ?? onNavigate}
             className="flex items-center gap-2 flex-1 min-w-0 shrink-0 text-left"
+            data-testid={`favorite-open-${paneType}-${favorite.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
           >
             <Star className="w-3 h-3 shrink-0 fill-current" />
             <span className="truncate">{favorite.name}</span>
