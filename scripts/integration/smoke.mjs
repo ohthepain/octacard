@@ -131,9 +131,38 @@ try {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
 
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
-  await page.getByRole("button", { name: "Convert" }).waitFor({ state: "visible" });
+  const convertButton = page.getByRole("button", { name: "Convert" });
+  await convertButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
+  const convertBox = await convertButton.boundingBox();
+  assert.ok(convertBox, "Expected convert button to have a visible bounding box.");
+  const viewport = page.viewportSize();
+  assert.ok(viewport, "Expected viewport size to be available.");
+  const convertCenterX = convertBox.x + convertBox.width / 2;
+  const viewportCenterX = viewport.width / 2;
+  const centerDelta = Math.abs(convertCenterX - viewportCenterX);
+  assert.ok(
+    centerDelta <= 80,
+    `Expected convert button to be centered. Delta=${centerDelta}, viewportCenter=${viewportCenterX}, buttonCenter=${convertCenterX}`
+  );
+  assert.ok(convertBox.x >= 0, "Expected convert button to remain inside the viewport.");
+  assert.ok(convertBox.x + convertBox.width <= viewport.width, "Expected convert button to remain fully visible.");
   await page.locator("#main-layout").waitFor({ state: "visible" });
+  const sourcePanel = page.getByTestId("panel-source");
+  const destPanel = page.getByTestId("panel-dest");
+  await sourcePanel.waitFor({ state: "visible" });
+  await destPanel.waitFor({ state: "visible" });
+  const sourceBox = await sourcePanel.boundingBox();
+  const destBox = await destPanel.boundingBox();
+  if (!sourceBox || !destBox) {
+    throw new Error("Expected source and destination panels to be visible.");
+  }
+  const averageWidth = (sourceBox.width + destBox.width) / 2;
+  const widthDelta = Math.abs(sourceBox.width - destBox.width);
+  assert.ok(
+    widthDelta <= averageWidth * 0.05,
+    `Expected source/dest panels to be near equal width. Source=${sourceBox.width}, Dest=${destBox.width}`
+  );
   await page.evaluate(() => {
     const button = Array.from(document.querySelectorAll("button")).find((el) => el.textContent?.includes("Select Directory"));
     if (!button) throw new Error("Select Directory button not found");
@@ -171,7 +200,7 @@ try {
     sourceNode.click();
     destNode.click();
   });
-  await page.getByRole("button", { name: "Convert" }).click();
+  await convertButton.click();
   await page.getByRole("button", { name: "Convert & Save" }).click();
 
   await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
