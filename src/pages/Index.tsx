@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { Play, FolderPlus } from "lucide-react";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
+import { toast } from "sonner";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -28,6 +29,12 @@ function dirname(filePath: string): string {
 
 function isAudioFile(fileName: string): boolean {
   return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
+}
+
+function isSafari(): boolean {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent.toLowerCase();
+  return ua.includes("safari") && !ua.includes("chrome") && !ua.includes("chromium");
 }
 
 const Index = () => {
@@ -190,6 +197,17 @@ const Index = () => {
     if (result.success) {
       setSourceRootVersion((v) => v + 1);
       setDestRootVersion((v) => v + 1);
+    } else {
+      if (isSafari()) {
+        toast.error("Safari Not Supported", {
+          description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
+          duration: 8000,
+        });
+      } else {
+        toast.error("Failed to Select Directory", {
+          description: result.error || "Unable to open folder picker. Please try again.",
+        });
+      }
     }
   };
 
@@ -214,6 +232,17 @@ const Index = () => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, currentPath);
     if (result.success && result.data) {
       applyBrowseSelection(paneType, result.data);
+    } else if (!result.success) {
+      if (isSafari()) {
+        toast.error("Safari Not Supported", {
+          description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
+          duration: 8000,
+        });
+      } else if (result.error !== "User cancelled directory selection") {
+        toast.error("Failed to Browse Folder", {
+          description: result.error || "Unable to open folder picker. Please try again.",
+        });
+      }
     }
   };
 
@@ -221,6 +250,17 @@ const Index = () => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
     if (result.success && result.data) {
       applyBrowseSelection(paneType, result.data);
+    } else if (!result.success) {
+      if (isSafari()) {
+        toast.error("Safari Not Supported", {
+          description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
+          duration: 8000,
+        });
+      } else if (result.error !== "User cancelled directory selection") {
+        toast.error("Failed to Browse Folder", {
+          description: result.error || "Unable to open folder picker. Please try again.",
+        });
+      }
     }
   };
 
