@@ -132,6 +132,9 @@ interface FilePaneProps {
   /** When set, navigate to this path (e.g. from favorites column). Parent should clear via onRequestedPathHandled. */
   requestedPath?: string | null;
   onRequestedPathHandled?: () => void;
+  /** When set, reveal this folder in its parent listing and expand/select it. */
+  requestedRevealPath?: string | null;
+  onRequestedRevealPathHandled?: () => void;
   /** When provided, enables "Browse for folder" to open a folder picker and navigate to the selected folder */
   onBrowseForFolder?: () => void;
 }
@@ -155,6 +158,8 @@ export const FilePane = ({
   dropMode = "convert",
   requestedPath,
   onRequestedPathHandled,
+  requestedRevealPath,
+  onRequestedRevealPathHandled,
   onBrowseForFolder,
 }: FilePaneProps) => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -1021,6 +1026,33 @@ export const FilePane = ({
     await loadDirectory(folderPath, "root");
   };
 
+  const revealFolderWithSiblings = useCallback(
+    async (folderPath: string) => {
+      if (!folderPath || folderPath === "/") {
+        await navigateToFolder("/");
+        return;
+      }
+
+      const parentPath = dirname(folderPath) || "/";
+      const selectedNodeId = `root-${folderPath}`;
+
+      setCurrentRootPath(parentPath);
+      currentRootPathRef.current = parentPath;
+      setExpandedFolders(new Set());
+      setSelectedItems(new Set());
+      setFileTree([]);
+      setPathDoesNotExist(false);
+
+      await loadDirectory(parentPath, "root");
+
+      setSelectedItems(new Set([selectedNodeId]));
+      setExpandedFolders(new Set([selectedNodeId]));
+      setLastSelectedIndex(0);
+      await loadDirectory(folderPath, selectedNodeId);
+    },
+    [loadDirectory, navigateToFolder],
+  );
+
   const navigateToNearestExistingParent = async () => {
     if (!currentRootPath) return;
 
@@ -1169,6 +1201,13 @@ export const FilePane = ({
       onRequestedPathHandled?.();
     }
   }, [requestedPath, currentRootPath, navigateToFolder, onRequestedPathHandled]);
+
+  useEffect(() => {
+    if (requestedRevealPath) {
+      void revealFolderWithSiblings(requestedRevealPath);
+      onRequestedRevealPathHandled?.();
+    }
+  }, [requestedRevealPath, revealFolderWithSiblings, onRequestedRevealPathHandled]);
 
   // Store selected paths to restore after refresh
   const selectedPathsToRestoreRef = useRef<Set<string> | null>(null);
@@ -2403,6 +2442,13 @@ export const FilePane = ({
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div
+                data-testid={
+                  isParentLink
+                    ? `tree-node-${paneName}-parent`
+                    : `tree-node-${paneName}-${node.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`
+                }
+                data-selected={isSelected && !isParentLink ? "true" : "false"}
+                data-expanded={node.type === "folder" && isExpanded ? "true" : "false"}
                 draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
                 onDragStart={(e) => !isParentLink && handleDragStart(e, node)}
                 onDragOver={(e) => {
@@ -2816,151 +2862,145 @@ export const FilePane = ({
       {/* Main Content Area */}
       <div className="flex flex-col flex-1 min-w-0 h-full bg-background overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
-            <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-              {displayTitle}
-            </div>
-            {/* Breadcrumb: show current folder path for context */}
-            {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
-              <>
-                <span className="text-muted-foreground/40 shrink-0">›</span>
-                <div className="flex items-center gap-1 min-w-0 text-sm text-muted-foreground overflow-x-auto">
-                  <span className="text-muted-foreground/60">/</span>
-                  <button
-                    type="button"
-                    onClick={() => navigateToFolder("/")}
-                    className={`truncate hover:text-foreground transition-colors ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
-                    title={fileSystemService.getRootDirectoryName(paneType)}
-                  >
-                    {fileSystemService.getRootDirectoryName(paneType)}
-                  </button>
-                  {currentRootPath &&
-                    currentRootPath !== "/" &&
-                    currentRootPath
-                      .split("/")
-                      .filter(Boolean)
-                      .map((segment, i, parts) => {
-                        const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
-                        const isCurrent = i === parts.length - 1;
-                        return (
-                          <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
-                            <span className="text-muted-foreground/60">/</span>
-                            <button
-                              type="button"
-                              onClick={() => navigateToFolder(pathUpToHere)}
-                              className={`truncate max-w-24 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
-                              title={segment}
-                            >
-                              {segment}
-                            </button>
-                          </span>
-                        );
-                      })}
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-md border border-border overflow-hidden">
-              <Button
-                size="sm"
-                variant={treeViewMode === "all" ? "secondary" : "ghost"}
-                className="rounded-none"
-                onClick={() => setTreeViewMode("all")}
-                title="Show files and folders"
-              >
-                All
-              </Button>
-              <Button
-                size="sm"
-                variant={treeViewMode === "folders" ? "secondary" : "ghost"}
-                className="rounded-none"
-                onClick={() => setTreeViewMode("folders")}
-                title="Show folders only"
-              >
-                Folders
-              </Button>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search files..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-9 w-48"
-              />
-              {/* Reserve space for loader to prevent layout shifts */}
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 flex items-center justify-center">
-                {isSearchingFolders && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />}
-              </div>
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline" className="gap-2">
-                  {sortBy === "name"
-                    ? "Name"
-                    : sortBy === "dateAdded"
-                      ? "Date Added"
-                      : sortBy === "dateCreated"
-                        ? "Date Created"
-                        : sortBy === "dateModified"
-                          ? "Date Modified"
-                          : "Date Last Opened"}
-                  <ChevronDown className="w-4 h-4" />
+        <div className="border-b border-border flex flex-col shrink-0">
+          <div className="p-4 pb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {onBrowseForFolder && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={onBrowseForFolder}
+                  title="Browse for folder to navigate to"
+                >
+                  <FolderOpen className="w-4 h-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setSortBy("name")}>
-                  <Check className={`w-4 h-4 mr-2 ${sortBy === "name" ? "opacity-100" : "opacity-0"}`} />
-                  Name
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("dateAdded")}>
-                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateAdded" ? "opacity-100" : "opacity-0"}`} />
-                  Date Added
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("dateCreated")}>
-                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateCreated" ? "opacity-100" : "opacity-0"}`} />
-                  Date Created
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("dateModified")}>
-                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateModified" ? "opacity-100" : "opacity-0"}`} />
-                  Date Modified
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("dateLastOpened")}>
-                  <Check className={`w-4 h-4 mr-2 ${sortBy === "dateLastOpened" ? "opacity-100" : "opacity-0"}`} />
-                  Date Last Opened
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 w-8 p-0"
-              onClick={() => refreshCurrentDirectory()}
-              title="Refresh"
-              disabled={!currentRootPath || loading}
-            >
-              <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            </Button>
-            {onBrowseForFolder && (
+              )}
+              <div className="flex items-center rounded-md border border-border overflow-hidden">
+                <Button
+                  size="sm"
+                  variant={treeViewMode === "all" ? "secondary" : "ghost"}
+                  className="rounded-none"
+                  onClick={() => setTreeViewMode("all")}
+                  title="Show files and folders"
+                >
+                  All
+                </Button>
+                <Button
+                  size="sm"
+                  variant={treeViewMode === "folders" ? "secondary" : "ghost"}
+                  className="rounded-none"
+                  onClick={() => setTreeViewMode("folders")}
+                  title="Show folders only"
+                >
+                  Folders
+                </Button>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search files..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-9 w-48"
+                />
+                {/* Reserve space for loader to prevent layout shifts */}
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 w-3 h-3 flex items-center justify-center">
+                  {isSearchingFolders && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin" />}
+                </div>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" className="gap-2">
+                    {sortBy === "name"
+                      ? "Name"
+                      : sortBy === "dateAdded"
+                        ? "Date Added"
+                        : sortBy === "dateCreated"
+                          ? "Date Created"
+                          : sortBy === "dateModified"
+                            ? "Date Modified"
+                            : "Date Last Opened"}
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setSortBy("name")}>
+                    <Check className={`w-4 h-4 mr-2 ${sortBy === "name" ? "opacity-100" : "opacity-0"}`} />
+                    Name
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy("dateAdded")}>
+                    <Check className={`w-4 h-4 mr-2 ${sortBy === "dateAdded" ? "opacity-100" : "opacity-0"}`} />
+                    Date Added
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy("dateCreated")}>
+                    <Check className={`w-4 h-4 mr-2 ${sortBy === "dateCreated" ? "opacity-100" : "opacity-0"}`} />
+                    Date Created
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy("dateModified")}>
+                    <Check className={`w-4 h-4 mr-2 ${sortBy === "dateModified" ? "opacity-100" : "opacity-0"}`} />
+                    Date Modified
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy("dateLastOpened")}>
+                    <Check className={`w-4 h-4 mr-2 ${sortBy === "dateLastOpened" ? "opacity-100" : "opacity-0"}`} />
+                    Date Last Opened
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={onBrowseForFolder}
-                title="Browse for folder to navigate to"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                onClick={() => refreshCurrentDirectory()}
+                title="Refresh"
+                disabled={!currentRootPath || loading}
               >
-                <FolderOpen className="w-4 h-4" />
+                <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
-            )}
-            {showNewFolderButton && (
-              <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
-                <FolderPlus className="w-4 h-4" />
-                New Folder
-              </Button>
-            )}
+              {showNewFolderButton && (
+                <Button size="sm" variant="secondary" className="gap-2" onClick={() => setNewFolderDialogOpen(true)}>
+                  <FolderPlus className="w-4 h-4" />
+                  New Folder
+                </Button>
+              )}
+            </div>
           </div>
+          {/* Breadcrumb row: full width below header */}
+          {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
+            <div className="px-4 pb-2 flex items-center gap-1 min-w-0 text-sm text-muted-foreground overflow-x-auto">
+              <span className="text-muted-foreground/60 shrink-0">/</span>
+              <button
+                type="button"
+                onClick={() => navigateToFolder("/")}
+                className={`truncate hover:text-foreground transition-colors shrink-0 ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
+                title={fileSystemService.getRootDirectoryName(paneType)}
+              >
+                {fileSystemService.getRootDirectoryName(paneType)}
+              </button>
+              {currentRootPath &&
+                currentRootPath !== "/" &&
+                currentRootPath
+                  .split("/")
+                  .filter(Boolean)
+                  .map((segment, i, parts) => {
+                    const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
+                    const isCurrent = i === parts.length - 1;
+                    return (
+                      <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
+                        <span className="text-muted-foreground/60">/</span>
+                        <button
+                          type="button"
+                          onClick={() => navigateToFolder(pathUpToHere)}
+                          className={`truncate max-w-32 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
+                          title={segment}
+                        >
+                          {segment}
+                        </button>
+                      </span>
+                    );
+                  })}
+            </div>
+          )}
         </div>
 
         {/* File Tree */}
