@@ -24,6 +24,26 @@ export interface PaneDirectorySelection {
   reusedExistingRoot: boolean;
 }
 
+interface OctacardTestHooks {
+  listAudioFilesRecursively?: (args: {
+    startPath: string;
+    paneType: PaneType;
+  }) => Promise<FileSystemResult<FileSystemEntry[]>> | FileSystemResult<FileSystemEntry[]>;
+  convertAndCopyFile?: (args: {
+    sourceVirtualPath: string;
+    destVirtualPath: string;
+    fileName: string;
+    targetSampleRate?: number;
+    sampleDepth?: string;
+    fileFormat?: string;
+    mono?: boolean;
+    normalize?: boolean;
+    trimStart?: boolean;
+    sourcePane: PaneType;
+    destPane: PaneType;
+  }) => Promise<FileSystemResult> | FileSystemResult;
+}
+
 // Handle Registry to manage FileSystemDirectoryHandle instances
 class HandleRegistry {
   private rootHandle: FileSystemDirectoryHandle | null = null;
@@ -218,6 +238,11 @@ class FileSystemService {
       options.startIn = startIn;
     }
     return await (window as any).showDirectoryPicker(options);
+  }
+
+  private getTestHooks(): OctacardTestHooks | null {
+    if (typeof window === "undefined") return null;
+    return (window as any).__octacardTestHooks ?? null;
   }
 
   /** Request root directory - sets BOTH source and dest to the same folder (for initial setup) */
@@ -625,6 +650,23 @@ class FileSystemService {
     sourcePane: PaneType = "source",
     destPane: PaneType = "dest",
   ): Promise<FileSystemResult> {
+    const testConvert = this.getTestHooks()?.convertAndCopyFile;
+    if (typeof testConvert === "function") {
+      return await testConvert({
+        sourceVirtualPath,
+        destVirtualPath,
+        fileName,
+        targetSampleRate,
+        sampleDepth,
+        fileFormat,
+        mono,
+        normalize,
+        trimStart,
+        sourcePane,
+        destPane,
+      });
+    }
+
     try {
       // Get source file
       const sourceFile = await this.getFile(sourceVirtualPath, sourcePane);
@@ -754,6 +796,11 @@ class FileSystemService {
     startPath: string,
     paneType: PaneType = "source",
   ): Promise<FileSystemResult<FileSystemEntry[]>> {
+    const testListAudio = this.getTestHooks()?.listAudioFilesRecursively;
+    if (typeof testListAudio === "function") {
+      return await testListAudio({ startPath, paneType });
+    }
+
     try {
       const results: FileSystemEntry[] = [];
       const path = startPath || "/";

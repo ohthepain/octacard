@@ -98,6 +98,32 @@ try {
 
     const pickerQueue = [root];
     window.__octacardPickDirectory = async () => pickerQueue.shift() || root;
+    window.__listCalls = [];
+    window.__convertCalls = [];
+    window.__octacardTestHooks = {
+      listAudioFilesRecursively: ({ startPath, paneType }) => {
+        window.__listCalls.push({ startPath, paneType });
+        if (startPath === "/Alpha") {
+          return {
+            success: true,
+            data: [
+              {
+                name: "inside-alpha.wav",
+                path: "/Alpha/inside-alpha.wav",
+                type: "file",
+                size: 128,
+                isDirectory: false,
+              },
+            ],
+          };
+        }
+        return { success: true, data: [] };
+      },
+      convertAndCopyFile: (args) => {
+        window.__convertCalls.push(args);
+        return { success: true };
+      },
+    };
     localStorage.removeItem("octacard_favorites_source__default");
     localStorage.removeItem("octacard_favorites_dest__default");
   });
@@ -136,6 +162,26 @@ try {
   const storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
   assert.ok(storedFavorites, "Source favorites should be persisted.");
   assert.ok(storedFavorites.includes('"/Alpha"'), "Stored source favorites should include /Alpha.");
+
+  await page.evaluate(() => {
+    const sourceNode = document.querySelector('[data-testid="tree-node-source-_Alpha"]');
+    const destNode = document.querySelector('[data-testid="tree-node-dest-_Beta"]');
+    if (!(sourceNode instanceof HTMLElement)) throw new Error("Source node not found");
+    if (!(destNode instanceof HTMLElement)) throw new Error("Destination node not found");
+    sourceNode.click();
+    destNode.click();
+  });
+  await page.getByRole("button", { name: "Convert" }).click();
+  await page.getByRole("button", { name: "Convert & Save" }).click();
+
+  await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+  const listCalls = await page.evaluate(() => window.__listCalls);
+  const convertCalls = await page.evaluate(() => window.__convertCalls);
+  assert.equal(listCalls.length, 1, "Expected one listAudioFilesRecursively call.");
+  assert.equal(listCalls[0].startPath, "/Alpha", "Conversion should use selected source folder.");
+  assert.equal(convertCalls.length, 1, "Expected one conversion call.");
+  assert.equal(convertCalls[0].sourceVirtualPath, "/Alpha/inside-alpha.wav", "Conversion should use selected source files.");
+  assert.equal(convertCalls[0].destVirtualPath, "/Beta", "Conversion should use selected destination folder.");
 
   const title = await page.title();
   assert.ok(title.includes("OctaCard"), "Expected the page title to include OctaCard.");
