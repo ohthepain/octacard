@@ -1904,7 +1904,11 @@ export const FilePane = ({
                   // Ensure subfolder exists in target
                   const targetSubfolderPath = joinPath(targetFolderPath, entryRelativePath);
                   try {
-                    await fileSystemService.createFolder(dirname(targetSubfolderPath), basename(targetSubfolderPath), paneType);
+                    await fileSystemService.createFolder(
+                      dirname(targetSubfolderPath),
+                      basename(targetSubfolderPath),
+                      paneType,
+                    );
                   } catch {
                     // Folder might already exist, ignore
                   }
@@ -2074,7 +2078,6 @@ export const FilePane = ({
   ]);
 
   const handleDelete = async (node?: FileNode) => {
-
     // Check if we have multiple selected items
     const selectedNodes = node ? [node] : getSelectedNodes(fileTree);
 
@@ -2815,43 +2818,45 @@ export const FilePane = ({
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
-            <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground shrink-0">{displayTitle}</div>
+            <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+              {displayTitle}
+            </div>
             {/* Breadcrumb: show current folder path for context */}
             {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
               <>
                 <span className="text-muted-foreground/40 shrink-0">›</span>
                 <div className="flex items-center gap-1 min-w-0 text-sm text-muted-foreground overflow-x-auto">
-                <span className="text-muted-foreground/60">/</span>
-                <button
-                  type="button"
-                  onClick={() => navigateToFolder("/")}
-                  className={`truncate hover:text-foreground transition-colors ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
-                  title={fileSystemService.getRootDirectoryName(paneType)}
-                >
-                  {fileSystemService.getRootDirectoryName(paneType)}
-                </button>
-                {currentRootPath &&
-                  currentRootPath !== "/" &&
-                  currentRootPath
-                    .split("/")
-                    .filter(Boolean)
-                    .map((segment, i, parts) => {
-                      const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
-                      const isCurrent = i === parts.length - 1;
-                      return (
-                        <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
-                          <span className="text-muted-foreground/60">/</span>
-                          <button
-                            type="button"
-                            onClick={() => navigateToFolder(pathUpToHere)}
-                            className={`truncate max-w-24 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
-                            title={segment}
-                          >
-                            {segment}
-                          </button>
-                        </span>
-                      );
-                    })}
+                  <span className="text-muted-foreground/60">/</span>
+                  <button
+                    type="button"
+                    onClick={() => navigateToFolder("/")}
+                    className={`truncate hover:text-foreground transition-colors ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
+                    title={fileSystemService.getRootDirectoryName(paneType)}
+                  >
+                    {fileSystemService.getRootDirectoryName(paneType)}
+                  </button>
+                  {currentRootPath &&
+                    currentRootPath !== "/" &&
+                    currentRootPath
+                      .split("/")
+                      .filter(Boolean)
+                      .map((segment, i, parts) => {
+                        const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
+                        const isCurrent = i === parts.length - 1;
+                        return (
+                          <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
+                            <span className="text-muted-foreground/60">/</span>
+                            <button
+                              type="button"
+                              onClick={() => navigateToFolder(pathUpToHere)}
+                              className={`truncate max-w-24 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
+                              title={segment}
+                            >
+                              {segment}
+                            </button>
+                          </span>
+                        );
+                      })}
                 </div>
               </>
             )}
@@ -2893,7 +2898,6 @@ export const FilePane = ({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" className="gap-2">
-                  Sort:{" "}
                   {sortBy === "name"
                     ? "Name"
                     : sortBy === "dateAdded"
@@ -2948,7 +2952,6 @@ export const FilePane = ({
                 title="Browse for folder to navigate to"
               >
                 <FolderOpen className="w-4 h-4" />
-                Browse for folder
               </Button>
             )}
             {showNewFolderButton && (
@@ -2991,27 +2994,17 @@ export const FilePane = ({
               </div>
             ) : pathDoesNotExist ? (
               <div className="text-center py-8">
-                <div className="text-sm text-muted-foreground mb-2">Path does not exist</div>
                 {onBrowseForFolder ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="outline" className="gap-2">
-                        <FolderOpen className="w-4 h-4" />
-                        Choose folder to navigate to
-                        <ChevronDown className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="center">
-                      <DropdownMenuItem onClick={onBrowseForFolder}>
-                        <FolderOpen className="w-4 h-4 mr-2" />
-                        Browse for folder...
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={navigateToNearestExistingParent}>
-                        <ArrowUp className="w-4 h-4 mr-2" />
-                        Navigate to nearest existing folder
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    data-testid={`select-folder-${paneName}`}
+                    onClick={onBrowseForFolder}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    Select folder
+                  </Button>
                 ) : (
                   <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
                     Navigate to nearest existing folder
