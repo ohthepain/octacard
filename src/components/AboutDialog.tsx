@@ -55,9 +55,16 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
               </Button>
             </div>
 
-            <div className="text-xs text-muted-foreground pt-2">
-              <strong>Note:</strong> This app uses the File System Access API for folder access. 
-              Use a modern browser (Chrome, Edge) that supports folder access.
+            <div className="text-xs text-muted-foreground pt-2 space-y-1">
+              <div>
+                <strong>Browser Compatibility:</strong> This app uses the File System Access API for folder browsing.
+              </div>
+              <div className="pt-1">
+                ✅ <strong>Supported:</strong> Chrome, Edge, Opera, and other Chromium-based browsers
+              </div>
+              <div className="text-amber-600 dark:text-amber-500">
+                ❌ <strong>Not Supported:</strong> Safari (does not support the File System Access API)
+              </div>
             </div>
           </DialogDescription>
         </DialogHeader>
