@@ -18,6 +18,12 @@ export interface FileSystemResult<T = any> {
   error?: string;
 }
 
+export interface PaneDirectorySelection {
+  handle: FileSystemDirectoryHandle;
+  virtualPath: string;
+  reusedExistingRoot: boolean;
+}
+
 // Handle Registry to manage FileSystemDirectoryHandle instances
 class HandleRegistry {
   private rootHandle: FileSystemDirectoryHandle | null = null;
@@ -118,6 +124,64 @@ class HandleRegistry {
     return this.handleToPath.get(handle) || null;
   }
 
+  async resolvePathFromRoot(handle: FileSystemDirectoryHandle): Promise<string | null> {
+    if (!this.rootHandle) {
+      return null;
+    }
+
+    if (handle === this.rootHandle) {
+      return "/";
+    }
+
+    const relativePathParts = await this.rootHandle.resolve(handle);
+    if (relativePathParts) {
+      const virtualPath = "/" + relativePathParts.join("/");
+      this.handles.set(virtualPath, handle);
+      this.handleToPath.set(handle, virtualPath);
+      return virtualPath;
+    }
+
+    // Fallback for picker handles that don't resolve across grants:
+    // walk the known root and match with isSameEntry.
+    const findPathByHandle = async (
+      currentHandle: FileSystemDirectoryHandle,
+      currentPath: string,
+    ): Promise<string | null> => {
+      if (await currentHandle.isSameEntry(handle)) {
+        return currentPath;
+      }
+
+      for await (const [name, childHandle] of currentHandle.entries()) {
+        if (childHandle.kind !== "directory") {
+          continue;
+        }
+
+        const childDirHandle = childHandle as FileSystemDirectoryHandle;
+        const childPath = currentPath === "/" ? `/${name}` : `${currentPath}/${name}`;
+
+        if (await childDirHandle.isSameEntry(handle)) {
+          return childPath;
+        }
+
+        const nestedPath = await findPathByHandle(childDirHandle, childPath);
+        if (nestedPath) {
+          return nestedPath;
+        }
+      }
+
+      return null;
+    };
+
+    const resolvedPath = await findPathByHandle(this.rootHandle, "/");
+    if (!resolvedPath) {
+      return null;
+    }
+
+    this.handles.set(resolvedPath, handle);
+    this.handleToPath.set(handle, resolvedPath);
+    return resolvedPath;
+  }
+
   private normalizePath(path: string): string {
     // Remove leading/trailing slashes and normalize
     const parts = path.split("/").filter(Boolean);
@@ -142,9 +206,17 @@ class FileSystemService {
     return paneType === "source" ? this.sourceRegistry : this.destRegistry;
   }
 
+  private async pickDirectoryHandle(): Promise<FileSystemDirectoryHandle> {
+    const testPicker = (window as any).__octacardPickDirectory;
+    if (typeof testPicker === "function") {
+      return await testPicker();
+    }
+    return await (window as any).showDirectoryPicker();
+  }
+
   /** Request root directory - sets BOTH source and dest to the same folder (for initial setup) */
   async requestRootDirectory(): Promise<FileSystemResult<FileSystemDirectoryHandle>> {
-    if (!('showDirectoryPicker' in window)) {
+    if (!('showDirectoryPicker' in window) && typeof (window as any).__octacardPickDirectory !== "function") {
       return {
         success: false,
         error: 'File System Access API not supported in this browser',
@@ -152,7 +224,7 @@ class FileSystemService {
     }
 
     try {
-      const handle = await (window as any).showDirectoryPicker();
+      const handle = await this.pickDirectoryHandle();
       await this.sourceRegistry.setRoot(handle);
       await this.destRegistry.setRoot(handle);
       return {
@@ -174,8 +246,8 @@ class FileSystemService {
   }
 
   /** Request directory for a specific pane - only that pane navigates to the selected folder */
-  async requestDirectoryForPane(paneType: PaneType): Promise<FileSystemResult<FileSystemDirectoryHandle>> {
-    if (!('showDirectoryPicker' in window)) {
+  async requestDirectoryForPane(paneType: PaneType): Promise<FileSystemResult<PaneDirectorySelection>> {
+    if (!('showDirectoryPicker' in window) && typeof (window as any).__octacardPickDirectory !== "function") {
       return {
         success: false,
         error: 'File System Access API not supported in this browser',
@@ -183,11 +255,29 @@ class FileSystemService {
     }
 
     try {
-      const handle = await (window as any).showDirectoryPicker();
-      await this.getRegistry(paneType).setRoot(handle);
+      const registry = this.getRegistry(paneType);
+      const handle = await this.pickDirectoryHandle();
+      const virtualPath = await registry.resolvePathFromRoot(handle);
+
+      if (virtualPath) {
+        return {
+          success: true,
+          data: {
+            handle,
+            virtualPath,
+            reusedExistingRoot: true,
+          },
+        };
+      }
+
+      await registry.setRoot(handle);
       return {
         success: true,
-        data: handle,
+        data: {
+          handle,
+          virtualPath: "/",
+          reusedExistingRoot: false,
+        },
       };
     } catch (error: any) {
       if (error.name === 'AbortError') {

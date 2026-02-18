@@ -187,7 +187,7 @@ export const FilePane = ({
 
       return null;
     },
-    [rootPath]
+    [rootPath],
   );
 
   const loadDirectory = useCallback(
@@ -210,7 +210,7 @@ export const FilePane = ({
 
           // Filter out hidden files/folders (starting with '.' or '~')
           const filteredEntries = result.data.filter(
-            (entry) => !entry.name.startsWith(".") && !entry.name.startsWith("~")
+            (entry) => !entry.name.startsWith(".") && !entry.name.startsWith("~"),
           );
 
           const children: FileNode[] = filteredEntries.map((entry) => ({
@@ -269,7 +269,7 @@ export const FilePane = ({
         }
       }
     },
-    [paneName]
+    [paneName],
   );
 
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
@@ -408,7 +408,7 @@ export const FilePane = ({
               `${paneName} - SD/CF card already mounted at startup, navigating to:`,
               cardPath,
               "UUID:",
-              cardUUID
+              cardUUID,
             );
 
             setRootPath(cardPath);
@@ -435,12 +435,12 @@ export const FilePane = ({
                     `${paneName} - Restored navigation state for card UUID:`,
                     cardUUID,
                     "to:",
-                    savedState.currentPath
+                    savedState.currentPath,
                   );
                 } else {
                   console.log(
                     `${paneName} - Saved path exists but is not a directory (success: ${statsResult.success}), using card root:`,
-                    cardPath
+                    cardPath,
                   );
                 }
               } catch (error) {
@@ -514,7 +514,7 @@ export const FilePane = ({
                       `${paneName} - Restored navigation state for home volume UUID:`,
                       volumeUUID,
                       "to:",
-                      savedState.currentPath
+                      savedState.currentPath,
                     );
                   } else {
                     console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
@@ -597,7 +597,7 @@ export const FilePane = ({
                 `${paneName} - Restored navigation state for card UUID:`,
                 cardUUID,
                 "to:",
-                savedState.currentPath
+                savedState.currentPath,
               );
             } else {
               console.log(`${paneName} - Saved path exists but is not a directory, using card root`);
@@ -648,7 +648,7 @@ export const FilePane = ({
                           `${paneName} - Restored navigation state for home volume UUID:`,
                           volumeUUID,
                           "to:",
-                          savedState.currentPath
+                          savedState.currentPath,
                         );
                       } else {
                         console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
@@ -782,7 +782,7 @@ export const FilePane = ({
           `${paneName} - Auto-saved navigation state for volume UUID:`,
           currentVolumeUUID,
           "path:",
-          currentRootPath
+          currentRootPath,
         );
       }
     };
@@ -917,7 +917,7 @@ export const FilePane = ({
             sampleDepth,
             fileFormat,
             mono,
-            normalize
+            normalize,
           );
         } else {
           result = await window.electron.fs.copyFile(sourcePath, destFilePath);
@@ -1039,7 +1039,7 @@ export const FilePane = ({
                   `${paneName} - Restored navigation state for home volume UUID:`,
                   volumeUUID,
                   "to:",
-                  savedState.currentPath
+                  savedState.currentPath,
                 );
               } else {
                 console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);

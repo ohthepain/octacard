@@ -26,6 +26,8 @@ const Index = () => {
   const [destVolumeId, setDestVolumeId] = useState("_default");
   const [requestedSourcePath, setRequestedSourcePath] = useState<string | null>(null);
   const [requestedDestPath, setRequestedDestPath] = useState<string | null>(null);
+  const [requestedSourceRevealPath, setRequestedSourceRevealPath] = useState<string | null>(null);
+  const [requestedDestRevealPath, setRequestedDestRevealPath] = useState<string | null>(null);
   const [sourceRootVersion, setSourceRootVersion] = useState(0);
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [formatSettings, setFormatSettings] = useState<FormatSettings>({
@@ -143,13 +145,17 @@ const Index = () => {
 
   const handleBrowseForFolder = async (paneType: "source" | "dest") => {
     const result = await fileSystemService.requestDirectoryForPane(paneType);
-    if (result.success) {
+    if (result.success && result.data) {
       if (paneType === "source") {
-        setSourceRootVersion((v) => v + 1);
-        setRequestedSourcePath("/");
+        if (!result.data.reusedExistingRoot) {
+          setSourceRootVersion((v) => v + 1);
+        }
+        setRequestedSourceRevealPath(result.data.virtualPath);
       } else {
-        setDestRootVersion((v) => v + 1);
-        setRequestedDestPath("/");
+        if (!result.data.reusedExistingRoot) {
+          setDestRootVersion((v) => v + 1);
+        }
+        setRequestedDestRevealPath(result.data.virtualPath);
       }
     }
   };
@@ -214,6 +220,8 @@ const Index = () => {
               onPathChange={handleSourcePathChange}
               onRequestedPathHandled={() => setRequestedSourcePath(null)}
               requestedPath={requestedSourcePath}
+              onRequestedRevealPathHandled={() => setRequestedSourceRevealPath(null)}
+              requestedRevealPath={requestedSourceRevealPath}
               dropMode="navigate"
               sampleRate={formatSettings.sampleRate}
               sampleDepth={formatSettings.sampleDepth}
@@ -240,6 +248,8 @@ const Index = () => {
               onPathChange={handleDestPathChange}
               onRequestedPathHandled={() => setRequestedDestPath(null)}
               requestedPath={requestedDestPath}
+              onRequestedRevealPathHandled={() => setRequestedDestRevealPath(null)}
+              requestedRevealPath={requestedDestRevealPath}
               dropMode="navigate"
               sampleRate={formatSettings.sampleRate}
               sampleDepth={formatSettings.sampleDepth}
