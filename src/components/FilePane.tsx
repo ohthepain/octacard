@@ -313,7 +313,7 @@ export const FilePane = ({
   }, []);
 
   // Refresh the "available volumes" list.
-  // In the web app we cannot enumerate OS volumes like Electron could, so we treat the
+  // In the web app we cannot enumerate OS volumes, so we treat the
   // user-selected root directory as a single "Local Files" volume.
   const refreshAvailableVolumes = useCallback(async () => {
     try {
@@ -449,7 +449,7 @@ export const FilePane = ({
 
           // Filter out hidden files/folders (starting with '.' or '~')
           // Note: In web/File System Access API, "/" is the user's selected folder - show all contents.
-          // The macOS volume filter was for Electron's full filesystem view and doesn't apply here.
+          // Show all contents in the user-selected folder.
           const filteredEntries = result.data.filter((entry) => {
             if (entry.name.startsWith(".") || entry.name.startsWith("~")) {
               return false;
@@ -956,140 +956,10 @@ export const FilePane = ({
       }
     });
 
-    // Listen for SD card detection events (only if autoNavigateToCard is enabled)
-    if (autoNavigateToCard && typeof window !== "undefined" && (window as any).electron?.on) {
-      const handleCardDetected = async (cardPath: string, cardUUID: string) => {
-        console.log(`${paneName} - SD/CF card detected, navigating to:`, cardPath, "UUID:", cardUUID);
-
-        setRootPath(cardPath);
-        setIsCardMounted(true);
-        setCurrentVolumeUUID(cardUUID);
-        rootPathRef.current = cardPath;
-        setDisplayTitle(getVolumeName(cardPath));
-        saveLastRightPaneVolumeUUID(cardUUID);
-
-        // Try to restore saved navigation state
-        let initialPath = cardPath;
-        const savedState = getNavigationState(cardUUID);
-        if (savedState && savedState.currentPath) {
-          // Verify the saved path still exists, is accessible, AND is on the same volume as the card
-          try {
-            const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
-            if (statsResult?.success && statsResult.data?.isDirectory) {
-              // Verify the saved path is on the same volume as the card
-              const savedPathVolumeUUID = await getVolumeUUIDForPath(savedState.currentPath);
-              console.log(`${paneName} - Saved path volume UUID:`, savedPathVolumeUUID, "Card UUID:", cardUUID);
-
-              if (savedPathVolumeUUID === cardUUID) {
-                // Path is on the correct volume (SD card)
-                initialPath = savedState.currentPath;
-                console.log(
-                  `${paneName} - Restored navigation state for card UUID:`,
-                  cardUUID,
-                  "to:",
-                  savedState.currentPath,
-                );
-              } else {
-                console.log(
-                  `${paneName} - Saved path is on different volume (${savedPathVolumeUUID} vs ${cardUUID}), using card root`,
-                );
-              }
-            } else {
-              console.log(`${paneName} - Saved path exists but is not a directory, using card root`);
-            }
-          } catch {
-            console.log(`${paneName} - Saved path no longer exists, using card root`);
-          }
-        } else {
-          console.log(`${paneName} - No saved navigation state found for card UUID:`, cardUUID);
-        }
-
-        setCurrentRootPath(initialPath);
-        currentRootPathRef.current = initialPath;
-        setExpandedFolders(new Set());
-        setFileTree([]);
-        await loadDirectory(initialPath, "root");
-
-        // Restore expanded folders after loading
-        if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
-          setPendingExpandedFolders(savedState.expandedFolders);
-        }
-
-        void refreshAvailableVolumes();
-      };
-
-      const handleCardRemoved = async (cardPath: string, cardUUID: string) => {
-        console.log(`${paneName} - SD/CF card removed:`, cardPath, "UUID:", cardUUID);
-        // Check if we need to navigate away using refs
-        if (rootPathRef.current === cardPath || currentRootPathRef.current === cardPath) {
-          try {
-            const homeResult = await fileSystemService.getHomeDirectory(paneType);
-            if (homeResult?.success && homeResult.data) {
-              const homePath = homeResult.data;
-              const volumeUUID = await getVolumeUUIDForPath(homePath);
-              setCurrentVolumeUUID(volumeUUID);
-              setRootPath(homePath);
-              rootPathRef.current = homePath;
-              setDisplayTitle("Local Files");
-              saveLastRightPaneVolumeUUID(null);
-
-              // Try to restore saved navigation state
-              let initialPath = homePath;
-              if (volumeUUID) {
-                const savedState = getNavigationState(volumeUUID);
-                if (savedState) {
-                  try {
-                    const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
-                    if (statsResult.success && statsResult.data?.isDirectory) {
-                      initialPath = savedState.currentPath;
-                      console.log(
-                        `${paneName} - Restored navigation state for home volume UUID:`,
-                        volumeUUID,
-                        "to:",
-                        savedState.currentPath,
-                      );
-                    } else {
-                      console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
-                    }
-                  } catch {
-                    console.log(`${paneName} - Saved path no longer exists, using home directory`);
-                  }
-                }
-              }
-
-              setCurrentRootPath(initialPath);
-              setIsCardMounted(false);
-              currentRootPathRef.current = initialPath;
-              setExpandedFolders(new Set());
-              setFileTree([]);
-              await loadDirectory(initialPath, "root");
-
-              // Restore expanded folders after loading
-              if (volumeUUID) {
-                const savedState = getNavigationState(volumeUUID);
-                if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
-                  setPendingExpandedFolders(savedState.expandedFolders);
-                }
-              }
-            }
-          } catch (error) {
-            console.error(`${paneName} - Error handling card removal:`, error);
-          }
-        }
-      };
-
-      (window as any).electron.on.sdCardDetected(handleCardDetected);
-      (window as any).electron.on.sdCardRemoved(handleCardRemoved);
-    }
-
     // Cleanup function
     return () => {
       cancelled = true;
       timeouts.forEach((timeout) => clearTimeout(timeout));
-      if (autoNavigateToCard && typeof window !== "undefined" && (window as any).electron?.removeListener) {
-        (window as any).electron.removeListener("sd-card-detected");
-        (window as any).electron.removeListener("sd-card-removed");
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoNavigateToCard, paneName]);
@@ -3118,10 +2988,6 @@ export const FilePane = ({
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
-              </div>
-            ) : typeof window !== "undefined" && !(window as any).electron ? (
-              <div className="text-center py-8 text-sm text-amber-600 dark:text-amber-500">
-                File system initializing… If this persists, ensure you&apos;re using a modern browser (Chrome, Edge) that supports folder access.
               </div>
             ) : pathDoesNotExist ? (
               <div className="text-center py-8">

@@ -8,7 +8,7 @@ export const Toolbar = () => {
   const handleAction = (action: string) => {
     toast({
       title: `${action} triggered`,
-      description: "This feature will be implemented with Electron backend",
+      description: "This feature is coming soon",
     });
   };
 

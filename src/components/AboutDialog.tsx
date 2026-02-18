@@ -56,9 +56,8 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
             </div>
 
             <div className="text-xs text-muted-foreground pt-2">
-              <strong>Note:</strong> This is a UI prototype. To deploy as a desktop app, wrap with 
-              Electron and implement backend features (file system access, audio conversion with 
-              ffmpeg/sox, etc.).
+              <strong>Note:</strong> This app uses the File System Access API for folder access. 
+              Use a modern browser (Chrome, Edge) that supports folder access.
             </div>
           </DialogDescription>
         </DialogHeader>
