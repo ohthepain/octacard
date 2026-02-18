@@ -214,6 +214,19 @@ try {
 
   const title = await page.title();
   assert.ok(title.includes("OctaCard"), "Expected the page title to include OctaCard.");
+
+  const safariContext = await browser.newContext({
+    userAgent:
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  });
+  const safariPage = await safariContext.newPage();
+  safariPage.setDefaultTimeout(15000);
+  await safariPage.goto(baseUrl, { waitUntil: "networkidle" });
+  await safariPage.getByRole("heading", { name: "Safari Not Supported" }).waitFor({ state: "visible" });
+  await safariPage
+    .getByText("OctaCard requires the File System Access API, which Safari does not support.")
+    .waitFor({ state: "visible" });
+  await safariContext.close();
 } catch (error) {
   try {
     await page.screenshot({ path: path.join(outputDir, "smoke-failure.png"), fullPage: true, timeout: 5000 });
