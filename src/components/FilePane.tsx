@@ -127,6 +127,8 @@ interface FilePaneProps {
   showSidebar?: boolean;
   /** Called when current path or volume changes - for syncing with external favorites columns */
   onPathChange?: (path: string, volumeId: string) => void;
+  /** Called when selected node changes in this pane. */
+  onSelectionChange?: (selection: { path: string; type: "file" | "folder"; name: string } | null) => void;
   /** When true, dropping a folder navigates to it instead of converting */
   dropMode?: "navigate" | "convert";
   /** When set, navigate to this path (e.g. from favorites column). Parent should clear via onRequestedPathHandled. */
@@ -155,6 +157,7 @@ export const FilePane = ({
   showNewFolderButton = false,
   showSidebar = true,
   onPathChange,
+  onSelectionChange,
   dropMode = "convert",
   requestedPath,
   onRequestedPathHandled,
@@ -1193,6 +1196,40 @@ export const FilePane = ({
       onPathChange(currentRootPath, volumeId);
     }
   }, [currentRootPath, volumeId, onPathChange]);
+
+  useEffect(() => {
+    if (!onSelectionChange) return;
+
+    if (selectedItems.size !== 1) {
+      onSelectionChange(null);
+      return;
+    }
+
+    const selectedId = Array.from(selectedItems)[0];
+    if (!selectedId || selectedId === "parent-link") {
+      onSelectionChange(null);
+      return;
+    }
+
+    const findNodeById = (nodes: FileNode[], targetId: string): FileNode | null => {
+      for (const node of nodes) {
+        if (node.id === targetId) return node;
+        if (node.children) {
+          const nested = findNodeById(node.children, targetId);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+
+    const node = findNodeById(fileTree, selectedId);
+    if (!node) {
+      onSelectionChange(null);
+      return;
+    }
+
+    onSelectionChange({ path: node.path, type: node.type, name: node.name });
+  }, [selectedItems, fileTree, onSelectionChange]);
 
   // Navigate when requestedPath is set (e.g. from favorites column)
   useEffect(() => {
@@ -2760,14 +2797,9 @@ export const FilePane = ({
     treeViewMode === "folders" ? searchResultsAsNodes.filter((n) => n.type === "folder") : searchResultsAsNodes;
   const activeTreeNodes = searchQuery ? searchTreeNodes : filteredTreeNodes;
 
-  // Handle pane click to clear other panes' selections
+  // Keep selections independent per pane so source and destination can both remain selected.
   const handlePaneClick = () => {
-    // Clear selections in all other panes
-    paneRegistry.forEach((clearSelection, name) => {
-      if (name !== paneName) {
-        clearSelection();
-      }
-    });
+    return;
   };
 
   // Debug: Log when component renders

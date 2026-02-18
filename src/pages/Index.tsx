@@ -18,6 +18,18 @@ import { Play, FolderPlus } from "lucide-react";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 
+function dirname(filePath: string): string {
+  const parts = filePath.split("/").filter(Boolean);
+  if (parts.length <= 1) {
+    return "/";
+  }
+  return "/" + parts.slice(0, -1).join("/");
+}
+
+function isAudioFile(fileName: string): boolean {
+  return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
+}
+
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
@@ -28,6 +40,8 @@ const Index = () => {
   const [requestedDestPath, setRequestedDestPath] = useState<string | null>(null);
   const [requestedSourceRevealPath, setRequestedSourceRevealPath] = useState<string | null>(null);
   const [requestedDestRevealPath, setRequestedDestRevealPath] = useState<string | null>(null);
+  const [selectedSourceItem, setSelectedSourceItem] = useState<{ path: string; type: "file" | "folder"; name: string } | null>(null);
+  const [selectedDestItem, setSelectedDestItem] = useState<{ path: string; type: "file" | "folder"; name: string } | null>(null);
   const [sourceRootVersion, setSourceRootVersion] = useState(0);
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [formatSettings, setFormatSettings] = useState<FormatSettings>({
@@ -45,7 +59,11 @@ const Index = () => {
     total: number;
     currentFile: string;
   } | null>(null);
-  const [pendingConversionFiles, setPendingConversionFiles] = useState<FileSystemEntry[] | null>(null);
+  const [pendingConversionRequest, setPendingConversionRequest] = useState<{
+    files: FileSystemEntry[];
+    sourceBasePath: string;
+    destinationBasePath: string;
+  } | null>(null);
 
   const handleSourcePathChange = useCallback((path: string, volumeId: string) => {
     setSourcePath(path);
@@ -68,25 +86,56 @@ const Index = () => {
     ) {
       return;
     }
-    const srcPath = sourcePath || "/";
-    const result = await fileSystemService.listAudioFilesRecursively(srcPath, "source");
-    if (!result.success || !result.data) {
-      return;
+    const sourceSelection = selectedSourceItem ?? {
+      path: sourcePath || "/",
+      type: "folder" as const,
+      name: "",
+    };
+    const destinationSelectionPath =
+      selectedDestItem?.type === "folder" ? selectedDestItem.path : destPath || "/";
+
+    let files: FileSystemEntry[] = [];
+    let sourceBasePath = sourceSelection.path;
+
+    if (sourceSelection.type === "file") {
+      if (!isAudioFile(sourceSelection.name)) {
+        return;
+      }
+      sourceBasePath = dirname(sourceSelection.path);
+      files = [
+        {
+          name: sourceSelection.name,
+          path: sourceSelection.path,
+          type: "file",
+          size: 0,
+          isDirectory: false,
+        },
+      ];
+    } else {
+      const result = await fileSystemService.listAudioFilesRecursively(sourceSelection.path, "source");
+      if (!result.success || !result.data) {
+        return;
+      }
+      files = result.data;
     }
-    const files = result.data;
+
     if (files.length === 0) {
       return;
     }
-    setPendingConversionFiles(files);
+
+    setPendingConversionRequest({
+      files,
+      sourceBasePath,
+      destinationBasePath: destinationSelectionPath,
+    });
     setConversionConfirmOpen(true);
   };
 
   const handleConversionConfirm = async () => {
     setConversionConfirmOpen(false);
-    const files = pendingConversionFiles;
-    if (!files || files.length === 0) return;
-    const srcPath = sourcePath || "/";
-    const dstPath = destPath || "/";
+    const request = pendingConversionRequest;
+    if (!request || request.files.length === 0) return;
+    const { files, sourceBasePath, destinationBasePath } = request;
 
     const targetSampleRate =
       formatSettings.sampleRate === "dont-change"
@@ -96,7 +145,7 @@ const Index = () => {
     setConversionProgress({
       isVisible: true,
       current: 0,
-      total: files.length,
+      total: request.files.length,
       currentFile: "",
     });
 
@@ -106,12 +155,13 @@ const Index = () => {
         p ? { ...p, current: i, currentFile: entry.name } : p
       );
 
-      const relativePath = srcPath === "/"
-        ? entry.path.slice(1)
-        : entry.path.slice(srcPath.length + 1);
+      const sourcePrefix = sourceBasePath === "/" ? "/" : `${sourceBasePath}/`;
+      const relativePath = entry.path.startsWith(sourcePrefix)
+        ? entry.path.slice(sourcePrefix.length)
+        : entry.name;
       const dirParts = relativePath.split("/");
-      const fileName = dirParts.pop()!;
-      const destDir = dirParts.length ? `${dstPath}/${dirParts.join("/")}` : dstPath;
+      const fileName = dirParts.pop() || entry.name;
+      const destDir = dirParts.length ? `${destinationBasePath}/${dirParts.join("/")}` : destinationBasePath;
 
       await fileSystemService.convertAndCopyFile(
         entry.path,
@@ -131,7 +181,7 @@ const Index = () => {
     setConversionProgress((p) =>
       p ? { ...p, current: files.length, currentFile: "" } : p
     );
-    setPendingConversionFiles(null);
+    setPendingConversionRequest(null);
     setTimeout(() => setConversionProgress(null), 500);
   };
 
@@ -233,6 +283,7 @@ const Index = () => {
               title="Source"
               showSidebar={false}
               onPathChange={handleSourcePathChange}
+              onSelectionChange={setSelectedSourceItem}
               onRequestedPathHandled={() => setRequestedSourcePath(null)}
               requestedPath={requestedSourcePath}
               onRequestedRevealPathHandled={() => setRequestedSourceRevealPath(null)}
@@ -261,6 +312,7 @@ const Index = () => {
               onFileTransfer={handleFileTransfer}
               showSidebar={false}
               onPathChange={handleDestPathChange}
+              onSelectionChange={setSelectedDestItem}
               onRequestedPathHandled={() => setRequestedDestPath(null)}
               requestedPath={requestedDestPath}
               onRequestedRevealPathHandled={() => setRequestedDestRevealPath(null)}
@@ -297,15 +349,15 @@ const Index = () => {
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
 
-      {pendingConversionFiles && (
+      {pendingConversionRequest && (
         <ConversionConfirmDialog
           open={conversionConfirmOpen}
           onOpenChange={(open) => {
             setConversionConfirmOpen(open);
-            if (!open) setPendingConversionFiles(null);
+            if (!open) setPendingConversionRequest(null);
           }}
           onConfirm={handleConversionConfirm}
-          fileCount={pendingConversionFiles.length}
+          fileCount={pendingConversionRequest.files.length}
           settings={{
             sampleRate: formatSettings.sampleRate,
             sampleDepth: formatSettings.sampleDepth,
