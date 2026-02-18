@@ -96,8 +96,10 @@ try {
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
 
-    const pickerQueue = [root, alpha];
+    const pickerQueue = [root];
     window.__octacardPickDirectory = async () => pickerQueue.shift() || root;
+    localStorage.removeItem("octacard_favorites_source__default");
+    localStorage.removeItem("octacard_favorites_dest__default");
   });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -112,37 +114,28 @@ try {
     button.click();
   });
 
-  const sourceSelect = page.getByTestId("browse-folder-source");
-  const destSelect = page.getByTestId("browse-folder-dest");
-  await sourceSelect.waitFor({ state: "visible" });
-  await destSelect.waitFor({ state: "visible" });
-
-  const sourcePopup = await sourceSelect.getAttribute("aria-haspopup");
-  const destPopup = await destSelect.getAttribute("aria-haspopup");
-  assert.ok(!sourcePopup, "Select folder should not be a popup trigger (source).");
-  assert.ok(!destPopup, "Select folder should not be a popup trigger (dest).");
+  const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
+  await sourceAlphaNode.waitFor({ state: "visible" });
 
   await page.evaluate(() => {
-    const button = document.querySelector('[data-testid="browse-folder-source"]');
-    if (!(button instanceof HTMLButtonElement)) throw new Error("Source browse button not found");
-    button.click();
+    const node = document.querySelector('[data-testid="tree-node-source-_Alpha"]');
+    if (!(node instanceof HTMLElement)) throw new Error("Source Alpha tree node not found");
+    node.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
   });
 
-  const selectedFolderNode = page.getByTestId("tree-node-source-_Alpha");
-  const siblingFolderNode = page.getByTestId("tree-node-source-_Beta");
-  await selectedFolderNode.waitFor({ state: "visible" });
-  await siblingFolderNode.waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
+    const addFavorite = menuItems.find((item) => item.textContent?.trim() === "Add favourite");
+    if (!(addFavorite instanceof HTMLElement)) throw new Error("Add favourite menu item not found");
+    addFavorite.click();
+  });
 
-  assert.equal(
-    await selectedFolderNode.getAttribute("data-selected"),
-    "true",
-    "Selected folder should be selected visually.",
-  );
-  assert.equal(
-    await selectedFolderNode.getAttribute("data-expanded"),
-    "true",
-    "Selected folder should be expanded.",
-  );
+  const favoriteButton = page.getByTestId("favorite-open-source-_Alpha");
+  await favoriteButton.waitFor({ state: "visible" });
+
+  const storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
+  assert.ok(storedFavorites, "Source favorites should be persisted.");
+  assert.ok(storedFavorites.includes('"/Alpha"'), "Stored source favorites should include /Alpha.");
 
   const title = await page.title();
   assert.ok(title.includes("OctaCard"), "Expected the page title to include OctaCard.");
