@@ -8,7 +8,6 @@
   },
   "private": true,
   "type": "module",
-  "main": "dist-electron/main.js",
   "homepage": "./",
   "scripts": {
     "dev": "vite",
@@ -19,7 +18,7 @@
     "bump:patch": "npm version patch --no-git-tag-version",
     "bump:minor": "npm version minor --no-git-tag-version",
     "bump:major": "npm version major --no-git-tag-version",
-    "clean": "rm -rf dist dist-electron release electron/*.js electron/*.js.map electron/*.map .tanstack",
+    "clean": "rm -rf dist .tanstack",
     "clean:all": "npm run clean && rm -rf node_modules/.cache node_modules/.vite"
   },
   "dependencies": {
@@ -65,8 +64,6 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
-    "electron": "^39.0.0",
-    "electron-builder": "^26.0.12",
     "esbuild": "^0.25.12",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.8.3",
