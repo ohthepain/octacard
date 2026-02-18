@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { FilePane } from "@/components/FilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown, type FormatSettings } from "@/components/FormatDropdown";
@@ -39,6 +39,7 @@ function isSafari(): boolean {
 
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
   const [destPath, setDestPath] = useState("");
@@ -71,6 +72,12 @@ const Index = () => {
     sourceBasePath: string;
     destinationBasePath: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (isSafari()) {
+      setUnsupportedBrowserDialogOpen(true);
+    }
+  }, []);
 
   const handleSourcePathChange = useCallback((path: string, volumeId: string) => {
     setSourcePath(path);
@@ -400,6 +407,18 @@ const Index = () => {
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+
+      <Dialog open={unsupportedBrowserDialogOpen} onOpenChange={setUnsupportedBrowserDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Safari Not Supported</DialogTitle>
+            <DialogDescription>
+              OctaCard requires the File System Access API, which Safari does not support. Please use Chrome, Edge,
+              or another Chromium-based browser.
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
       {pendingConversionRequest && (
         <ConversionConfirmDialog
