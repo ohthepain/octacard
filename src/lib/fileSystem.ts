@@ -226,7 +226,6 @@ class FileSystemService {
     return this.sourceRegistry.getVirtualPath(handle) ?? this.destRegistry.getVirtualPath(handle);
   }
 
-  // Compatibility with the old Electron API.
   // In the web app, "home" is the root of the user-selected directory.
   async getHomeDirectory(paneType: PaneType = "source"): Promise<FileSystemResult<string>> {
     if (!this.getRegistry(paneType).hasRoot()) {
@@ -705,42 +704,3 @@ class FileSystemService {
 }
 
 export const fileSystemService = new FileSystemService();
-
-// Compatibility layer (for any electron references in the codebase - no-op in web)
-export const electronAPI = {
-  fs: fileSystemService,
-  on: {
-    sdCardDetected: (_callback: (cardPath: string, cardUUID: string) => void) => {
-      // SD card detection not available in web
-    },
-    sdCardRemoved: (_callback: (cardPath: string, cardUUID: string) => void) => {
-      // SD card removal detection not available in web
-    },
-  },
-  removeListener: (_channel: string) => {
-    // No-op for web
-  },
-  getFilePath: (file: File): string | null => {
-    // In web, File objects don't have a path property
-    return (file as any).name || null;
-  },
-  getFilePathsFromItems: (items: DataTransferItemList): File[] => {
-    // Return File objects from drag and drop
-    const files: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind === "file") {
-        const file = item.getAsFile();
-        if (file) {
-          files.push(file);
-        }
-      }
-    }
-    return files;
-  },
-};
-
-// Make it available globally for compatibility
-if (typeof window !== "undefined") {
-  (window as any).electron = electronAPI;
-}
