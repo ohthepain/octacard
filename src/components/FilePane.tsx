@@ -724,25 +724,14 @@ export const FilePane = ({
 
     console.log("useEffect: autoNavigateToCard, paneName:", paneName);
 
-    // Initialize directory
+    // Initialize directory (client-only; file system uses File System Access API in browser)
     const initializePane = async () => {
-      // Wait a bit for preload script to load
-      let retries = 0;
-      while (!window.electron && retries < 10 && !cancelled) {
-        await new Promise<void>((resolve) => {
-          const timeout = setTimeout(resolve, 100);
-          timeouts.push(timeout);
-        });
-        retries++;
-      }
-
-      if (cancelled || !window.electron) {
-        if (!cancelled && !window.electron) {
-          console.error("Electron API not available after waiting");
-          setLoading(false);
-        }
+      if (typeof window === "undefined") {
+        setLoading(false);
         return;
       }
+
+      if (cancelled) return;
 
       try {
         if (cancelled) return;
@@ -968,7 +957,7 @@ export const FilePane = ({
     });
 
     // Listen for SD card detection events (only if autoNavigateToCard is enabled)
-    if (autoNavigateToCard && window.electron?.on) {
+    if (autoNavigateToCard && typeof window !== "undefined" && (window as any).electron?.on) {
       const handleCardDetected = async (cardPath: string, cardUUID: string) => {
         console.log(`${paneName} - SD/CF card detected, navigating to:`, cardPath, "UUID:", cardUUID);
 
@@ -985,7 +974,7 @@ export const FilePane = ({
         if (savedState && savedState.currentPath) {
           // Verify the saved path still exists, is accessible, AND is on the same volume as the card
           try {
-            const statsResult = await window.electron?.fs.getFileStats(savedState.currentPath);
+            const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
             if (statsResult?.success && statsResult.data?.isDirectory) {
               // Verify the saved path is on the same volume as the card
               const savedPathVolumeUUID = await getVolumeUUIDForPath(savedState.currentPath);
@@ -1034,7 +1023,7 @@ export const FilePane = ({
         // Check if we need to navigate away using refs
         if (rootPathRef.current === cardPath || currentRootPathRef.current === cardPath) {
           try {
-            const homeResult = await window.electron?.fs.getHomeDirectory();
+            const homeResult = await fileSystemService.getHomeDirectory(paneType);
             if (homeResult?.success && homeResult.data) {
               const homePath = homeResult.data;
               const volumeUUID = await getVolumeUUIDForPath(homePath);
@@ -1089,17 +1078,17 @@ export const FilePane = ({
         }
       };
 
-      window.electron.on.sdCardDetected(handleCardDetected);
-      window.electron.on.sdCardRemoved(handleCardRemoved);
+      (window as any).electron.on.sdCardDetected(handleCardDetected);
+      (window as any).electron.on.sdCardRemoved(handleCardRemoved);
     }
 
     // Cleanup function
     return () => {
       cancelled = true;
       timeouts.forEach((timeout) => clearTimeout(timeout));
-      if (autoNavigateToCard && window.electron?.removeListener) {
-        window.electron.removeListener("sd-card-detected");
-        window.electron.removeListener("sd-card-removed");
+      if (autoNavigateToCard && typeof window !== "undefined" && (window as any).electron?.removeListener) {
+        (window as any).electron.removeListener("sd-card-detected");
+        (window as any).electron.removeListener("sd-card-removed");
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1179,7 +1168,7 @@ export const FilePane = ({
 
   const handleVolumeSelect = useCallback(
     async (volume: VolumeOption) => {
-      if (!window.electron) return;
+      if (typeof window === "undefined") return;
 
       if (normalizeVolumePath(rootPath) === normalizeVolumePath(volume.path)) {
         return;
@@ -1645,7 +1634,7 @@ export const FilePane = ({
       isExternal: boolean = false,
       sourcePane: "source" | "dest" = "source",
     ) => {
-      if (!window.electron) return;
+      if (typeof window === "undefined") return;
 
       // Count total files for progress tracking
       let totalFiles = 0;
@@ -1673,7 +1662,6 @@ export const FilePane = ({
 
       // Helper to copy folder recursively with progress tracking
       const copyFolderWithProgress = async (sourceFolder: string, destFolder: string): Promise<void> => {
-        if (!window.electron) return;
         try {
           const result = await fileSystemService.readDirectory(sourceFolder, "source");
           if (!result.success || !result.data) return;
@@ -2216,7 +2204,6 @@ export const FilePane = ({
   ]);
 
   const handleDelete = async (node?: FileNode) => {
-    if (!window.electron) return;
 
     // Check if we have multiple selected items
     const selectedNodes = node ? [node] : getSelectedNodes(fileTree);
@@ -2300,7 +2287,7 @@ export const FilePane = ({
   });
 
   const handleEject = async () => {
-    if (!isCardMounted || !window.electron || !rootPath) return;
+    if (!isCardMounted || !rootPath) return;
 
     try {
       console.log(`${paneName} - Ejecting volume:`, rootPath);
@@ -2397,7 +2384,7 @@ export const FilePane = ({
 
   // Effect to search files using mdfind (macOS Spotlight) - much faster than recursive directory reading
   useEffect(() => {
-    if (!searchQuery || !window.electron || loading) {
+    if (!searchQuery || loading) {
       setIsSearchingFolders(false);
       setSearchResults([]);
       isSearchLoadingRef.current = false;
@@ -2525,7 +2512,7 @@ export const FilePane = ({
 
       const handleRevealInFinder = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!window.electron || isParentLink) return;
+        if (isParentLink) return;
 
         try {
           // Reveal in Finder not available in web
@@ -2957,8 +2944,47 @@ export const FilePane = ({
       <div className="flex flex-col flex-1 min-w-0 h-full bg-background overflow-hidden">
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-1">
-            <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{displayTitle}</div>
+          <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
+            <div className="text-sm font-semibold uppercase tracking-wide text-muted-foreground shrink-0">{displayTitle}</div>
+            {/* Breadcrumb: show current folder path for context */}
+            {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
+              <>
+                <span className="text-muted-foreground/40 shrink-0">›</span>
+                <div className="flex items-center gap-1 min-w-0 text-sm text-muted-foreground overflow-x-auto">
+                <span className="text-muted-foreground/60">/</span>
+                <button
+                  type="button"
+                  onClick={() => navigateToFolder("/")}
+                  className={`truncate hover:text-foreground transition-colors ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
+                  title={fileSystemService.getRootDirectoryName(paneType)}
+                >
+                  {fileSystemService.getRootDirectoryName(paneType)}
+                </button>
+                {currentRootPath &&
+                  currentRootPath !== "/" &&
+                  currentRootPath
+                    .split("/")
+                    .filter(Boolean)
+                    .map((segment, i, parts) => {
+                      const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
+                      const isCurrent = i === parts.length - 1;
+                      return (
+                        <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
+                          <span className="text-muted-foreground/60">/</span>
+                          <button
+                            type="button"
+                            onClick={() => navigateToFolder(pathUpToHere)}
+                            className={`truncate max-w-24 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
+                            title={segment}
+                          >
+                            {segment}
+                          </button>
+                        </span>
+                      );
+                    })}
+                </div>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-md border border-border overflow-hidden">
@@ -3093,9 +3119,9 @@ export const FilePane = ({
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
               </div>
-            ) : !window.electron ? (
-              <div className="text-center py-8 text-sm text-red-500">
-                Electron API not available. Please run in Electron environment.
+            ) : typeof window !== "undefined" && !(window as any).electron ? (
+              <div className="text-center py-8 text-sm text-amber-600 dark:text-amber-500">
+                File system initializing… If this persists, ensure you&apos;re using a modern browser (Chrome, Edge) that supports folder access.
               </div>
             ) : pathDoesNotExist ? (
               <div className="text-center py-8">
