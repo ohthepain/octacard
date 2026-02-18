@@ -227,8 +227,8 @@ const Index = () => {
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
-      <header className="h-14 border-b border-border bg-card flex items-center px-4 justify-between shrink-0">
-        <div className="flex items-center gap-4">
+      <header className="h-14 border-b border-border bg-card grid grid-cols-[1fr_auto_1fr] items-center px-4 shrink-0 gap-3">
+        <div className="flex items-center gap-4 min-w-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-sm">O</span>
@@ -243,11 +243,11 @@ const Index = () => {
           )}
           <FormatDropdown settings={formatSettings} onSettingsChange={setFormatSettings} />
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={handleStartConversion} className="gap-2">
-            <Play className="w-4 h-4" />
-            Convert
-          </Button>
+        <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
+          <Play className="w-4 h-4" />
+          Convert
+        </Button>
+        <div className="flex items-center gap-2 justify-self-end">
           <Button
             variant="ghost"
             size="sm"
@@ -263,7 +263,7 @@ const Index = () => {
       <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
         <ResizablePanelGroup orientation="horizontal" className="flex-1 min-w-0" id="main-layout">
           {/* Left: Source Favorites - only this separator affects favorites vs center */}
-          <ResizablePanel id="left-fav" defaultSize={240} minSize={10} maxSize={320}>
+          <ResizablePanel id="left-fav" defaultSize="20%" minSize="10%" maxSize="30%">
             <FavoritesColumn
               paneType="source"
               volumeId={sourceVolumeId}
@@ -276,65 +276,77 @@ const Index = () => {
           <ResizableHandle withHandle />
 
           {/* Source Browser - center separator only affects source vs dest */}
-          <ResizablePanel id="source-browser" defaultSize={35} minSize={15}>
-            <FilePane
-              key={`source-${sourceRootVersion}`}
-              paneName="source"
-              title="Source"
-              showSidebar={false}
-              onPathChange={handleSourcePathChange}
-              onSelectionChange={setSelectedSourceItem}
-              onRequestedPathHandled={() => setRequestedSourcePath(null)}
-              requestedPath={requestedSourcePath}
-              onRequestedRevealPathHandled={() => setRequestedSourceRevealPath(null)}
-              requestedRevealPath={requestedSourceRevealPath}
-              dropMode="navigate"
-              sampleRate={formatSettings.sampleRate}
-              sampleDepth={formatSettings.sampleDepth}
-              fileFormat={formatSettings.fileFormat}
-              mono={formatSettings.mono}
-              normalize={formatSettings.normalize}
-              trimStart={formatSettings.trim}
-              convertFiles={false}
-              showEjectButton={false}
-              showNewFolderButton={false}
-              onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
-            />
+          <ResizablePanel
+            id="source-browser"
+            defaultSize="30%"
+            minSize="15%"
+          >
+            <div className="h-full min-h-0" data-testid="panel-source">
+              <FilePane
+                key={`source-${sourceRootVersion}`}
+                paneName="source"
+                title="Source"
+                showSidebar={false}
+                onPathChange={handleSourcePathChange}
+                onSelectionChange={setSelectedSourceItem}
+                onRequestedPathHandled={() => setRequestedSourcePath(null)}
+                requestedPath={requestedSourcePath}
+                onRequestedRevealPathHandled={() => setRequestedSourceRevealPath(null)}
+                requestedRevealPath={requestedSourceRevealPath}
+                dropMode="navigate"
+                sampleRate={formatSettings.sampleRate}
+                sampleDepth={formatSettings.sampleDepth}
+                fileFormat={formatSettings.fileFormat}
+                mono={formatSettings.mono}
+                normalize={formatSettings.normalize}
+                trimStart={formatSettings.trim}
+                convertFiles={false}
+                showEjectButton={false}
+                showNewFolderButton={false}
+                onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
+              />
+            </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
 
           {/* Dest Browser - center separator only affects source vs dest */}
-          <ResizablePanel id="dest-browser" defaultSize={35} minSize={15}>
-            <FilePane
-              key={`dest-${destRootVersion}`}
-              paneName="dest"
-              title="Destination"
-              onFileTransfer={handleFileTransfer}
-              showSidebar={false}
-              onPathChange={handleDestPathChange}
-              onSelectionChange={setSelectedDestItem}
-              onRequestedPathHandled={() => setRequestedDestPath(null)}
-              requestedPath={requestedDestPath}
-              onRequestedRevealPathHandled={() => setRequestedDestRevealPath(null)}
-              requestedRevealPath={requestedDestRevealPath}
-              dropMode="navigate"
-              sampleRate={formatSettings.sampleRate}
-              sampleDepth={formatSettings.sampleDepth}
-              fileFormat={formatSettings.fileFormat}
-              mono={formatSettings.mono}
-              normalize={formatSettings.normalize}
-              trimStart={formatSettings.trim}
-              autoNavigateToCard={true}
-              convertFiles={true}
-              showEjectButton={true}
-              showNewFolderButton={true}
-              onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
-            />
+          <ResizablePanel
+            id="dest-browser"
+            defaultSize="30%"
+            minSize="15%"
+          >
+            <div className="h-full min-h-0" data-testid="panel-dest">
+              <FilePane
+                key={`dest-${destRootVersion}`}
+                paneName="dest"
+                title="Destination"
+                onFileTransfer={handleFileTransfer}
+                showSidebar={false}
+                onPathChange={handleDestPathChange}
+                onSelectionChange={setSelectedDestItem}
+                onRequestedPathHandled={() => setRequestedDestPath(null)}
+                requestedPath={requestedDestPath}
+                onRequestedRevealPathHandled={() => setRequestedDestRevealPath(null)}
+                requestedRevealPath={requestedDestRevealPath}
+                dropMode="navigate"
+                sampleRate={formatSettings.sampleRate}
+                sampleDepth={formatSettings.sampleDepth}
+                fileFormat={formatSettings.fileFormat}
+                mono={formatSettings.mono}
+                normalize={formatSettings.normalize}
+                trimStart={formatSettings.trim}
+                autoNavigateToCard={true}
+                convertFiles={true}
+                showEjectButton={true}
+                showNewFolderButton={true}
+                onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
+              />
+            </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
 
           {/* Right: Dest Favorites - only this separator affects favorites vs center */}
-          <ResizablePanel id="right-fav" defaultSize={240} minSize={10} maxSize={320}>
+          <ResizablePanel id="right-fav" defaultSize="20%" minSize="10%" maxSize="30%">
             <FavoritesColumn
               paneType="dest"
               volumeId={destVolumeId}
