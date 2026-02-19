@@ -172,25 +172,20 @@ try {
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
 
-  await page.evaluate(() => {
-    const node = document.querySelector('[data-testid="tree-node-source-_Alpha"]');
-    if (!(node instanceof HTMLElement)) throw new Error("Source Alpha tree node not found");
-    node.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
-  });
-
-  await page.evaluate(() => {
-    const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
-    const addFavorite = menuItems.find((item) => item.textContent?.trim() === "Add favourite");
-    if (!(addFavorite instanceof HTMLElement)) throw new Error("Add favourite menu item not found");
-    addFavorite.click();
-  });
-
-  const favoriteButton = page.getByTestId("favorite-open-source-_Alpha");
-  await favoriteButton.waitFor({ state: "visible" });
-
+  const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-toggle-source");
+  await breadcrumbFavoriteButton.waitFor({ state: "visible" });
+  await breadcrumbFavoriteButton.waitFor({ state: "attached" });
+  assert.equal(await breadcrumbFavoriteButton.getAttribute("aria-pressed"), "false");
+  await breadcrumbFavoriteButton.click();
+  assert.equal(await breadcrumbFavoriteButton.getAttribute("aria-pressed"), "true");
   const storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
   assert.ok(storedFavorites, "Source favorites should be persisted.");
-  assert.ok(storedFavorites.includes('"/Alpha"'), "Stored source favorites should include /Alpha.");
+  assert.ok(storedFavorites.includes('"/"'), "Stored source favorites should include the current breadcrumb path.");
+  await breadcrumbFavoriteButton.click();
+  assert.equal(await breadcrumbFavoriteButton.getAttribute("aria-pressed"), "false");
+  const storedFavoritesAfterRemove = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
+  assert.ok(storedFavoritesAfterRemove, "Source favorites storage should still exist after removing a breadcrumb favorite.");
+  assert.equal(storedFavoritesAfterRemove, "[]", "Source favorites should be empty after toggling the breadcrumb favorite off.");
 
   await page.evaluate(() => {
     const sourceNode = document.querySelector('[data-testid="tree-node-source-_Alpha"]');

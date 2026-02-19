@@ -2812,6 +2812,19 @@ export const FilePane = ({
     if (!fileSystemService.hasRootForPane(paneType)) return;
     await navigateToFolder(favoritePath);
   };
+  const isCurrentPathFavorite = currentRootPath ? isFavorite(currentRootPath) : false;
+  const currentPathFavoriteName =
+    currentRootPath === "/" || currentRootPath === ""
+      ? fileSystemService.getRootDirectoryName(paneType)
+      : basename(currentRootPath);
+  const toggleCurrentPathFavorite = () => {
+    if (!currentRootPath) return;
+    if (isCurrentPathFavorite) {
+      removeFavorite(currentRootPath);
+      return;
+    }
+    addFavorite(currentRootPath, currentPathFavoriteName);
+  };
 
   return (
     <div ref={paneContainerRef} className="flex h-full w-full min-w-0 bg-background overflow-hidden">
@@ -2999,38 +3012,53 @@ export const FilePane = ({
           </div>
           {/* Breadcrumb row: full width below header */}
           {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
-            <div className="px-4 pb-2 flex items-center gap-1 min-w-0 text-sm text-muted-foreground overflow-x-auto">
-              <span className="text-muted-foreground/60 shrink-0">/</span>
-              <button
+            <div className="px-4 pb-2 flex items-center gap-2 min-w-0 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
+                <span className="text-muted-foreground/60 shrink-0">/</span>
+                <button
+                  type="button"
+                  onClick={() => navigateToFolder("/")}
+                  className={`truncate hover:text-foreground transition-colors shrink-0 ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
+                  title={fileSystemService.getRootDirectoryName(paneType)}
+                >
+                  {fileSystemService.getRootDirectoryName(paneType)}
+                </button>
+                {currentRootPath &&
+                  currentRootPath !== "/" &&
+                  currentRootPath
+                    .split("/")
+                    .filter(Boolean)
+                    .map((segment, i, parts) => {
+                      const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
+                      const isCurrent = i === parts.length - 1;
+                      return (
+                        <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
+                          <span className="text-muted-foreground/60">/</span>
+                          <button
+                            type="button"
+                            onClick={() => navigateToFolder(pathUpToHere)}
+                            className={`truncate max-w-32 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
+                            title={segment}
+                          >
+                            {segment}
+                          </button>
+                        </span>
+                      );
+                    })}
+              </div>
+              <Button
                 type="button"
-                onClick={() => navigateToFolder("/")}
-                className={`truncate hover:text-foreground transition-colors shrink-0 ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
-                title={fileSystemService.getRootDirectoryName(paneType)}
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 shrink-0"
+                data-testid={`breadcrumb-favorite-toggle-${paneName}`}
+                aria-label={isCurrentPathFavorite ? "Remove from favorites" : "Add to favorites"}
+                aria-pressed={isCurrentPathFavorite}
+                title={isCurrentPathFavorite ? "Remove from favorites" : "Add to favorites"}
+                onClick={toggleCurrentPathFavorite}
               >
-                {fileSystemService.getRootDirectoryName(paneType)}
-              </button>
-              {currentRootPath &&
-                currentRootPath !== "/" &&
-                currentRootPath
-                  .split("/")
-                  .filter(Boolean)
-                  .map((segment, i, parts) => {
-                    const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
-                    const isCurrent = i === parts.length - 1;
-                    return (
-                      <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
-                        <span className="text-muted-foreground/60">/</span>
-                        <button
-                          type="button"
-                          onClick={() => navigateToFolder(pathUpToHere)}
-                          className={`truncate max-w-32 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
-                          title={segment}
-                        >
-                          {segment}
-                        </button>
-                      </span>
-                    );
-                  })}
+                <Star className={`w-4 h-4 ${isCurrentPathFavorite ? "fill-current text-yellow-500" : ""}`} />
+              </Button>
             </div>
           )}
         </div>
