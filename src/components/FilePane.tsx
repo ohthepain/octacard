@@ -3013,7 +3013,7 @@ export const FilePane = ({
           {/* Breadcrumb row: full width below header */}
           {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
             <div className="px-4 pb-2 flex items-center gap-2 min-w-0 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
+              <div className="flex items-center gap-1 min-w-0 overflow-x-auto flex-1">
                 <span className="text-muted-foreground/60 shrink-0">/</span>
                 <button
                   type="button"
@@ -3050,14 +3050,14 @@ export const FilePane = ({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-7 w-7 p-0 shrink-0"
-                data-testid={`breadcrumb-favorite-toggle-${paneName}`}
-                aria-label={isCurrentPathFavorite ? "Remove from favorites" : "Add to favorites"}
+                className={`h-7 w-7 p-0 shrink-0 ${isCurrentPathFavorite ? "text-primary" : "text-muted-foreground"}`}
+                data-testid={`breadcrumb-favorite-${paneName}`}
+                aria-label={isCurrentPathFavorite ? "Remove from favourites" : "Add to favourites"}
                 aria-pressed={isCurrentPathFavorite}
-                title={isCurrentPathFavorite ? "Remove from favorites" : "Add to favorites"}
+                title={isCurrentPathFavorite ? "Remove from favourites" : "Add to favourites"}
                 onClick={toggleCurrentPathFavorite}
               >
-                <Star className={`w-4 h-4 ${isCurrentPathFavorite ? "fill-current text-yellow-500" : ""}`} />
+                <Star className={`w-4 h-4 ${isCurrentPathFavorite ? "fill-current" : ""}`} />
               </Button>
             </div>
           )}
