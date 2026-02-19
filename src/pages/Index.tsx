@@ -308,7 +308,12 @@ const Index = () => {
 
       {/* Main Content: Flat 4-panel layout so favorites and browser dividers are independent */}
       <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
-        <ResizablePanelGroup orientation="horizontal" className="flex-1 min-w-0" id="main-layout">
+        <ResizablePanelGroup
+          orientation="horizontal"
+          className="flex-1 min-w-0"
+          id="main-layout"
+          defaultLayout={[20, 30, 30, 20]}
+        >
           {/* Left: Source Favorites - only this separator affects favorites vs center */}
           <ResizablePanel id="left-fav" defaultSize="20%" minSize="10%" maxSize="30%">
             <FavoritesColumn
