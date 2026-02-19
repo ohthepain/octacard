@@ -96,7 +96,7 @@ try {
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
 
-    const pickerQueue = [root];
+    const pickerQueue = [root, alpha];
     window.__octacardPickDirectory = async () => pickerQueue.shift() || root;
     window.__listCalls = [];
     window.__convertCalls = [];
@@ -171,26 +171,41 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
-
+  const sourcePanelLocator = page.getByTestId("panel-source");
   await page.evaluate(() => {
-    const node = document.querySelector('[data-testid="tree-node-source-_Alpha"]');
-    if (!(node instanceof HTMLElement)) throw new Error("Source Alpha tree node not found");
-    node.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    const sourcePanel = document.querySelector('[data-testid="panel-source"]');
+    if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found");
+    const browseButton = sourcePanel.querySelector('button[title="Browse for folder to navigate to"]');
+    if (!(browseButton instanceof HTMLElement)) throw new Error("Source browse button not found");
+    browseButton.click();
   });
+  await page.getByTestId("breadcrumb-favorite-source").waitFor({ state: "visible" });
+  await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
 
-  await page.evaluate(() => {
-    const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
-    const addFavorite = menuItems.find((item) => item.textContent?.trim() === "Add favourite");
-    if (!(addFavorite instanceof HTMLElement)) throw new Error("Add favourite menu item not found");
-    addFavorite.click();
-  });
+  const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
+  await breadcrumbFavoriteButton.click();
+  await expectAriaPressed(breadcrumbFavoriteButton, "true");
 
-  const favoriteButton = page.getByTestId("favorite-open-source-_Alpha");
-  await favoriteButton.waitFor({ state: "visible" });
-
-  const storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
+  let storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
   assert.ok(storedFavorites, "Source favorites should be persisted.");
-  assert.ok(storedFavorites.includes('"/Alpha"'), "Stored source favorites should include /Alpha.");
+  const parsedFavoritesAfterAdd = JSON.parse(storedFavorites);
+  assert.equal(parsedFavoritesAfterAdd.length, 1, "Expected one source favorite after starring breadcrumb path.");
+  assert.equal(typeof parsedFavoritesAfterAdd[0]?.path, "string", "Expected stored favorite path to be a string.");
+  assert.ok(parsedFavoritesAfterAdd[0]?.path.length > 0, "Expected stored favorite path to be non-empty.");
+  const addedFavoritePath = parsedFavoritesAfterAdd[0].path;
+
+  await breadcrumbFavoriteButton.click();
+  await expectAriaPressed(breadcrumbFavoriteButton, "false");
+  storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
+  assert.ok(storedFavorites, "Source favorites storage should exist after toggle.");
+  const parsedFavoritesAfterRemove = JSON.parse(storedFavorites);
+  assert.ok(
+    !parsedFavoritesAfterRemove.some((favorite) => favorite.path === addedFavoritePath),
+    "Removed breadcrumb favorite path should no longer exist in source favorites."
+  );
+
+  await sourcePanelLocator.locator('button[title="Root"]').click();
+  await sourceAlphaNode.waitFor({ state: "visible" });
 
   await page.evaluate(() => {
     const sourceNode = document.querySelector('[data-testid="tree-node-source-_Alpha"]');
@@ -241,4 +256,12 @@ try {
 
 if (process.exitCode) {
   process.exit(process.exitCode);
+}
+
+async function expectAriaPressed(locator, value) {
+  await locator.waitFor({ state: "visible" });
+  await page.waitForFunction(
+    ([element, expectedValue]) => element?.getAttribute("aria-pressed") === expectedValue,
+    [await locator.elementHandle(), value]
+  );
 }
