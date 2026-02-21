@@ -79,6 +79,20 @@ function isVideoFile(fileName: string): boolean {
   return /\.(mp4|mov|avi|mkv|webm|m4v|flv|wmv|3gp|ogv)$/i.test(fileName);
 }
 
+function parseSampleRateToHz(sampleRate: string): number | undefined {
+  if (!sampleRate || sampleRate === "dont-change") {
+    return undefined;
+  }
+
+  const numericRate = Number(sampleRate);
+  if (!Number.isFinite(numericRate) || numericRate <= 0) {
+    return undefined;
+  }
+
+  // Support both legacy "44.1" (kHz) and direct Hz values like "44100".
+  return Math.round(numericRate < 1000 ? numericRate * 1000 : numericRate);
+}
+
 interface FileNode {
   id: string;
   name: string;
@@ -1654,7 +1668,7 @@ export const FilePane = ({
                   entry.path,
                   dirname(finalDestPath),
                   basename(finalDestPath),
-                  sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
+                  parseSampleRateToHz(sampleRate),
                   sampleDepth,
                   fileFormat,
                   mono,
@@ -1730,7 +1744,7 @@ export const FilePane = ({
               item.path,
               dirname(finalDestFilePath),
               basename(finalDestFilePath),
-              sampleRate !== "dont-change" ? (sampleRate === "44.1" ? 44100 : undefined) : undefined,
+              parseSampleRateToHz(sampleRate),
               sampleDepth,
               fileFormat,
               mono,
@@ -2092,7 +2106,7 @@ export const FilePane = ({
               addResult.data,
               item.targetDir,
               finalDestFileName,
-              sampleRate !== "dont-change" ? parseFloat(sampleRate) * 1000 : undefined,
+              parseSampleRateToHz(sampleRate),
               sampleDepth,
               fileFormat,
               mono,
@@ -3261,13 +3275,12 @@ export const FilePane = ({
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Copying Files</DialogTitle>
-              <DialogDescription>
-                {copyProgress.currentFile && (
-                  <div className="mt-2 text-sm text-muted-foreground truncate">{copyProgress.currentFile}</div>
-                )}
-              </DialogDescription>
+              <DialogDescription>Processing selected files.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              {copyProgress.currentFile && (
+                <div className="text-sm text-muted-foreground truncate">{copyProgress.currentFile}</div>
+              )}
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Progress</span>
