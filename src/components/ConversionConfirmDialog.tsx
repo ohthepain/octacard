@@ -30,12 +30,22 @@ export const ConversionConfirmDialog = ({
   fileCount,
   settings,
 }: ConversionConfirmDialogProps) => {
+  const parseSampleRateToHz = (value: string): number | null => {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return null;
+    }
+    return Math.round(numericValue < 1000 ? numericValue * 1000 : numericValue);
+  };
+
   const formatSettings = () => {
     const parts: string[] = [];
     
     if (settings.sampleRate !== "dont-change") {
-      const hz = parseInt(settings.sampleRate, 10);
-      parts.push(`Sample Rate: ${hz >= 1000 ? hz / 1000 + " kHz" : hz + " Hz"}`);
+      const hz = parseSampleRateToHz(settings.sampleRate);
+      if (hz) {
+        parts.push(`Sample Rate: ${hz >= 1000 ? hz / 1000 + " kHz" : hz + " Hz"}`);
+      }
     }
     if (settings.sampleDepth !== "dont-change") {
       parts.push(`Bit Depth: ${settings.sampleDepth}`);
@@ -83,4 +93,3 @@ export const ConversionConfirmDialog = ({
     </Dialog>
   );
 };
-

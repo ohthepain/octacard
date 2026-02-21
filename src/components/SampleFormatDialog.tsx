@@ -46,91 +46,84 @@ export const SampleFormatDialog = ({
             </div>
             Sample Format
           </DialogTitle>
-          <DialogDescription className="pt-4 space-y-6">
-            <div className="space-y-3 p-4 border border-border rounded-lg">
-              <Label className="text-sm font-semibold text-foreground">File Format</Label>
-              <RadioGroup value={fileFormat} onValueChange={onFileFormatChange}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="dont-change" id="format-dont-change" />
-                  <Label htmlFor="format-dont-change" className="text-sm font-normal cursor-pointer text-foreground">
-                    Don't Change
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="WAV" id="WAV" />
-                  <Label htmlFor="WAV" className="text-sm font-normal cursor-pointer text-foreground">
-                    WAV
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            <div className="space-y-3 p-4 border border-border rounded-lg">
-              <Label className="text-sm font-semibold text-foreground">Sample Rate</Label>
-              <RadioGroup value={sampleRate} onValueChange={onSampleRateChange}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="dont-change" id="dont-change" />
-                  <Label htmlFor="dont-change" className="text-sm font-normal cursor-pointer text-foreground">
-                    Don't Change
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="44100" id="44100" />
-                  <Label htmlFor="44100" className="text-sm font-normal cursor-pointer text-foreground">
-                    44100 Hz
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            <div className="space-y-3 p-4 border border-border rounded-lg">
-              <Label className="text-sm font-semibold text-foreground">Sample Depth</Label>
-              <RadioGroup value={sampleDepth} onValueChange={onSampleDepthChange}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="dont-change" id="depth-dont-change" />
-                  <Label htmlFor="depth-dont-change" className="text-sm font-normal cursor-pointer text-foreground">
-                    Don't Change
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="16-bit" id="16-bit" />
-                  <Label htmlFor="16-bit" className="text-sm font-normal cursor-pointer text-foreground">
-                    16-bit
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox id="mono" checked={mono} onCheckedChange={(checked) => onMonoChange(checked === true)} />
-              <Label htmlFor="mono" className="text-sm font-normal cursor-pointer text-foreground">
-                Mono
-              </Label>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="normalize"
-                checked={normalize}
-                onCheckedChange={(checked) => onNormalizeChange(checked === true)}
-              />
-              <Label htmlFor="normalize" className="text-sm font-normal cursor-pointer text-foreground">
-                Normalize
-              </Label>
-            </div>
-
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="trimStart"
-                    checked={trimStart}
-                    onCheckedChange={(checked) => onTrimStartChange(checked === true)}
-                  />
-                  <Label htmlFor="trimStart" className="text-sm font-normal cursor-pointer text-foreground">
-                    Trim silence
-                  </Label>
-                </div>
-          </DialogDescription>
+          <DialogDescription className="pt-2">Configure sample conversion settings.</DialogDescription>
         </DialogHeader>
+        <div className="pt-4 space-y-6">
+          <div className="space-y-3 p-4 border border-border rounded-lg">
+            <Label className="text-sm font-semibold text-foreground">File Format</Label>
+            <RadioGroup value={fileFormat} onValueChange={onFileFormatChange}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="dont-change" id="format-dont-change" />
+                <Label htmlFor="format-dont-change" className="text-sm font-normal cursor-pointer text-foreground">
+                  Don't Change
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="WAV" id="WAV" />
+                <Label htmlFor="WAV" className="text-sm font-normal cursor-pointer text-foreground">
+                  WAV
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <div className="space-y-3 p-4 border border-border rounded-lg">
+            <Label className="text-sm font-semibold text-foreground">Sample Rate</Label>
+            <RadioGroup value={sampleRate} onValueChange={onSampleRateChange}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="dont-change" id="dont-change" />
+                <Label htmlFor="dont-change" className="text-sm font-normal cursor-pointer text-foreground">
+                  Don't Change
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="44100" id="44100" />
+                <Label htmlFor="44100" className="text-sm font-normal cursor-pointer text-foreground">
+                  44100 Hz
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <div className="space-y-3 p-4 border border-border rounded-lg">
+            <Label className="text-sm font-semibold text-foreground">Sample Depth</Label>
+            <RadioGroup value={sampleDepth} onValueChange={onSampleDepthChange}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="dont-change" id="depth-dont-change" />
+                <Label htmlFor="depth-dont-change" className="text-sm font-normal cursor-pointer text-foreground">
+                  Don't Change
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="16-bit" id="16-bit" />
+                <Label htmlFor="16-bit" className="text-sm font-normal cursor-pointer text-foreground">
+                  16-bit
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Checkbox id="mono" checked={mono} onCheckedChange={(checked) => onMonoChange(checked === true)} />
+            <Label htmlFor="mono" className="text-sm font-normal cursor-pointer text-foreground">
+              Mono
+            </Label>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Checkbox id="normalize" checked={normalize} onCheckedChange={(checked) => onNormalizeChange(checked === true)} />
+            <Label htmlFor="normalize" className="text-sm font-normal cursor-pointer text-foreground">
+              Normalize
+            </Label>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Checkbox id="trimStart" checked={trimStart} onCheckedChange={(checked) => onTrimStartChange(checked === true)} />
+            <Label htmlFor="trimStart" className="text-sm font-normal cursor-pointer text-foreground">
+              Trim silence
+            </Label>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

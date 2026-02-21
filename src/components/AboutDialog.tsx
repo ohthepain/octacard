@@ -24,50 +24,49 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
             </div>
             OctaCard
           </DialogTitle>
-          <DialogDescription className="pt-4 space-y-4">
-            <div>
-              <div className="font-semibold text-foreground mb-1">Version 1.0.0</div>
-              <div className="text-sm">
-                Sample manager and organizer for Elektron Octatrack
-              </div>
-            </div>
-
-            <div className="space-y-2 text-sm">
-              <div className="font-semibold text-foreground">Features:</div>
-              <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                <li>Import and organize audio samples</li>
-                <li>Auto-convert to Octatrack format (16-bit, 44.1kHz)</li>
-                <li>Waveform preview and playback</li>
-                <li>Drag-and-drop sample management</li>
-                <li>Sample chain generation</li>
-                <li>Export to CF card with proper structure</li>
-              </ul>
-            </div>
-
-            <div className="pt-4 border-t border-border">
-              <Button
-                variant="outline"
-                className="w-full gap-2"
-                onClick={() => window.open("https://github.com/yourusername/octacard", "_blank")}
-              >
-                <ExternalLink className="w-4 h-4" />
-                View on GitHub
-              </Button>
-            </div>
-
-            <div className="text-xs text-muted-foreground pt-2 space-y-1">
-              <div>
-                <strong>Browser Compatibility:</strong> This app uses the File System Access API for folder browsing.
-              </div>
-              <div className="pt-1">
-                ✅ <strong>Supported:</strong> Chrome, Edge, Opera, and other Chromium-based browsers
-              </div>
-              <div className="text-amber-600 dark:text-amber-500">
-                ❌ <strong>Not Supported:</strong> Safari (does not support the File System Access API)
-              </div>
-            </div>
-          </DialogDescription>
+          <DialogDescription className="pt-2">Sample manager and organizer for Elektron Octatrack.</DialogDescription>
         </DialogHeader>
+        <div className="pt-2 space-y-4">
+          <div>
+            <div className="font-semibold text-foreground mb-1">Version 1.0.0</div>
+            <div className="text-sm text-muted-foreground">Sample manager and organizer for Elektron Octatrack</div>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="font-semibold text-foreground">Features:</div>
+            <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+              <li>Import and organize audio samples</li>
+              <li>Auto-convert to Octatrack format (16-bit, 44.1kHz)</li>
+              <li>Waveform preview and playback</li>
+              <li>Drag-and-drop sample management</li>
+              <li>Sample chain generation</li>
+              <li>Export to CF card with proper structure</li>
+            </ul>
+          </div>
+
+          <div className="pt-4 border-t border-border">
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => window.open("https://github.com/yourusername/octacard", "_blank")}
+            >
+              <ExternalLink className="w-4 h-4" />
+              View on GitHub
+            </Button>
+          </div>
+
+          <div className="text-xs text-muted-foreground pt-2 space-y-1">
+            <div>
+              <strong>Browser Compatibility:</strong> This app uses the File System Access API for folder browsing.
+            </div>
+            <div className="pt-1">
+              ✅ <strong>Supported:</strong> Chrome, Edge, Opera, and other Chromium-based browsers
+            </div>
+            <div className="text-amber-600 dark:text-amber-500">
+              ❌ <strong>Not Supported:</strong> Safari (does not support the File System Access API)
+            </div>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
