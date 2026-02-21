@@ -53,20 +53,58 @@ codex exec - < /tmp/ai_issue_prompt.txt
 # Run full integration test
 npm run test:it
 
-# Commit + push
-git commit -am "AI: fix #$NUMBER – $TITLE"
-git push -u origin "$BRANCH"
+# Commit if there are uncommitted changes
+if [[ -n $(git status --porcelain) ]]; then
+  echo "Committing changes..."
+  git add -A
+  git commit -m "AI: fix #$NUMBER – $TITLE"
+else
+  echo "No changes to commit (codex may have already committed)"
+fi
 
-# Open PR
-PR_URL=$(gh pr create \
-  --title "Fix #$NUMBER – $TITLE" \
-  --body "Automated fix for #$NUMBER via Codex.\n\nOriginal issue: $URL" \
-  --base main \
+# Push branch (create or update)
+echo "Pushing branch $BRANCH..."
+if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+  echo "Branch already exists remotely, force pushing..."
+  git push -f origin "$BRANCH"
+else
+  echo "Creating new branch on remote..."
+  git push -u origin "$BRANCH"
+fi
+
+# Check if PR already exists
+EXISTING_PR=$(gh pr list \
+  --repo "$REPO" \
   --head "$BRANCH" \
-  --json url -q .url)
+  --json number,url \
+  --jq '.[0].url' 2>/dev/null || echo "")
+
+if [[ -n "$EXISTING_PR" && "$EXISTING_PR" != "null" ]]; then
+  echo "PR already exists: $EXISTING_PR"
+  PR_URL="$EXISTING_PR"
+else
+  # Create PR
+  echo "Creating pull request..."
+  PR_URL=$(gh pr create \
+    --repo "$REPO" \
+    --title "Fix #$NUMBER – $TITLE" \
+    --body "Automated fix for #$NUMBER via Codex.
+
+Original issue: $URL" \
+    --base main \
+    --head "$BRANCH" \
+    --json url -q .url)
+fi
+
+echo "PR URL: $PR_URL"
 
 # Notify via WhatsApp
-openclaw message send \
-  --target whatsapp:$WHATSAPP_NUMBER \
-  --channel "whatsapp" \
-  --message "🤖 PR ready for review:\n$PR_URL"
+if [[ -n "${WHATSAPP_NUMBER:-}" ]]; then
+  openclaw message send \
+    --target whatsapp:$WHATSAPP_NUMBER \
+    --channel "whatsapp" \
+    --message "🤖 PR ready for review:
+$PR_URL"
+else
+  echo "WHATSAPP_NUMBER not set, skipping notification"
+fi
