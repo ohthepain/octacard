@@ -226,14 +226,18 @@ class FileSystemService {
     return paneType === "source" ? this.sourceRegistry : this.destRegistry;
   }
 
-  private async pickDirectoryHandle(startIn?: FileSystemDirectoryHandle): Promise<FileSystemDirectoryHandle> {
+  private async pickDirectoryHandle(
+    pickerId: "root" | PaneType,
+    startIn?: FileSystemDirectoryHandle,
+  ): Promise<FileSystemDirectoryHandle> {
     const testPicker = (window as any).__octacardPickDirectory;
     console.log("testPicker", testPicker);
     console.log("startIn", startIn);
+    const id = `octacard-${pickerId}-directory-picker`;
     if (typeof testPicker === "function") {
-      return await testPicker(startIn);
+      return await testPicker(startIn, { id });
     }
-    const options: { startIn?: FileSystemDirectoryHandle } = {};
+    const options: { id: string; startIn?: FileSystemDirectoryHandle } = { id };
     if (startIn) {
       options.startIn = startIn;
     }
@@ -256,7 +260,7 @@ class FileSystemService {
     }
 
     try {
-      const handle = await this.pickDirectoryHandle();
+      const handle = await this.pickDirectoryHandle("root");
       await this.sourceRegistry.setRoot(handle);
       await this.destRegistry.setRoot(handle);
       return {
@@ -304,7 +308,7 @@ class FileSystemService {
           // Path may not exist; fall back to default picker location
         }
       }
-      const handle = await this.pickDirectoryHandle(startIn);
+      const handle = await this.pickDirectoryHandle(paneType, startIn);
       const virtualPath = await registry.resolvePathFromRoot(handle);
 
       if (virtualPath) {
