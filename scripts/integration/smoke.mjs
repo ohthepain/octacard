@@ -132,10 +132,14 @@ try {
 
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
   const convertButton = page.getByRole("button", { name: "Convert" });
+  const formatButton = page.getByRole("button", { name: "Format" });
   await convertButton.waitFor({ state: "visible" });
+  await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
   const convertBox = await convertButton.boundingBox();
+  const formatBox = await formatButton.boundingBox();
   assert.ok(convertBox, "Expected convert button to have a visible bounding box.");
+  assert.ok(formatBox, "Expected format button to have a visible bounding box.");
   const viewport = page.viewportSize();
   assert.ok(viewport, "Expected viewport size to be available.");
   const convertCenterX = convertBox.x + convertBox.width / 2;
@@ -147,6 +151,10 @@ try {
   );
   assert.ok(convertBox.x >= 0, "Expected convert button to remain inside the viewport.");
   assert.ok(convertBox.x + convertBox.width <= viewport.width, "Expected convert button to remain fully visible.");
+  assert.ok(
+    formatBox.x > convertBox.x + convertBox.width,
+    `Expected format button to be to the right of convert. convertRight=${convertBox.x + convertBox.width}, formatLeft=${formatBox.x}`
+  );
   await page.locator("#main-layout").waitFor({ state: "visible" });
   const sourcePanel = page.getByTestId("panel-source");
   const destPanel = page.getByTestId("panel-dest");
