@@ -12,6 +12,14 @@ await mkdir(outputDir, { recursive: true });
 const browser = await chromium.launch({ headless });
 const page = await browser.newPage();
 page.setDefaultTimeout(15000);
+const domNestingWarnings = [];
+
+page.on("console", (message) => {
+  const text = message.text();
+  if (text.includes("validateDOMNesting")) {
+    domNestingWarnings.push(text);
+  }
+});
 
 try {
   await page.addInitScript(() => {
@@ -215,6 +223,15 @@ try {
     sourceNode.click();
     destNode.click();
   });
+
+  const formatButton = page.getByRole("button", { name: "Format" });
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Sample Rate" }).hover();
+  await page.getByRole("menuitemradio", { name: "44100" }).click();
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
+  await page.getByRole("menuitemradio", { name: "16-bit" }).click();
+
   await convertButton.click();
   await page.getByRole("button", { name: "Convert & Save" }).click();
 
@@ -226,6 +243,9 @@ try {
   assert.equal(convertCalls.length, 1, "Expected one conversion call.");
   assert.equal(convertCalls[0].sourceVirtualPath, "/Alpha/inside-alpha.wav", "Conversion should use selected source files.");
   assert.equal(convertCalls[0].destVirtualPath, "/Beta", "Conversion should use selected destination folder.");
+  assert.equal(convertCalls[0].targetSampleRate, 44100, "Conversion should pass sample rate in Hz.");
+  assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
+  assert.equal(domNestingWarnings.length, 0, "No DOM nesting warnings should be emitted during conversion flow.");
 
   const title = await page.title();
   assert.ok(title.includes("OctaCard"), "Expected the page title to include OctaCard.");
