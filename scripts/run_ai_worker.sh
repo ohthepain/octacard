@@ -79,21 +79,53 @@ EXISTING_PR=$(gh pr list \
   --json number,url \
   --jq '.[0].url' 2>/dev/null || echo "")
 
-if [[ -n "$EXISTING_PR" && "$EXISTING_PR" != "null" ]]; then
+# Alternative check if --json doesn't work
+if [[ -z "$EXISTING_PR" || "$EXISTING_PR" == "null" || "$EXISTING_PR" == "" ]]; then
+  # Try without --json flag
+  if gh pr list --repo "$REPO" --head "$BRANCH" 2>/dev/null | grep -q "$BRANCH"; then
+    EXISTING_PR=$(gh pr view --repo "$REPO" --head "$BRANCH" --json url --jq .url 2>/dev/null || \
+                  gh pr list --repo "$REPO" --head "$BRANCH" --limit 1 | grep -o 'https://[^ ]*' | head -1 || echo "")
+  fi
+fi
+
+if [[ -n "$EXISTING_PR" && "$EXISTING_PR" != "null" && "$EXISTING_PR" != "" ]]; then
   echo "PR already exists: $EXISTING_PR"
   PR_URL="$EXISTING_PR"
 else
   # Create PR
   echo "Creating pull request..."
-  PR_URL=$(gh pr create \
+  PR_OUTPUT=$(gh pr create \
     --repo "$REPO" \
     --title "Fix #$NUMBER – $TITLE" \
     --body "Automated fix for #$NUMBER via Codex.
 
 Original issue: $URL" \
     --base main \
-    --head "$BRANCH" \
-    --json url -q .url)
+    --head "$BRANCH" 2>&1)
+  
+  # Extract URL from output (gh pr create typically outputs the URL)
+  if echo "$PR_OUTPUT" | grep -q "https://"; then
+    PR_URL=$(echo "$PR_OUTPUT" | grep -o 'https://[^ ]*' | head -1)
+  else
+    # Fallback: get PR URL using pr view (try with --json first, then parse output)
+    PR_URL=$(gh pr view \
+      --repo "$REPO" \
+      --head "$BRANCH" \
+      --json url \
+      --jq .url 2>/dev/null || \
+      gh pr view --repo "$REPO" --head "$BRANCH" 2>/dev/null | grep -o 'https://[^ ]*' | head -1 || echo "")
+  fi
+  
+  if [[ -z "$PR_URL" ]]; then
+    # Last resort: construct URL from PR number
+    PR_NUMBER=$(gh pr list --repo "$REPO" --head "$BRANCH" --limit 1 2>/dev/null | awk '{print $1}' | grep -o '[0-9]*' | head -1 || echo "")
+    if [[ -n "$PR_NUMBER" ]]; then
+      PR_URL="https://github.com/$REPO/pull/$PR_NUMBER"
+    else
+      echo "Warning: Could not determine PR URL, but PR was likely created"
+      PR_URL="https://github.com/$REPO/pulls"
+    fi
+  fi
 fi
 
 echo "PR URL: $PR_URL"
