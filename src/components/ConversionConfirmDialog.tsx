@@ -71,12 +71,12 @@ export const ConversionConfirmDialog = ({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Convert Files?</DialogTitle>
-          <DialogDescription>
-            {fileCount === 1
-              ? "1 file will be converted and saved to the destination."
-              : `${fileCount} files will be converted and saved to the destination.`}
-          </DialogDescription>
         </DialogHeader>
+        <DialogDescription>
+          {fileCount === 1
+            ? "1 file will be converted and saved to the destination."
+            : `${fileCount} files will be converted and saved to the destination.`}
+        </DialogDescription>
         <div className="py-4">
           <div className="text-sm text-muted-foreground">
             <strong>Conversion Settings:</strong>

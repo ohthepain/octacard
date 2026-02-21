@@ -450,12 +450,8 @@ const Index = () => {
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Converting Files</DialogTitle>
-              <DialogDescription>
-                {conversionProgress.currentFile && (
-                  <div className="mt-2 text-sm text-muted-foreground truncate">
-                    {conversionProgress.currentFile}
-                  </div>
-                )}
+              <DialogDescription className="mt-2 truncate">
+                {conversionProgress.currentFile ?? "Preparing conversion..."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">

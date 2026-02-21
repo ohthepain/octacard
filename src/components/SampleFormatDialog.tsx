@@ -46,8 +46,8 @@ export const SampleFormatDialog = ({
             </div>
             Sample Format
           </DialogTitle>
-          <DialogDescription className="pt-2">Configure sample conversion settings.</DialogDescription>
         </DialogHeader>
+        <DialogDescription className="pt-2">Configure sample conversion settings.</DialogDescription>
         <div className="pt-4 space-y-6">
           <div className="space-y-3 p-4 border border-border rounded-lg">
             <Label className="text-sm font-semibold text-foreground">File Format</Label>
