@@ -24,8 +24,8 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
             </div>
             OctaCard
           </DialogTitle>
-          <DialogDescription className="pt-2">Sample manager and organizer for Elektron Octatrack.</DialogDescription>
         </DialogHeader>
+        <DialogDescription className="pt-2">Sample manager and organizer for Elektron Octatrack.</DialogDescription>
         <div className="pt-2 space-y-4">
           <div>
             <div className="font-semibold text-foreground mb-1">Version 1.0.0</div>

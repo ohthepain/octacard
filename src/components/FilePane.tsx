@@ -3213,8 +3213,8 @@ export const FilePane = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Folder</DialogTitle>
-            <DialogDescription>Enter a name for the new folder.</DialogDescription>
           </DialogHeader>
+          <DialogDescription>Enter a name for the new folder.</DialogDescription>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="folder-name">Folder Name</Label>
@@ -3275,8 +3275,8 @@ export const FilePane = ({
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Copying Files</DialogTitle>
-              <DialogDescription>Processing selected files.</DialogDescription>
             </DialogHeader>
+            <DialogDescription>Processing selected files.</DialogDescription>
             <div className="space-y-4 py-4">
               {copyProgress.currentFile && (
                 <div className="text-sm text-muted-foreground truncate">{copyProgress.currentFile}</div>

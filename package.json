@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "preview:it": "vite preview --host 127.0.0.1 --port 3010 --strictPort",
     "it": "node scripts/integration/smoke.mjs",
+    "dev:it": "concurrently -k -s first -n dev,it \"npm run dev\" \"wait-on http://localhost:3000 && E2E_BASE_URL=http://localhost:3000 npm run it\"",
     "test:it": "npm run build && concurrently -k -s first -n preview,it \"npm:preview:it\" \"wait-on http://127.0.0.1:3010 && E2E_BASE_URL=http://127.0.0.1:3010 npm run it\"",
     "bump:version": "npm version patch --no-git-tag-version",
     "bump:patch": "npm version patch --no-git-tag-version",

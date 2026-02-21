@@ -155,13 +155,13 @@ try {
   const centerDelta = Math.abs(convertCenterX - viewportCenterX);
   assert.ok(
     centerDelta <= 80,
-    `Expected convert button to be centered. Delta=${centerDelta}, viewportCenter=${viewportCenterX}, buttonCenter=${convertCenterX}`
+    `Expected convert button to be centered. Delta=${centerDelta}, viewportCenter=${viewportCenterX}, buttonCenter=${convertCenterX}`,
   );
   assert.ok(convertBox.x >= 0, "Expected convert button to remain inside the viewport.");
   assert.ok(convertBox.x + convertBox.width <= viewport.width, "Expected convert button to remain fully visible.");
   assert.ok(
     formatBox.x > convertBox.x + convertBox.width,
-    `Expected format button to be to the right of convert. convertRight=${convertBox.x + convertBox.width}, formatLeft=${formatBox.x}`
+    `Expected format button to be to the right of convert. convertRight=${convertBox.x + convertBox.width}, formatLeft=${formatBox.x}`,
   );
   await page.locator("#main-layout").waitFor({ state: "visible" });
   const sourcePanel = page.getByTestId("panel-source");
@@ -177,10 +177,12 @@ try {
   const widthDelta = Math.abs(sourceBox.width - destBox.width);
   assert.ok(
     widthDelta <= averageWidth * 0.05,
-    `Expected source/dest panels to be near equal width. Source=${sourceBox.width}, Dest=${destBox.width}`
+    `Expected source/dest panels to be near equal width. Source=${sourceBox.width}, Dest=${destBox.width}`,
   );
   await page.evaluate(() => {
-    const button = Array.from(document.querySelectorAll("button")).find((el) => el.textContent?.includes("Select Directory"));
+    const button = Array.from(document.querySelectorAll("button")).find((el) =>
+      el.textContent?.includes("Select Directory"),
+    );
     if (!button) throw new Error("Select Directory button not found");
     button.click();
   });
@@ -217,7 +219,7 @@ try {
   const parsedFavoritesAfterRemove = JSON.parse(storedFavorites);
   assert.ok(
     !parsedFavoritesAfterRemove.some((favorite) => favorite.path === addedFavoritePath),
-    "Removed breadcrumb favorite path should no longer exist in source favorites."
+    "Removed breadcrumb favorite path should no longer exist in source favorites.",
   );
 
   await sourcePanelLocator.locator('button[title="Root"]').click();
@@ -232,10 +234,13 @@ try {
     destNode.click();
   });
 
-  const formatButton = page.getByRole("button", { name: "Format" });
   await formatButton.click();
   await page.getByRole("menuitem", { name: "Sample Rate" }).hover();
   await page.getByRole("menuitemradio", { name: "44100" }).click();
+  // Wait for dropdown menu to close before opening again
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {
+    // Menu might already be closed or not found, continue
+  });
   await formatButton.click();
   await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
   await page.getByRole("menuitemradio", { name: "16-bit" }).click();
@@ -249,7 +254,11 @@ try {
   assert.equal(listCalls.length, 1, "Expected one listAudioFilesRecursively call.");
   assert.equal(listCalls[0].startPath, "/Alpha", "Conversion should use selected source folder.");
   assert.equal(convertCalls.length, 1, "Expected one conversion call.");
-  assert.equal(convertCalls[0].sourceVirtualPath, "/Alpha/inside-alpha.wav", "Conversion should use selected source files.");
+  assert.equal(
+    convertCalls[0].sourceVirtualPath,
+    "/Alpha/inside-alpha.wav",
+    "Conversion should use selected source files.",
+  );
   assert.equal(convertCalls[0].destVirtualPath, "/Beta", "Conversion should use selected destination folder.");
   assert.equal(convertCalls[0].targetSampleRate, 44100, "Conversion should pass sample rate in Hz.");
   assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
@@ -290,6 +299,6 @@ async function expectAriaPressed(locator, value) {
   await locator.waitFor({ state: "visible" });
   await page.waitForFunction(
     ([element, expectedValue]) => element?.getAttribute("aria-pressed") === expectedValue,
-    [await locator.elementHandle(), value]
+    [await locator.elementHandle(), value],
   );
 }
