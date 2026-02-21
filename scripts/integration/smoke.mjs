@@ -104,8 +104,15 @@ try {
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
 
-    const pickerQueue = [root, alpha];
-    window.__octacardPickDirectory = async () => pickerQueue.shift() || root;
+    const pickerQueue = [root, alpha, beta, alpha];
+    window.__pickerCalls = [];
+    window.__octacardPickDirectory = async (startIn, options) => {
+      window.__pickerCalls.push({
+        startInName: startIn?.name ?? null,
+        pickerId: options?.id ?? null,
+      });
+      return pickerQueue.shift() || startIn || root;
+    };
     window.__listCalls = [];
     window.__convertCalls = [];
     window.__octacardTestHooks = {
@@ -132,8 +139,14 @@ try {
         return { success: true };
       },
     };
-    localStorage.removeItem("octacard_favorites_source__default");
-    localStorage.removeItem("octacard_favorites_dest__default");
+    localStorage.setItem(
+      "octacard_favorites_source__default",
+      JSON.stringify([{ path: "/Alpha", name: "Alpha" }]),
+    );
+    localStorage.setItem(
+      "octacard_favorites_dest__default",
+      JSON.stringify([{ path: "/Beta", name: "Beta" }]),
+    );
   });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -189,6 +202,39 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
+  await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
+  await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const sourceFavorite = document.querySelector('[data-testid="favorite-open-source-_Alpha"]');
+    const destFavorite = document.querySelector('[data-testid="favorite-open-dest-_Beta"]');
+    if (!(sourceFavorite instanceof HTMLElement)) throw new Error("Source favorite button not found");
+    if (!(destFavorite instanceof HTMLElement)) throw new Error("Destination favorite button not found");
+    sourceFavorite.click();
+    destFavorite.click();
+  });
+  await page.waitForFunction(() => Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 3);
+  const pickerCallsAfterFavorites = await page.evaluate(() => window.__pickerCalls.slice(0, 3));
+  assert.equal(pickerCallsAfterFavorites.length, 3, "Expected three picker calls after opening source+dest favorites.");
+  assert.deepEqual(
+    pickerCallsAfterFavorites.map((call) => call.pickerId),
+    [
+      "octacard-root-directory-picker",
+      "octacard-source-directory-picker",
+      "octacard-dest-directory-picker",
+    ],
+    "Expected root/source/dest picker IDs in order.",
+  );
+  assert.equal(
+    pickerCallsAfterFavorites[1].startInName,
+    "Alpha",
+    "Source favorite should open picker starting from source favorite folder.",
+  );
+  assert.equal(
+    pickerCallsAfterFavorites[2].startInName,
+    "Beta",
+    "Destination favorite should open picker starting from destination favorite folder.",
+  );
+
   const sourcePanelLocator = page.getByTestId("panel-source");
   await page.evaluate(() => {
     const sourcePanel = document.querySelector('[data-testid="panel-source"]');
@@ -201,16 +247,26 @@ try {
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
+  const sourceFavoritesBeforeToggle = JSON.parse(
+    (await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"))) ?? "[]",
+  );
   await breadcrumbFavoriteButton.click();
   await expectAriaPressed(breadcrumbFavoriteButton, "true");
 
   let storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
   assert.ok(storedFavorites, "Source favorites should be persisted.");
   const parsedFavoritesAfterAdd = JSON.parse(storedFavorites);
-  assert.equal(parsedFavoritesAfterAdd.length, 1, "Expected one source favorite after starring breadcrumb path.");
-  assert.equal(typeof parsedFavoritesAfterAdd[0]?.path, "string", "Expected stored favorite path to be a string.");
-  assert.ok(parsedFavoritesAfterAdd[0]?.path.length > 0, "Expected stored favorite path to be non-empty.");
-  const addedFavoritePath = parsedFavoritesAfterAdd[0].path;
+  assert.equal(
+    parsedFavoritesAfterAdd.length,
+    sourceFavoritesBeforeToggle.length + 1,
+    "Expected starring breadcrumb path to add one source favorite.",
+  );
+  const addedFavorite = parsedFavoritesAfterAdd.find(
+    (favorite) => !sourceFavoritesBeforeToggle.some((previous) => previous.path === favorite.path),
+  );
+  assert.equal(typeof addedFavorite?.path, "string", "Expected stored favorite path to be a string.");
+  assert.ok(addedFavorite?.path.length > 0, "Expected stored favorite path to be non-empty.");
+  const addedFavoritePath = addedFavorite.path;
 
   await breadcrumbFavoriteButton.click();
   await expectAriaPressed(breadcrumbFavoriteButton, "false");
