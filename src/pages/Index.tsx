@@ -288,13 +288,13 @@ const Index = () => {
               Select Directory
             </Button>
           )}
-          <FormatDropdown settings={formatSettings} onSettingsChange={setFormatSettings} />
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
           Convert
         </Button>
         <div className="flex items-center gap-2 justify-self-end">
+          <FormatDropdown settings={formatSettings} onSettingsChange={setFormatSettings} />
           <Button
             variant="ghost"
             size="sm"
