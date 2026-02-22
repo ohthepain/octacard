@@ -314,16 +314,11 @@ try {
     if (!(destFavorite instanceof HTMLElement)) throw new Error("Destination favorite button not found");
     destFavorite.click();
   });
-  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
+  const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
+  await destBetaNode.waitFor({ state: "visible" });
 
-  await page.evaluate(() => {
-    const sourceNode = document.querySelector('[data-testid="tree-node-source-_Alpha"]');
-    const destNode = document.querySelector('[data-testid="tree-node-dest-_Beta"]');
-    if (!(sourceNode instanceof HTMLElement)) throw new Error("Source node not found");
-    if (!(destNode instanceof HTMLElement)) throw new Error("Destination node not found");
-    sourceNode.click();
-    destNode.click();
-  });
+  await page.getByTestId("tree-node-source-_Alpha").click();
+  await destBetaNode.click();
 
   await formatButton.click();
   await page.getByRole("menuitem", { name: "Sample Rate" }).hover();
@@ -358,10 +353,8 @@ try {
   assert.equal(convertCalls[0].targetSampleRate, 44100, "Conversion should pass sample rate in Hz.");
   assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
 
+  await page.getByTestId("tree-node-dest-_Alpha").click();
   await page.evaluate(() => {
-    const destAlphaNode = document.querySelector('[data-testid="tree-node-dest-_Alpha"]');
-    if (!(destAlphaNode instanceof HTMLElement)) throw new Error("Destination Alpha node not found");
-    destAlphaNode.click();
     window.__listCalls = [];
     window.__convertCalls = [];
   });
