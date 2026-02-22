@@ -27,6 +27,11 @@ function dirname(filePath: string): string {
   return "/" + parts.slice(0, -1).join("/");
 }
 
+function basename(filePath: string): string {
+  const parts = filePath.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
 function isAudioFile(fileName: string): boolean {
   return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
 }
@@ -131,6 +136,20 @@ const Index = () => {
         return;
       }
       files = result.data;
+
+      const sourceFolderName = sourceSelection.name || basename(sourceSelection.path);
+      const destinationFolderName = basename(destinationSelectionPath);
+      const hasSameFolderName =
+        sourceFolderName.length > 0 &&
+        destinationFolderName.length > 0 &&
+        sourceFolderName.toLowerCase() === destinationFolderName.toLowerCase();
+
+      // Default behavior: preserve the selected source folder in destination.
+      // Exception: when source and destination folder names match, copy only contents.
+      sourceBasePath =
+        sourceSelection.path !== "/" && !hasSameFolderName
+          ? dirname(sourceSelection.path)
+          : sourceSelection.path;
     }
 
     if (files.length === 0) {
