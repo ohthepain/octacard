@@ -350,9 +350,32 @@ try {
     "/Alpha/inside-alpha.wav",
     "Conversion should use selected source files.",
   );
-  assert.equal(convertCalls[0].destVirtualPath, "/Beta", "Conversion should use selected destination folder.");
+  assert.equal(
+    convertCalls[0].destVirtualPath,
+    "/Beta/Alpha",
+    "When destination folder name differs, conversion should preserve the source folder wrapper.",
+  );
   assert.equal(convertCalls[0].targetSampleRate, 44100, "Conversion should pass sample rate in Hz.");
   assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
+
+  await page.evaluate(() => {
+    const destAlphaNode = document.querySelector('[data-testid="tree-node-dest-_Alpha"]');
+    if (!(destAlphaNode instanceof HTMLElement)) throw new Error("Destination Alpha node not found");
+    destAlphaNode.click();
+    window.__listCalls = [];
+    window.__convertCalls = [];
+  });
+  await convertButton.click();
+  await page.getByRole("button", { name: "Convert & Save" }).click();
+  await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+  const sameNameListCalls = await page.evaluate(() => window.__listCalls);
+  const sameNameConvertCalls = await page.evaluate(() => window.__convertCalls);
+  assert.equal(sameNameListCalls.length, 1, "Expected one listAudioFilesRecursively call for same-name case.");
+  assert.equal(
+    sameNameConvertCalls[0].destVirtualPath,
+    "/Alpha",
+    "When source and destination folder names match, conversion should copy only the source contents.",
+  );
   assert.equal(domNestingWarnings.length, 0, "No DOM nesting warnings should be emitted during conversion flow.");
 
   const title = await page.title();
