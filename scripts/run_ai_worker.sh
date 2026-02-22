@@ -25,7 +25,15 @@ URL=$(echo "$ISSUE_JSON" | jq -r '.[0].url')
 
 BRANCH="ai/fix-$NUMBER"
 
-git checkout main
+# Use main or master, whichever exists (handles different default branch names)
+DEFAULT_BRANCH=$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's|origin/||' || echo "main")
+if ! git show-ref --verify --quiet "refs/heads/$DEFAULT_BRANCH" 2>/dev/null; then
+  DEFAULT_BRANCH="main"
+  if ! git show-ref --verify --quiet "refs/heads/$DEFAULT_BRANCH" 2>/dev/null; then
+    DEFAULT_BRANCH="master"
+  fi
+fi
+git checkout "$DEFAULT_BRANCH"
 git pull
 git checkout -B "$BRANCH"
 
@@ -100,7 +108,7 @@ else
     --body "Automated fix for #$NUMBER via Codex.
 
 Original issue: $URL" \
-    --base main \
+    --base "$DEFAULT_BRANCH" \
     --head "$BRANCH" 2>&1)
   
   # Extract URL from output (gh pr create typically outputs the URL)
