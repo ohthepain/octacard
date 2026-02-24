@@ -42,6 +42,11 @@ interface OctacardTestHooks {
     sourcePane: PaneType;
     destPane: PaneType;
   }) => Promise<FileSystemResult> | FileSystemResult;
+  revealInFinder?: (args: {
+    virtualPath: string;
+    paneType: PaneType;
+    isDirectory: boolean;
+  }) => Promise<FileSystemResult> | FileSystemResult;
 }
 
 // Handle Registry to manage FileSystemDirectoryHandle instances
@@ -226,6 +231,14 @@ class FileSystemService {
     return paneType === "source" ? this.sourceRegistry : this.destRegistry;
   }
 
+  private getParentPath(virtualPath: string): string {
+    const normalized = virtualPath.replace(/\/+$/, "") || "/";
+    if (normalized === "/") return "/";
+    const parts = normalized.split("/").filter(Boolean);
+    parts.pop();
+    return parts.length ? `/${parts.join("/")}` : "/";
+  }
+
   private async pickDirectoryHandle(
     pickerId: "root" | PaneType,
     startIn?: FileSystemDirectoryHandle,
@@ -351,6 +364,52 @@ class FileSystemService {
 
   hasRootForPane(paneType: PaneType): boolean {
     return this.getRegistry(paneType).hasRoot();
+  }
+
+  async revealInFinder(
+    virtualPath: string,
+    paneType: PaneType = "source",
+    isDirectory = true,
+  ): Promise<FileSystemResult> {
+    const testHooks = this.getTestHooks();
+    if (testHooks?.revealInFinder) {
+      return await testHooks.revealInFinder({ virtualPath, paneType, isDirectory });
+    }
+
+    const revealFn = (window as any).__octacardRevealInFinder;
+    if (typeof revealFn === "function") {
+      const result = await revealFn({ virtualPath, paneType, isDirectory });
+      if (result && typeof result === "object" && "success" in result) {
+        return result;
+      }
+      return { success: true };
+    }
+
+    if (!("showDirectoryPicker" in window) && typeof (window as any).__octacardPickDirectory !== "function") {
+      return {
+        success: false,
+        error: "File System Access API not supported in this browser",
+      };
+    }
+
+    try {
+      const registry = this.getRegistry(paneType);
+      const targetPath = isDirectory ? virtualPath : this.getParentPath(virtualPath);
+      const startIn = await registry.getDirectoryHandle(targetPath);
+      await this.pickDirectoryHandle(paneType, startIn);
+      return { success: true };
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        return {
+          success: false,
+          error: "User cancelled directory selection",
+        };
+      }
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
   }
 
   getRootDirectoryName(paneType?: PaneType): string {
