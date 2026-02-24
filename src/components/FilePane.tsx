@@ -408,9 +408,9 @@ export const FilePane = ({
   }, [searchQuery]);
 
   // Helper function to get volume UUID for a path (not available in web)
-  const getVolumeUUIDForPath = async (_path: string): Promise<string | null> => {
+  const getVolumeUUIDForPath = useCallback(async (_path: string): Promise<string | null> => {
     return null;
-  };
+  }, []);
 
   // Find the nearest existing parent folder
   const findNearestExistingParent = useCallback(
@@ -1023,28 +1023,31 @@ export const FilePane = ({
     }
   };
 
-  const navigateToFolder = async (folderPath: string) => {
-    if (!folderPath || typeof folderPath !== "string" || folderPath.trim() === "") {
-      console.error("Invalid folder path provided to navigateToFolder:", folderPath);
-      return;
-    }
+  const navigateToFolder = useCallback(
+    async (folderPath: string) => {
+      if (!folderPath || typeof folderPath !== "string" || folderPath.trim() === "") {
+        console.error("Invalid folder path provided to navigateToFolder:", folderPath);
+        return;
+      }
 
-    setCurrentRootPath(folderPath);
-    currentRootPathRef.current = folderPath;
-    setExpandedFolders(new Set());
-    setFileTree([]);
-    setPathDoesNotExist(false);
+      setCurrentRootPath(folderPath);
+      currentRootPathRef.current = folderPath;
+      setExpandedFolders(new Set());
+      setFileTree([]);
+      setPathDoesNotExist(false);
 
-    // Get volume UUID for the new path and save navigation state
-    const volumeUUID = await getVolumeUUIDForPath(folderPath);
-    if (volumeUUID) {
-      setCurrentVolumeUUID(volumeUUID);
-      saveNavigationState(volumeUUID, folderPath, new Set());
-      console.log(`${paneName} - Saved navigation state for volume UUID:`, volumeUUID, "path:", folderPath);
-    }
+      // Get volume UUID for the new path and save navigation state
+      const volumeUUID = await getVolumeUUIDForPath(folderPath);
+      if (volumeUUID) {
+        setCurrentVolumeUUID(volumeUUID);
+        saveNavigationState(volumeUUID, folderPath, new Set());
+        console.log(`${paneName} - Saved navigation state for volume UUID:`, volumeUUID, "path:", folderPath);
+      }
 
-    await loadDirectory(folderPath, "root");
-  };
+      await loadDirectory(folderPath, "root");
+    },
+    [getVolumeUUIDForPath, loadDirectory, saveNavigationState, paneName],
+  );
 
   const revealFolderWithSiblings = useCallback(
     async (folderPath: string) => {
@@ -2262,8 +2265,7 @@ export const FilePane = ({
   // Update ref after handleDelete is defined
   useEffect(() => {
     handleDeleteRef.current = handleDelete;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  });
+  }, [handleDelete]);
 
   const handleEject = async () => {
     if (!isCardMounted || !rootPath) return;
@@ -2830,11 +2832,6 @@ export const FilePane = ({
   const handlePaneClick = () => {
     return;
   };
-
-  // Debug: Log when component renders
-  useEffect(() => {
-    console.log("FilePane rendering, loading:", loading, "rootPath:", rootPath);
-  });
 
   // Handler for navigating to a favorite
   const handleFavoriteClick = async (favoritePath: string) => {
