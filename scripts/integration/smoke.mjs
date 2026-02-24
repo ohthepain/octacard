@@ -381,13 +381,50 @@ try {
   assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
   await assertDestRefreshAfterConvert(page);
 
+  await page.evaluate(() => {
+    window.__listCalls = [];
+    window.__convertCalls = [];
+  });
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Sample Rate" }).hover();
+  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
+  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Format" }).hover();
+  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Mono" }).hover();
+  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Normalize" }).hover();
+  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Trim" }).hover();
+  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+
+  await convertButton.click();
+  await page.getByRole("heading", { name: "Copy Files?" }).waitFor({ state: "visible" });
+  await page.getByText("1 file will be copied to the destination.").waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Copy & Save" }).click();
+  await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+
   await page.getByTestId("tree-node-dest-_Alpha").click();
   await page.evaluate(() => {
     window.__listCalls = [];
     window.__convertCalls = [];
   });
   await convertButton.click();
-  await page.getByRole("button", { name: "Convert & Save" }).click();
+  await page.getByRole("heading", { name: "Copy Files?" }).waitFor({ state: "visible" });
+  await page.getByText("1 file will be copied to the destination.").waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Copy & Save" }).click();
   await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
   const sameNameListCalls = await page.evaluate(() => window.__listCalls);
   const sameNameConvertCalls = await page.evaluate(() => window.__convertCalls);
