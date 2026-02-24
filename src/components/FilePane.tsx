@@ -2489,8 +2489,8 @@ export const FilePane = ({
       const isParentLink = node.id === "parent-link";
       const isSelected = selectedItems.has(node.id);
 
-      const handleRevealInFinder = async (e: React.MouseEvent) => {
-        e.stopPropagation();
+      const handleRevealInFinder = async (e?: Event) => {
+        e?.stopPropagation();
         if (isParentLink) return;
 
         try {
@@ -2662,7 +2662,7 @@ export const FilePane = ({
             </ContextMenuTrigger>
             {!isParentLink && (
               <ContextMenuContent>
-                <ContextMenuItem onClick={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
+                <ContextMenuItem onSelect={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
                 {node.type === "folder" && (
                   <ContextMenuItem
                     onClick={(e) => {
