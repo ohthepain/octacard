@@ -6,6 +6,7 @@ import { assertDestRefreshAfterConvert } from "../../tests/refresh-dest.mjs";
 import { assertRevealInFinder } from "../../tests/reveal-in-finder.mjs";
 import { assertRevealInFinderDest } from "../../tests/reveal-in-finder-dest.mjs";
 import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
+import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -104,9 +105,14 @@ try {
     const root = new MockDirectoryHandle("Root");
     const alpha = root.addDirectory(new MockDirectoryHandle("Alpha"));
     const beta = root.addDirectory(new MockDirectoryHandle("Beta"));
+    const longNames = root.addDirectory(new MockDirectoryHandle("LongNames"));
     alpha.addFile("inside-alpha.wav", 128);
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
+    longNames.addFile(
+      "this-is-an-extremely-long-sample-name-designed-to-overflow-the-dialog-display.wav",
+      128,
+    );
 
     const ensureDirectoryByPath = (virtualPath) => {
       const parts = virtualPath.split("/").filter(Boolean);
@@ -155,11 +161,28 @@ try {
             ],
           };
         }
+        if (startPath === "/LongNames") {
+          return {
+            success: true,
+            data: [
+              {
+                name: "this-is-an-extremely-long-sample-name-designed-to-overflow-the-dialog-display.wav",
+                path: "/LongNames/this-is-an-extremely-long-sample-name-designed-to-overflow-the-dialog-display.wav",
+                type: "file",
+                size: 128,
+                isDirectory: false,
+              },
+            ],
+          };
+        }
         return { success: true, data: [] };
       },
-      convertAndCopyFile: (args) => {
+      convertAndCopyFile: async (args) => {
         window.__convertCalls.push(args);
         addFileToPath(args.destVirtualPath, args.fileName);
+        if (args.fileName.length > 40) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
         return { success: true };
       },
       revealInFinder: ({ virtualPath, paneType, isDirectory }) => {
@@ -346,6 +369,10 @@ try {
 
   await page.getByTestId("tree-node-source-_Alpha").click();
   await destBetaNode.click();
+
+  await assertConvertDialogEllipsis(page);
+
+  await page.getByTestId("tree-node-source-_Alpha").click();
 
   await formatButton.click();
   await page.getByRole("menuitem", { name: "Sample Rate" }).hover();

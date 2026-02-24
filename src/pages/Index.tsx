@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
 import { Play, FolderPlus } from "lucide-react";
 import { fileSystemService } from "@/lib/fileSystem";
@@ -503,10 +504,18 @@ const Index = () => {
       {conversionProgress?.isVisible && (
         <Dialog open={true} onOpenChange={() => {}}>
           <DialogContent className="sm:max-w-md">
-            <DialogHeader>
+            <DialogHeader className="min-w-0">
               <DialogTitle>Converting Files</DialogTitle>
-              <DialogDescription className="mt-2 truncate">
-                {conversionProgress.currentFile ?? "Preparing conversion..."}
+              <DialogDescription className="mt-2 min-w-0">
+                {conversionProgress.currentFile ? (
+                  <MiddleEllipsis
+                    className="w-full min-w-0 text-left"
+                    data-testid="conversion-current-file"
+                    value={conversionProgress.currentFile}
+                  />
+                ) : (
+                  "Preparing conversion..."
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
