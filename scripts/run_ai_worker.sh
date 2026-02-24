@@ -59,7 +59,7 @@ codex exec - < /tmp/ai_issue_prompt.txt
 # codex apply --instructions /tmp/ai_issue_prompt.txt
 
 # Run full integration test
-npm run test:it
+pnpm run test:it
 
 # Commit if there are uncommitted changes
 if [[ -n $(git status --porcelain) ]]; then
