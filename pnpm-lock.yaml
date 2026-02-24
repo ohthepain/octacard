@@ -56,6 +56,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.7
         version: 5.90.21(react@18.3.1)
+      '@tanstack/react-router':
+        specifier: ^1.162.8
+        version: 1.162.8(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tanstack/router-plugin':
         specifier: ^1.159.11
         version: 1.162.8(@tanstack/react-router@1.162.8(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.11)(lightningcss@1.31.1)(terser@5.46.0))
