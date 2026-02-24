@@ -4,7 +4,7 @@
  * Simple script to generate favicon.ico from favicon.svg
  *
  * This script requires sharp to be installed:
- * npm install --save-dev sharp
+ * pnpm add -D sharp
  *
  * Then run: node scripts/generate-favicon.js
  */
@@ -29,7 +29,7 @@ async function generateFavicon() {
     console.log("✓ Generated favicon.ico from favicon.svg");
   } catch (error) {
     if (error.code === "MODULE_NOT_FOUND") {
-      console.log("⚠ sharp is not installed. Install it with: npm install --save-dev sharp");
+      console.log("⚠ sharp is not installed. Install it with: pnpm add -D sharp");
       console.log("   Or use an online tool like https://realfavicongenerator.net/");
       console.log("   Or manually convert favicon.svg to favicon.ico");
     } else {

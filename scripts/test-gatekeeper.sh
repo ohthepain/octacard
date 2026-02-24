@@ -9,7 +9,7 @@ APP_PATH="${1:-release/mas-arm64/OctaCard.app}"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "❌ App not found at $APP_PATH"
-    echo "Build the app first with: npm run build:mas:arm64"
+    echo "Build the app first with: pnpm run build:mas:arm64"
     exit 1
 fi
 

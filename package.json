@@ -9,6 +9,7 @@
   "private": true,
   "type": "module",
   "homepage": "./",
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -16,14 +17,14 @@
     "preview": "vite preview",
     "preview:it": "vite preview --host 127.0.0.1 --port 3010 --strictPort",
     "it": "node scripts/integration/smoke.mjs",
-    "dev:it": "concurrently -k -s first -n dev,it \"npm run dev\" \"wait-on http://localhost:3000 && E2E_BASE_URL=http://localhost:3000 npm run it\"",
-    "test:it": "npm run build && concurrently -k -s first -n preview,it \"npm:preview:it\" \"wait-on http://127.0.0.1:3010 && E2E_BASE_URL=http://127.0.0.1:3010 npm run it\"",
-    "bump:version": "npm version patch --no-git-tag-version",
-    "bump:patch": "npm version patch --no-git-tag-version",
-    "bump:minor": "npm version minor --no-git-tag-version",
-    "bump:major": "npm version major --no-git-tag-version",
+    "dev:it": "concurrently -k -s first -n dev,it \"pnpm run dev\" \"wait-on http://localhost:3000 && E2E_BASE_URL=http://localhost:3000 pnpm run it\"",
+    "test:it": "pnpm run build && concurrently -k -s first -n preview,it \"pnpm:preview:it\" \"wait-on http://127.0.0.1:3010 && E2E_BASE_URL=http://127.0.0.1:3010 pnpm run it\"",
+    "bump:version": "pnpm version patch --no-git-tag-version",
+    "bump:patch": "pnpm version patch --no-git-tag-version",
+    "bump:minor": "pnpm version minor --no-git-tag-version",
+    "bump:major": "pnpm version major --no-git-tag-version",
     "clean": "rm -rf dist .tanstack",
-    "clean:all": "npm run clean && rm -rf node_modules/.cache node_modules/.vite"
+    "clean:all": "pnpm run clean && rm -rf node_modules/.cache node_modules/.vite"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
