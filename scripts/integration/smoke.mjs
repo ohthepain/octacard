@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { assertDestRefreshAfterConvert } from "../../tests/refresh-dest.mjs";
+import { assertRevealInFinder } from "../../tests/reveal-in-finder.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -134,6 +135,7 @@ try {
     };
     window.__listCalls = [];
     window.__convertCalls = [];
+    window.__revealCalls = [];
     window.__octacardTestHooks = {
       listAudioFilesRecursively: ({ startPath, paneType }) => {
         window.__listCalls.push({ startPath, paneType });
@@ -156,6 +158,10 @@ try {
       convertAndCopyFile: (args) => {
         window.__convertCalls.push(args);
         addFileToPath(args.destVirtualPath, args.fileName);
+        return { success: true };
+      },
+      revealInFinder: ({ virtualPath, paneType, isDirectory }) => {
+        window.__revealCalls.push({ virtualPath, paneType, isDirectory });
         return { success: true };
       },
     };
@@ -228,6 +234,7 @@ try {
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
+  await assertRevealInFinder(page);
   await page.evaluate(() => {
     const sourceFavorite = document.querySelector('[data-testid="favorite-open-source-_Alpha"]');
     const destFavorite = document.querySelector('[data-testid="favorite-open-dest-_Beta"]');
