@@ -30,6 +30,25 @@ export const ConversionConfirmDialog = ({
   fileCount,
   settings,
 }: ConversionConfirmDialogProps) => {
+  const hasConversion =
+    settings.sampleRate !== "dont-change" ||
+    settings.sampleDepth !== "dont-change" ||
+    settings.fileFormat !== "dont-change" ||
+    settings.mono ||
+    settings.normalize ||
+    settings.trimStart;
+
+  const actionLabel = hasConversion ? "Convert & Save" : "Copy & Save";
+  const titleLabel = hasConversion ? "Convert Files?" : "Copy Files?";
+  const descriptionLabel =
+    fileCount === 1
+      ? hasConversion
+        ? "1 file will be converted and saved to the destination."
+        : "1 file will be copied to the destination."
+      : hasConversion
+        ? `${fileCount} files will be converted and saved to the destination.`
+        : `${fileCount} files will be copied to the destination.`;
+
   const parseSampleRateToHz = (value: string): number | null => {
     const numericValue = Number(value);
     if (!Number.isFinite(numericValue) || numericValue <= 0) {
@@ -70,13 +89,9 @@ export const ConversionConfirmDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Convert Files?</DialogTitle>
+          <DialogTitle>{titleLabel}</DialogTitle>
         </DialogHeader>
-        <DialogDescription>
-          {fileCount === 1
-            ? "1 file will be converted and saved to the destination."
-            : `${fileCount} files will be converted and saved to the destination.`}
-        </DialogDescription>
+        <DialogDescription>{descriptionLabel}</DialogDescription>
         <div className="py-4">
           <div className="text-sm text-muted-foreground">
             <strong>Conversion Settings:</strong>
@@ -87,7 +102,7 @@ export const ConversionConfirmDialog = ({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={onConfirm}>Convert & Save</Button>
+          <Button onClick={onConfirm}>{actionLabel}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
