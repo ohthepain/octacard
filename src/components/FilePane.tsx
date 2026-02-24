@@ -2494,8 +2494,7 @@ export const FilePane = ({
         if (isParentLink) return;
 
         try {
-          // Reveal in Finder not available in web
-          const result = { success: false, error: "Reveal in Finder not available in web browser" };
+          const result = await fileSystemService.revealInFinder(node.path, paneType, node.type === "folder");
           if (!result.success) {
             console.error("Failed to reveal in finder:", result.error);
           }
