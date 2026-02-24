@@ -95,6 +95,11 @@ const Index = () => {
     setDestVolumeId(volumeId);
   }, []);
 
+  const handleRequestedSourcePathHandled = useCallback(() => setRequestedSourcePath(null), []);
+  const handleRequestedDestPathHandled = useCallback(() => setRequestedDestPath(null), []);
+  const handleRequestedSourceRevealPathHandled = useCallback(() => setRequestedSourceRevealPath(null), []);
+  const handleRequestedDestRevealPathHandled = useCallback(() => setRequestedDestRevealPath(null), []);
+
   const handleFileTransfer = (sourcePath: string, destinationPath: string) => {
     console.log("File transfer completed:", { sourcePath, destinationPath });
   };
@@ -390,9 +395,9 @@ const Index = () => {
                 showSidebar={false}
                 onPathChange={handleSourcePathChange}
                 onSelectionChange={setSelectedSourceItem}
-                onRequestedPathHandled={() => setRequestedSourcePath(null)}
+                onRequestedPathHandled={handleRequestedSourcePathHandled}
                 requestedPath={requestedSourcePath}
-                onRequestedRevealPathHandled={() => setRequestedSourceRevealPath(null)}
+                onRequestedRevealPathHandled={handleRequestedSourceRevealPathHandled}
                 requestedRevealPath={requestedSourceRevealPath}
                 dropMode="navigate"
                 sampleRate={formatSettings.sampleRate}
@@ -425,9 +430,9 @@ const Index = () => {
                 showSidebar={false}
                 onPathChange={handleDestPathChange}
                 onSelectionChange={setSelectedDestItem}
-                onRequestedPathHandled={() => setRequestedDestPath(null)}
+                onRequestedPathHandled={handleRequestedDestPathHandled}
                 requestedPath={requestedDestPath}
-                onRequestedRevealPathHandled={() => setRequestedDestRevealPath(null)}
+                onRequestedRevealPathHandled={handleRequestedDestRevealPathHandled}
                 requestedRevealPath={requestedDestRevealPath}
                 dropMode="navigate"
                 sampleRate={formatSettings.sampleRate}
