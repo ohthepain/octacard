@@ -38,7 +38,7 @@ export const ConversionConfirmDialog = ({
     settings.normalize ||
     settings.trimStart;
 
-  const actionLabel = hasConversion ? "Convert & Save" : "Copy & Save";
+  const actionLabel = hasConversion ? "Convert & Save" : "Copy";
   const titleLabel = hasConversion ? "Convert Files?" : "Copy Files?";
   const descriptionLabel =
     fileCount === 1
@@ -59,7 +59,7 @@ export const ConversionConfirmDialog = ({
 
   const formatSettings = () => {
     const parts: string[] = [];
-    
+
     if (settings.sampleRate !== "dont-change") {
       const hz = parseSampleRateToHz(settings.sampleRate);
       if (hz) {
@@ -81,7 +81,7 @@ export const ConversionConfirmDialog = ({
     if (settings.trimStart) {
       parts.push("Trim Start");
     }
-    
+
     return parts.length > 0 ? parts.join(", ") : "No conversion (copy only)";
   };
 
