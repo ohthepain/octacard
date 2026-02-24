@@ -97,6 +97,14 @@ class HandleRegistry {
     return currentHandle;
   }
 
+  getCachedDirectoryHandle(virtualPath: string): FileSystemDirectoryHandle | null {
+    if (!this.rootHandle) {
+      return null;
+    }
+    const normalizedPath = this.normalizePath(virtualPath);
+    return this.handles.get(normalizedPath) ?? null;
+  }
+
   /** Ensure directory path exists, creating any missing segments */
   async ensureDirectory(virtualPath: string): Promise<FileSystemDirectoryHandle> {
     if (!this.rootHandle) {
@@ -395,8 +403,8 @@ class FileSystemService {
     try {
       const registry = this.getRegistry(paneType);
       const targetPath = isDirectory ? virtualPath : this.getParentPath(virtualPath);
-      const startIn = await registry.getDirectoryHandle(targetPath);
-      await this.pickDirectoryHandle(paneType, startIn);
+      const cachedHandle = registry.getCachedDirectoryHandle(targetPath) ?? registry.getRoot();
+      await this.pickDirectoryHandle(paneType, cachedHandle ?? undefined);
       return { success: true };
     } catch (error: any) {
       if (error?.name === "AbortError") {
