@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { assertDestRefreshAfterConvert } from "../../tests/refresh-dest.mjs";
 import { assertRevealInFinder } from "../../tests/reveal-in-finder.mjs";
+import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -229,6 +230,10 @@ try {
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
   await assertRevealInFinder(page);
+  await page.evaluate(() => {
+    window.__revealCalls = [];
+  });
+  await assertRevealFileInFinder(page);
   await page.evaluate(() => {
     const sourceFavorite = document.querySelector('[data-testid="favorite-open-source-_Alpha"]');
     const destFavorite = document.querySelector('[data-testid="favorite-open-dest-_Beta"]');
