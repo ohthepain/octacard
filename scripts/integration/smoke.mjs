@@ -2,6 +2,7 @@ import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { assertDestRefreshAfterConvert } from "../../tests/refresh-dest.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -104,6 +105,24 @@ try {
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
 
+    const ensureDirectoryByPath = (virtualPath) => {
+      const parts = virtualPath.split("/").filter(Boolean);
+      let cursor = root;
+      for (const part of parts) {
+        let next = cursor.children.get(part);
+        if (!next || next.kind !== "directory") {
+          next = cursor.addDirectory(new MockDirectoryHandle(part));
+        }
+        cursor = next;
+      }
+      return cursor;
+    };
+
+    const addFileToPath = (virtualPath, fileName, size = 128) => {
+      const dir = ensureDirectoryByPath(virtualPath);
+      dir.addFile(fileName, size);
+    };
+
     const pickerQueue = [root, alpha, beta, alpha];
     window.__pickerCalls = [];
     window.__octacardPickDirectory = async (startIn, options) => {
@@ -136,6 +155,7 @@ try {
       },
       convertAndCopyFile: (args) => {
         window.__convertCalls.push(args);
+        addFileToPath(args.destVirtualPath, args.fileName);
         return { success: true };
       },
     };
@@ -352,6 +372,7 @@ try {
   );
   assert.equal(convertCalls[0].targetSampleRate, 44100, "Conversion should pass sample rate in Hz.");
   assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
+  await assertDestRefreshAfterConvert(page);
 
   await page.getByTestId("tree-node-dest-_Alpha").click();
   await page.evaluate(() => {
