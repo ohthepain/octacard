@@ -166,16 +166,10 @@ try {
       },
     };
     if (!localStorage.getItem("octacard_favorites_source__default")) {
-      localStorage.setItem(
-        "octacard_favorites_source__default",
-        JSON.stringify([{ path: "/Alpha", name: "Alpha" }]),
-      );
+      localStorage.setItem("octacard_favorites_source__default", JSON.stringify([{ path: "/Alpha", name: "Alpha" }]));
     }
     if (!localStorage.getItem("octacard_favorites_dest__default")) {
-      localStorage.setItem(
-        "octacard_favorites_dest__default",
-        JSON.stringify([{ path: "/Beta", name: "Beta" }]),
-      );
+      localStorage.setItem("octacard_favorites_dest__default", JSON.stringify([{ path: "/Beta", name: "Beta" }]));
     }
   });
 
@@ -248,11 +242,7 @@ try {
   assert.equal(pickerCallsAfterFavorites.length, 3, "Expected three picker calls after opening source+dest favorites.");
   assert.deepEqual(
     pickerCallsAfterFavorites.map((call) => call.pickerId),
-    [
-      "octacard-root-directory-picker",
-      "octacard-source-directory-picker",
-      "octacard-dest-directory-picker",
-    ],
+    ["octacard-root-directory-picker", "octacard-source-directory-picker", "octacard-dest-directory-picker"],
     "Expected root/source/dest picker IDs in order.",
   );
   assert.equal(
@@ -413,7 +403,7 @@ try {
   await convertButton.click();
   await page.getByRole("heading", { name: "Copy Files?" }).waitFor({ state: "visible" });
   await page.getByText("1 file will be copied to the destination.").waitFor({ state: "visible" });
-  await page.getByRole("button", { name: "Copy & Save" }).click();
+  await page.getByRole("button", { name: "Copy" }).click();
   await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
 
   await page.getByTestId("tree-node-dest-_Alpha").click();
@@ -424,7 +414,7 @@ try {
   await convertButton.click();
   await page.getByRole("heading", { name: "Copy Files?" }).waitFor({ state: "visible" });
   await page.getByText("1 file will be copied to the destination.").waitFor({ state: "visible" });
-  await page.getByRole("button", { name: "Copy & Save" }).click();
+  await page.getByRole("button", { name: "Copy" }).click();
   await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
   const sameNameListCalls = await page.evaluate(() => window.__listCalls);
   const sameNameConvertCalls = await page.evaluate(() => window.__convertCalls);
