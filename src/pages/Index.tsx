@@ -57,6 +57,7 @@ const Index = () => {
   const [selectedDestItem, setSelectedDestItem] = useState<{ path: string; type: "file" | "folder"; name: string } | null>(null);
   const [sourceRootVersion, setSourceRootVersion] = useState(0);
   const [destRootVersion, setDestRootVersion] = useState(0);
+  const [destRefreshToken, setDestRefreshToken] = useState(0);
   const [formatSettings, setFormatSettings] = useState<FormatSettings>({
     fileFormat: "dont-change",
     sampleRate: "dont-change",
@@ -214,6 +215,7 @@ const Index = () => {
     setConversionProgress((p) =>
       p ? { ...p, current: files.length, currentFile: "" } : p
     );
+    setDestRefreshToken((v) => v + 1);
     setPendingConversionRequest(null);
     setTimeout(() => setConversionProgress(null), 500);
   };
@@ -411,6 +413,7 @@ const Index = () => {
                 showEjectButton={true}
                 showNewFolderButton={true}
                 onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
+                refreshToken={destRefreshToken}
               />
             </div>
           </ResizablePanel>

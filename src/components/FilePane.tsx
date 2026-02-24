@@ -153,6 +153,8 @@ interface FilePaneProps {
   onRequestedRevealPathHandled?: () => void;
   /** When provided, enables "Browse for folder" to open a folder picker and navigate to the selected folder. Receives current path so picker can start there. */
   onBrowseForFolder?: (currentPath?: string) => void;
+  /** Increment to force a refresh of the current directory without remounting. */
+  refreshToken?: number;
 }
 
 export const FilePane = ({
@@ -178,6 +180,7 @@ export const FilePane = ({
   requestedRevealPath,
   onRequestedRevealPathHandled,
   onBrowseForFolder,
+  refreshToken,
 }: FilePaneProps) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -1262,6 +1265,7 @@ export const FilePane = ({
 
   // Store selected paths to restore after refresh
   const selectedPathsToRestoreRef = useRef<Set<string> | null>(null);
+  const lastRefreshTokenRef = useRef<number | null>(null);
 
   // Refresh function that preserves expanded folders and selected items
   const refreshCurrentDirectory = useCallback(async () => {
@@ -1335,6 +1339,18 @@ export const FilePane = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory]);
+
+  useEffect(() => {
+    if (typeof refreshToken !== "number") return;
+    if (lastRefreshTokenRef.current === null) {
+      lastRefreshTokenRef.current = refreshToken;
+      return;
+    }
+    if (refreshToken !== lastRefreshTokenRef.current) {
+      lastRefreshTokenRef.current = refreshToken;
+      void refreshCurrentDirectory();
+    }
+  }, [refreshToken, refreshCurrentDirectory]);
 
   // Helper to get flat list of nodes for shift-click range selection
   const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
