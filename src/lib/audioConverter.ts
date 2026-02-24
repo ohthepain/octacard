@@ -35,7 +35,7 @@ async function initializeFFmpeg(): Promise<FFmpeg> {
     const ffmpeg = new FFmpeg();
     
     // Load FFmpeg core
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
     
     await ffmpeg.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
@@ -155,10 +155,8 @@ export async function convertAudio(
       audioCodec = 'pcm_s16le';
     }
 
-    // Output format
-    if (options.format === 'WAV') {
-      args.push('-f', 'wav');
-    }
+    // Output format - always WAV when we're converting (we output to output.wav)
+    args.push('-f', 'wav');
 
     args.push('-acodec', audioCodec);
     args.push(outputFileName);

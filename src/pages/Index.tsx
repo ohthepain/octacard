@@ -183,6 +183,8 @@ const Index = () => {
       currentFile: "",
     });
 
+    const errors: Array<{ name: string; error: string }> = [];
+    try {
     for (let i = 0; i < files.length; i++) {
       const entry = files[i];
       setConversionProgress((p) =>
@@ -197,7 +199,7 @@ const Index = () => {
       const fileName = dirParts.pop() || entry.name;
       const destDir = dirParts.length ? `${destinationBasePath}/${dirParts.join("/")}` : destinationBasePath;
 
-      await fileSystemService.convertAndCopyFile(
+      const result = await fileSystemService.convertAndCopyFile(
         entry.path,
         destDir,
         fileName,
@@ -210,6 +212,9 @@ const Index = () => {
         "source",
         "dest"
       );
+      if (!result.success) {
+        errors.push({ name: entry.name, error: result.error || "Conversion failed" });
+      }
     }
 
     setConversionProgress((p) =>
@@ -218,6 +223,29 @@ const Index = () => {
     setDestRefreshToken((v) => v + 1);
     setPendingConversionRequest(null);
     setTimeout(() => setConversionProgress(null), 500);
+
+    if (errors.length > 0) {
+      const failedCount = errors.length;
+      const totalCount = files.length;
+      toast.error(
+        failedCount === totalCount ? "Conversion Failed" : "Some Files Failed",
+        {
+          description:
+            failedCount === totalCount
+              ? errors[0]?.error ?? "Unable to convert files."
+              : `${failedCount} of ${totalCount} files failed: ${errors.map((e) => e.name).join(", ")}`,
+          duration: 6000,
+        }
+      );
+    }
+    } catch (err) {
+      setConversionProgress(null);
+      setPendingConversionRequest(null);
+      toast.error("Conversion Failed", {
+        description: err instanceof Error ? err.message : "Unable to convert files.",
+        duration: 6000,
+      });
+    }
   };
 
   const handleSelectDirectory = async () => {

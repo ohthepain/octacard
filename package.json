@@ -27,7 +27,7 @@
     "clean:all": "pnpm run clean && rm -rf node_modules/.cache node_modules/.vite"
   },
   "dependencies": {
-    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/ffmpeg": "0.12.10",
     "@ffmpeg/util": "^0.12.2",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-collapsible": "^1.1.12",
