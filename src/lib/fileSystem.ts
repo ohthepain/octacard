@@ -162,57 +162,66 @@ class HandleRegistry {
       return null;
     }
 
-    if (handle === this.rootHandle) {
-      return "/";
-    }
-
-    const relativePathParts = await this.rootHandle.resolve(handle);
-    if (relativePathParts) {
-      const virtualPath = "/" + relativePathParts.join("/");
-      this.handles.set(virtualPath, handle);
-      this.handleToPath.set(handle, virtualPath);
-      return virtualPath;
-    }
-
-    // Fallback for picker handles that don't resolve across grants:
-    // walk the known root and match with isSameEntry.
-    const findPathByHandle = async (
-      currentHandle: FileSystemDirectoryHandle,
-      currentPath: string,
-    ): Promise<string | null> => {
-      if (await currentHandle.isSameEntry(handle)) {
-        return currentPath;
+    try {
+      if (handle === this.rootHandle) {
+        return "/";
       }
 
-      for await (const [name, childHandle] of currentHandle.entries()) {
-        if (childHandle.kind !== "directory") {
-          continue;
-        }
-
-        const childDirHandle = childHandle as FileSystemDirectoryHandle;
-        const childPath = currentPath === "/" ? `/${name}` : `${currentPath}/${name}`;
-
-        if (await childDirHandle.isSameEntry(handle)) {
-          return childPath;
-        }
-
-        const nestedPath = await findPathByHandle(childDirHandle, childPath);
-        if (nestedPath) {
-          return nestedPath;
-        }
+      const relativePathParts = await this.rootHandle.resolve(handle);
+      if (relativePathParts) {
+        const virtualPath = "/" + relativePathParts.join("/");
+        this.handles.set(virtualPath, handle);
+        this.handleToPath.set(handle, virtualPath);
+        return virtualPath;
       }
 
-      return null;
-    };
+      // Fallback for picker handles that don't resolve across grants:
+      // walk the known root and match with isSameEntry.
+      const findPathByHandle = async (
+        currentHandle: FileSystemDirectoryHandle,
+        currentPath: string,
+      ): Promise<string | null> => {
+        if (await currentHandle.isSameEntry(handle)) {
+          return currentPath;
+        }
 
-    const resolvedPath = await findPathByHandle(this.rootHandle, "/");
-    if (!resolvedPath) {
-      return null;
+        for await (const [name, childHandle] of currentHandle.entries()) {
+          if (childHandle.kind !== "directory") {
+            continue;
+          }
+
+          const childDirHandle = childHandle as FileSystemDirectoryHandle;
+          const childPath = currentPath === "/" ? `/${name}` : `${currentPath}/${name}`;
+
+          if (await childDirHandle.isSameEntry(handle)) {
+            return childPath;
+          }
+
+          const nestedPath = await findPathByHandle(childDirHandle, childPath);
+          if (nestedPath) {
+            return nestedPath;
+          }
+        }
+
+        return null;
+      };
+
+      const resolvedPath = await findPathByHandle(this.rootHandle, "/");
+      if (!resolvedPath) {
+        return null;
+      }
+
+      this.handles.set(resolvedPath, handle);
+      this.handleToPath.set(handle, resolvedPath);
+      return resolvedPath;
+    } catch (error: unknown) {
+      // Root handle may be stale (e.g. SD card was ejected and reinserted).
+      // Treat as "cannot resolve" so the caller uses the picked handle as a new root.
+      if (error instanceof Error && error.name === "NotFoundError") {
+        return null;
+      }
+      throw error;
     }
-
-    this.handles.set(resolvedPath, handle);
-    this.handleToPath.set(handle, resolvedPath);
-    return resolvedPath;
   }
 
   private normalizePath(path: string): string {
