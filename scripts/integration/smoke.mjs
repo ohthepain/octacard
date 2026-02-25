@@ -10,6 +10,7 @@ import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
+import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-select-directory.mjs";
 import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-preview-position.mjs";
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 
@@ -206,6 +207,7 @@ try {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
 
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
+  await assertHeaderDoesNotShowSelectDirectory(page);
   const convertButton = page.getByRole("button", { name: "Convert" });
   const devModeButton = page.getByTestId("dev-mode-button");
   const formatButton = page.getByRole("button", { name: "Format" });
@@ -247,11 +249,11 @@ try {
     `Expected source/dest panels to be near equal width. Source=${sourceBox.width}, Dest=${destBox.width}`,
   );
   await page.evaluate(() => {
-    const button = Array.from(document.querySelectorAll("button")).find((el) =>
-      el.textContent?.includes("Select Directory"),
-    );
-    if (!button) throw new Error("Select Directory button not found");
-    button.click();
+    const sourcePanel = document.querySelector('[data-testid="panel-source"]');
+    if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found");
+    const browseButton = sourcePanel.querySelector('button[title="Browse for folder to navigate to"]');
+    if (!(browseButton instanceof HTMLElement)) throw new Error("Source browse button not found");
+    browseButton.click();
   });
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
@@ -337,12 +339,13 @@ try {
 
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
+  await assertHeaderDoesNotShowSelectDirectory(page);
   await page.evaluate(() => {
-    const button = Array.from(document.querySelectorAll("button")).find((el) =>
-      el.textContent?.includes("Select Directory"),
-    );
-    if (!button) throw new Error("Select Directory button not found after reload");
-    button.click();
+    const sourcePanel = document.querySelector('[data-testid="panel-source"]');
+    if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found after reload");
+    const browseButton = sourcePanel.querySelector('button[title="Browse for folder to navigate to"]');
+    if (!(browseButton instanceof HTMLElement)) throw new Error("Source browse button not found after reload");
+    browseButton.click();
   });
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
   const reloadedFavorite = page.getByTestId(addedFavoriteTestId);
