@@ -14,6 +14,7 @@ import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-select-directory.mjs";
 import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-preview-position.mjs";
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
+import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -216,6 +217,7 @@ try {
   await devModeButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
+  await assertTermsAndPrivacyLinks(page, { baseUrl });
   await assertSampleRateOptions(page);
   const convertBox = await convertButton.boundingBox();
   const formatBox = await formatButton.boundingBox();
