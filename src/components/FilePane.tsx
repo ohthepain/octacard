@@ -2646,7 +2646,7 @@ export const FilePane = ({
                     <File className="w-4 h-4 text-muted-foreground shrink-0" />
                   </>
                 )}
-                <span className={`text-sm truncate flex-1 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
+                <span className={`text-sm truncate flex-1 min-w-0 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
                   {node.name}
                 </span>
                 {node.size && <span className="text-xs text-muted-foreground font-mono">{node.size}</span>}
