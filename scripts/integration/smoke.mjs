@@ -10,6 +10,7 @@ import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
+import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-preview-position.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -304,6 +305,7 @@ try {
   });
   await page.getByTestId("breadcrumb-favorite-source").waitFor({ state: "visible" });
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
+  await assertWaveformPreviewDockedAtBottom(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(

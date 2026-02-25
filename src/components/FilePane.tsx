@@ -3094,7 +3094,7 @@ export const FilePane = ({
         </div>
 
         {/* File Tree */}
-        <ScrollArea className="flex-1 h-full">
+        <ScrollArea className="flex-1 min-h-0" data-testid={`file-tree-scroll-${paneName}`}>
           <div
             className={`p-2 h-full min-h-full ${isDraggingOverRoot ? "bg-primary/5" : ""}`}
             onDragOver={handleContainerDragOver}
@@ -3214,6 +3214,26 @@ export const FilePane = ({
             )}
           </div>
         </ScrollArea>
+
+        {/* Audio Preview */}
+        {selectedAudioFile && (
+          <AudioPreview
+            filePath={selectedAudioFile.path}
+            fileName={selectedAudioFile.name}
+            onClose={() => setSelectedAudioFile(null)}
+            paneType={paneType}
+          />
+        )}
+
+        {/* Video Preview */}
+        {selectedVideoFile && (
+          <VideoPreview
+            filePath={selectedVideoFile.path}
+            fileName={selectedVideoFile.name}
+            onClose={() => setSelectedVideoFile(null)}
+            paneType={paneType}
+          />
+        )}
       </div>
 
       {/* New Folder Dialog */}
@@ -3264,26 +3284,6 @@ export const FilePane = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Audio Preview */}
-      {selectedAudioFile && (
-        <AudioPreview
-          filePath={selectedAudioFile.path}
-          fileName={selectedAudioFile.name}
-          onClose={() => setSelectedAudioFile(null)}
-          paneType={paneType}
-        />
-      )}
-
-      {/* Video Preview */}
-      {selectedVideoFile && (
-        <VideoPreview
-          filePath={selectedVideoFile.path}
-          fileName={selectedVideoFile.name}
-          onClose={() => setSelectedVideoFile(null)}
-          paneType={paneType}
-        />
-      )}
 
       {/* Copy Progress Dialog */}
       {copyProgress && copyProgress.isVisible && (
