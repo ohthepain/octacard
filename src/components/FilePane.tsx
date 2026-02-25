@@ -133,6 +133,7 @@ interface FilePaneProps {
   sampleRate?: string;
   sampleDepth?: string;
   fileFormat?: string;
+  pitch?: string;
   mono?: boolean;
   normalize?: boolean;
   trimStart?: boolean;
@@ -167,6 +168,7 @@ export const FilePane = ({
   sampleRate = "dont-change",
   sampleDepth = "dont-change",
   fileFormat = "dont-change",
+  pitch = "dont-change",
   mono = false,
   normalize = false,
   trimStart = false,
@@ -1685,6 +1687,7 @@ export const FilePane = ({
                 (fileFormat === "WAV" ||
                   sampleRate !== "dont-change" ||
                   sampleDepth === "16-bit" ||
+                  pitch !== "dont-change" ||
                   mono ||
                   normalize ||
                   trimStart);
@@ -1699,6 +1702,7 @@ export const FilePane = ({
                   parseSampleRateToHz(sampleRate),
                   sampleDepth,
                   fileFormat,
+                  pitch,
                   mono,
                   normalize,
                   trimStart,
@@ -1763,6 +1767,7 @@ export const FilePane = ({
             (fileFormat === "WAV" ||
               sampleRate !== "dont-change" ||
               sampleDepth === "16-bit" ||
+              pitch !== "dont-change" ||
               mono ||
               normalize ||
               trimStart);
@@ -1777,6 +1782,7 @@ export const FilePane = ({
               parseSampleRateToHz(sampleRate),
               sampleDepth,
               fileFormat,
+              pitch,
               mono,
               normalize,
               trimStart,
@@ -2137,8 +2143,15 @@ export const FilePane = ({
         const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.name);
 
         let finalDestFileName = item.name;
+        if (isAudioFile && pitch === "C") {
+          const { analyzeFilenameForNote } = await import("@/lib/batch-math");
+          const pitchAnalysis = analyzeFilenameForNote(item.name);
+          if (pitchAnalysis && pitchAnalysis.semitonesDownToC !== 0) {
+            finalDestFileName = finalDestFileName.replace(pitchAnalysis.originalString, "C");
+          }
+        }
         if (isAudioFile && fileFormat === "WAV") {
-          finalDestFileName = item.name.replace(/\.\w+$/i, ".wav");
+          finalDestFileName = finalDestFileName.replace(/\.\w+$/i, ".wav");
         }
 
         // Always convert audio files according to settings
@@ -2147,6 +2160,7 @@ export const FilePane = ({
           (fileFormat === "WAV" ||
             sampleRate !== "dont-change" ||
             sampleDepth === "16-bit" ||
+            pitch !== "dont-change" ||
             mono ||
             normalize ||
             trimStart);
@@ -2165,6 +2179,7 @@ export const FilePane = ({
               parseSampleRateToHz(sampleRate),
               sampleDepth,
               fileFormat,
+              pitch,
               mono,
               normalize,
               trimStart,
@@ -2230,6 +2245,7 @@ export const FilePane = ({
     fileFormat,
     sampleRate,
     sampleDepth,
+    pitch,
     mono,
     normalize,
     trimStart,
@@ -2553,6 +2569,28 @@ export const FilePane = ({
         }
       };
 
+      const handleCopyPath = async (e?: Event) => {
+        e?.stopPropagation();
+        if (isParentLink) return;
+        try {
+          await navigator.clipboard.writeText(node.path);
+          toast.success("Path copied to clipboard");
+        } catch {
+          toast.error("Failed to copy path");
+        }
+      };
+
+      const handleCopyFilename = async (e?: Event) => {
+        e?.stopPropagation();
+        if (isParentLink) return;
+        try {
+          await navigator.clipboard.writeText(node.name);
+          toast.success("Filename copied to clipboard");
+        } catch {
+          toast.error("Failed to copy filename");
+        }
+      };
+
       return (
         <div key={node.id}>
           <ContextMenu>
@@ -2713,6 +2751,8 @@ export const FilePane = ({
             {!isParentLink && (
               <ContextMenuContent>
                 <ContextMenuItem onSelect={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
+                <ContextMenuItem onSelect={handleCopyPath}>Copy path</ContextMenuItem>
+                <ContextMenuItem onSelect={handleCopyFilename}>Copy filename</ContextMenuItem>
                 {node.type === "folder" && (
                   <ContextMenuItem
                     onClick={(e) => {

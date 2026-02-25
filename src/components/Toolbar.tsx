@@ -1,9 +1,12 @@
-import { FolderOpen, RefreshCw, Link2, Download, GitCompare } from "lucide-react";
+import { useState } from "react";
+import { FolderOpen, RefreshCw, Link2, Download, GitCompare, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { BatchToolsDialog } from "./BatchToolsDialog";
 
 export const Toolbar = () => {
   const { toast } = useToast();
+  const [showBatchTools, setShowBatchTools] = useState(false);
 
   const handleAction = (action: string) => {
     toast({
@@ -43,6 +46,16 @@ export const Toolbar = () => {
         <Link2 className="w-4 h-4" />
         Build Chain
       </Button>
+
+      <Button
+        variant="secondary"
+        size="sm"
+        className="gap-2"
+        onClick={() => setShowBatchTools(true)}
+      >
+        <Wand2 className="w-4 h-4" />
+        Batch Tools
+      </Button>
       
       <div className="flex-1" />
       
@@ -65,6 +78,8 @@ export const Toolbar = () => {
         <Download className="w-4 h-4" />
         Export to CF
       </Button>
+
+      <BatchToolsDialog open={showBatchTools} onOpenChange={setShowBatchTools} />
     </div>
   );
 };

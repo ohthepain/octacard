@@ -1,5 +1,6 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { analyzeFilenameForNote } from './batch-math';
 
 let ffmpegInstance: FFmpeg | null = null;
 let isInitialized = false;
@@ -12,6 +13,9 @@ interface ConversionOptions {
   normalize?: boolean;
   trimStart?: boolean;
   format?: 'WAV' | 'dont-change';
+  /** When true, shift pitch to C based on note in sourceFileName. Requires sourceFileName. */
+  pitchToC?: boolean;
+  sourceFileName?: string;
 }
 
 async function initializeFFmpeg(): Promise<FFmpeg> {
@@ -50,6 +54,21 @@ async function initializeFFmpeg(): Promise<FFmpeg> {
   } catch (error) {
     isInitializing = false;
     throw error;
+  }
+}
+
+async function probeSampleRate(ffmpeg: FFmpeg, inputName: string): Promise<number> {
+  const probeOut = 'probe_null.tmp';
+  try {
+    await ffmpeg.exec(['-i', inputName, '-t', '0.001', '-f', 'null', probeOut]);
+    const logs = ffmpeg.exec.getLogs();
+    const logText = logs.map((log) => (typeof log === 'object' && 'message' in log ? (log as { message: string }).message : String(log))).join('\n');
+    const match = logText.match(/Audio:.*?(\d+)\s*Hz/);
+    await ffmpeg.deleteFile(probeOut).catch(() => {});
+    return match ? parseInt(match[1], 10) : 44100;
+  } catch {
+    await ffmpeg.deleteFile(probeOut).catch(() => {});
+    return 44100;
   }
 }
 
@@ -115,6 +134,17 @@ export async function convertAudio(
       console.log(`Detected silence at start: ${silenceStartTime} seconds`);
     }
 
+    // Pitch-to-C: analyze filename and compute varispeed ratio if needed
+    let pitchRatio: number | null = null;
+    if (options.pitchToC && options.sourceFileName) {
+      const analysis = analyzeFilenameForNote(options.sourceFileName);
+      if (analysis && analysis.semitonesDownToC !== 0) {
+        pitchRatio = 1 / analysis.speedRatio;
+      }
+    }
+
+    const targetSampleRate = options.sampleRate || 44100;
+
     // Build FFmpeg command
     const args: string[] = [];
 
@@ -129,6 +159,12 @@ export async function convertAudio(
     // Build audio filter chain
     const audioFilters: string[] = [];
 
+    // Add varispeed (pitch-to-C) first if needed
+    if (pitchRatio !== null) {
+      const inputRate = await probeSampleRate(ffmpeg, inputFileName);
+      audioFilters.push(`asetrate=${inputRate}*${pitchRatio},aresample=${targetSampleRate}`);
+    }
+
     // Add normalization
     if (options.normalize) {
       audioFilters.push('loudnorm=I=-16:TP=-1.5:LRA=11');
@@ -139,9 +175,11 @@ export async function convertAudio(
       args.push('-af', audioFilters.join(','));
     }
 
-    // Add sample rate conversion
-    if (options.sampleRate) {
+    // Add sample rate conversion (only if not already set by varispeed)
+    if (options.sampleRate && pitchRatio === null) {
       args.push('-ar', options.sampleRate.toString());
+    } else if (pitchRatio !== null) {
+      args.push('-ar', targetSampleRate.toString());
     }
 
     // Add mono conversion
@@ -197,6 +235,7 @@ export function needsConversion(options: ConversionOptions): boolean {
     options.mono ||
     options.normalize ||
     options.format === 'WAV' ||
-    options.trimStart
+    options.trimStart ||
+    options.pitchToC
   );
 }

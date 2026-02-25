@@ -14,6 +14,7 @@ export interface FormatSettings {
   fileFormat: string;
   sampleRate: string;
   sampleDepth: string;
+  pitch: string;
   mono: boolean;
   normalize: boolean;
   trim: boolean;
@@ -79,6 +80,22 @@ export function FormatDropdown({ settings, onSettingsChange }: FormatDropdownPro
                 Don&apos;t change
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="16-bit">16-bit</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Pitch</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={settings.pitch}
+              onValueChange={(v) =>
+                onSettingsChange({ ...settings, pitch: v })
+              }
+            >
+              <DropdownMenuRadioItem value="dont-change">
+                Don&apos;t change
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="C">C</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
