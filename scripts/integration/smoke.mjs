@@ -11,6 +11,8 @@ import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expand
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-select-directory.mjs";
+import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-preview-position.mjs";
+import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -256,6 +258,7 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
+  await assertAudioPreviewFilenameTruncation(page);
   await assertExpandedFoldersPersistOnReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
@@ -306,6 +309,7 @@ try {
   });
   await page.getByTestId("breadcrumb-favorite-source").waitFor({ state: "visible" });
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
+  await assertWaveformPreviewDockedAtBottom(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(
