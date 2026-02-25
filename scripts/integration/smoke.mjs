@@ -10,6 +10,7 @@ import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
+import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -254,6 +255,7 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
+  await assertAudioPreviewFilenameTruncation(page);
   await assertExpandedFoldersPersistOnReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
