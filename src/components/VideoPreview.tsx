@@ -247,7 +247,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
   };
 
   return (
-    <div className="border-t border-border bg-card p-4 space-y-3">
+    <div className="border-t border-border bg-card p-4 space-y-3 shrink-0" data-testid={`video-preview-${paneType}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-sm font-semibold uppercase tracking-wide text-muted-foreground truncate">
@@ -372,4 +372,3 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
     </div>
   );
 };
-
