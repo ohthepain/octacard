@@ -62,6 +62,7 @@ export function FormatDropdown({ settings, onSettingsChange }: FormatDropdownPro
                 Don&apos;t change
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="44100">44100</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="48000">48000</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
