@@ -3,7 +3,7 @@ import { FilePane } from "@/components/FilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown, type FormatSettings } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
-import { HelpDialog } from "@/components/HelpDialog";
+import { Link } from "@tanstack/react-router";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,6 @@ function isSafari(): boolean {
 
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const devMode = useAppOptionsStore((currentState) => currentState.devMode);
   const setDevMode = useAppOptionsStore((currentState) => currentState.setDevMode);
   const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
@@ -486,10 +485,15 @@ const Index = () => {
             variant="ghost"
             size="sm"
             className="text-muted-foreground hover:text-foreground"
-            onClick={() => setHelpOpen(true)}
+            asChild
             aria-label="Help"
           >
-            <HelpCircle className="w-4 h-4" />
+            <Link
+              to="/help"
+              onClick={() => capture("octacard_help_clicked", { source: "header" })}
+            >
+              <HelpCircle className="w-4 h-4" />
+            </Link>
           </Button>
           <Button
             variant="ghost"
@@ -616,7 +620,6 @@ const Index = () => {
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
-      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       <Dialog open={unsupportedBrowserDialogOpen} onOpenChange={setUnsupportedBrowserDialogOpen}>
         <DialogContent className="sm:max-w-md">

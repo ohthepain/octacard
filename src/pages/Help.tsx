@@ -7,9 +7,18 @@ import {
 } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import { capture } from "@/lib/analytics";
-import { HelpCircle, ChevronRight, ArrowLeft } from "lucide-react";
+import {
+  HelpCircle,
+  ChevronRight,
+  ArrowLeft,
+  FileAudio,
+  Music2,
+  Gauge,
+} from "lucide-react";
 
-function FormatHelpContent() {
+const codeClass = "bg-muted px-1.5 py-0.5 rounded text-foreground/90 font-mono text-[0.9em]";
+
+function HelpContent() {
   const [convertOpen, setConvertOpen] = useState(false);
   const [pitchOpen, setPitchOpen] = useState(false);
   const [tempoOpen, setTempoOpen] = useState(false);
@@ -21,10 +30,10 @@ function FormatHelpContent() {
   };
 
   const triggerClass =
-    "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium outline-none hover:bg-accent hover:text-accent-foreground text-left transition-colors";
+    "flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left outline-none hover:bg-accent/50 transition-colors group border border-transparent hover:border-border";
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <Collapsible
         open={convertOpen}
         onOpenChange={(open) => {
@@ -34,26 +43,37 @@ function FormatHelpContent() {
       >
         <CollapsibleTrigger asChild>
           <button type="button" className={triggerClass}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <FileAudio className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="font-medium">Convert</span>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Format, sample rate, bit depth, mono, normalize, trim
+              </p>
+            </div>
             <ChevronRight
-              className={`h-4 w-4 shrink-0 transition-transform ${convertOpen ? "rotate-90" : ""}`}
+              className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${convertOpen ? "rotate-90" : ""}`}
             />
-            Convert
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="pl-7 pr-3 py-3 text-sm text-muted-foreground space-y-2 border-l-2 border-muted ml-2">
-            <p>You can tell the converter how to process files when copying:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li><strong>Convert to WAV</strong> — Output as WAV format</li>
-              <li><strong>Sample rate</strong> — 44.1 or 48 kHz</li>
-              <li><strong>16-bit (Sample Depth)</strong> — Bit depth</li>
-              <li><strong>Mono</strong> — Convert to mono</li>
-              <li><strong>Normalized</strong> — Normalize levels</li>
-              <li><strong>Trimmed</strong> — Trim leading/trailing silence</li>
+          <div className="ml-12 mt-2 pl-4 border-l-2 border-muted space-y-3 text-sm text-muted-foreground">
+            <p>
+              Use the Format dropdown to tell the converter how to process files when copying between panes:
+            </p>
+            <ul className="space-y-1.5">
+              <li><strong className="text-foreground">Convert to WAV</strong> — Output as WAV format</li>
+              <li><strong className="text-foreground">Sample rate</strong> — 44.1 or 48 kHz</li>
+              <li><strong className="text-foreground">16-bit (Sample Depth)</strong> — Bit depth</li>
+              <li><strong className="text-foreground">Mono</strong> — Convert to mono</li>
+              <li><strong className="text-foreground">Normalized</strong> — Normalize levels</li>
+              <li><strong className="text-foreground">Trimmed</strong> — Trim leading/trailing silence</li>
             </ul>
           </div>
         </CollapsibleContent>
       </Collapsible>
+
       <Collapsible
         open={pitchOpen}
         onOpenChange={(open) => {
@@ -63,25 +83,35 @@ function FormatHelpContent() {
       >
         <CollapsibleTrigger asChild>
           <button type="button" className={triggerClass}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Music2 className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="font-medium">Pitch</span>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Transpose samples to C based on note names in filenames
+              </p>
+            </div>
             <ChevronRight
-              className={`h-4 w-4 shrink-0 transition-transform ${pitchOpen ? "rotate-90" : ""}`}
+              className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${pitchOpen ? "rotate-90" : ""}`}
             />
-            Pitch
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="pl-7 pr-3 py-3 text-sm text-muted-foreground space-y-2 border-l-2 border-muted ml-2">
+          <div className="ml-12 mt-2 pl-4 border-l-2 border-muted space-y-3 text-sm text-muted-foreground">
             <p>
-              If you choose <strong>C</strong> and the sample filename contains a note name (e.g. A, Am, C#, Bb, F#m),
-              OctaCard will adjust the pitch to C and rename the file to include C in the name.
+              If you choose <strong className="text-foreground">C</strong> in Format → Pitch and the sample filename contains a note name (e.g. A, Am, C#, Bb, F#m), OctaCard will adjust the pitch to C and rename the file to include C in the name.
             </p>
             <p>
-              Supported pattern: note letters A–G with optional # or b, optionally followed by chord quality (m, min, maj, dim, sus).
-              Examples: <code className="bg-muted px-1.5 py-0.5 rounded">Am_kick.wav</code>, <code className="bg-muted px-1.5 py-0.5 rounded">C#_loop.wav</code>
+              <strong className="text-foreground">Supported pattern:</strong> Note letters A–G with optional # or b, optionally followed by chord quality (m, min, maj, dim, sus).
+            </p>
+            <p>
+              Examples: <code className={codeClass}>Am_kick.wav</code>, <code className={codeClass}>C#_loop.wav</code>
             </p>
           </div>
         </CollapsibleContent>
       </Collapsible>
+
       <Collapsible
         open={tempoOpen}
         onOpenChange={(open) => {
@@ -91,25 +121,61 @@ function FormatHelpContent() {
       >
         <CollapsibleTrigger asChild>
           <button type="button" className={triggerClass}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Gauge className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <span className="font-medium">Tempo</span>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Detect BPM from paths, adjust tempo, and rename files
+              </p>
+            </div>
             <ChevronRight
-              className={`h-4 w-4 shrink-0 transition-transform ${tempoOpen ? "rotate-90" : ""}`}
+              className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${tempoOpen ? "rotate-90" : ""}`}
             />
-            Tempo
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="pl-7 pr-3 py-3 text-sm text-muted-foreground space-y-2 border-l-2 border-muted ml-2">
-            <p>
-              If you select a tempo, OctaCard detects the source BPM from filenames or the immediate parent folder name, then adjusts tempo and renames files.
-            </p>
-            <p className="font-medium text-foreground">File/folder matching patterns:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Number at start: <code className="bg-muted px-1.5 py-0.5 rounded">120_kick.wav</code></li>
-              <li>Preceded by underscore: <code className="bg-muted px-1.5 py-0.5 rounded">kick_120.wav</code></li>
-              <li>Followed by bpm or _bpm: <code className="bg-muted px-1.5 py-0.5 rounded">120bpm.wav</code>, <code className="bg-muted px-1.5 py-0.5 rounded">120_bpm.wav</code></li>
-              <li>At end before extension: <code className="bg-muted px-1.5 py-0.5 rounded">kick_120.wav</code></li>
-            </ul>
-            <p>BPM range: 50–240. If no BPM in filename, the parent folder is checked.</p>
+          <div className="ml-12 mt-2 pl-4 border-l-2 border-muted space-y-4 text-sm text-muted-foreground">
+            <div>
+              <p className="font-medium text-foreground">How tempo detection works</p>
+              <p className="mt-1">
+                When you select a target tempo in Format → Tempo, OctaCard detects the source BPM from your file paths:
+              </p>
+              <ol className="list-decimal list-inside mt-2 space-y-1">
+                <li>First, it checks the <strong className="text-foreground">filename</strong></li>
+                <li>If no BPM is found, it checks the <strong className="text-foreground">immediate parent folder name</strong></li>
+              </ol>
+              <p className="mt-2">
+                Only the immediate parent folder is checked when the filename has no BPM.
+              </p>
+            </div>
+
+            <div>
+              <p className="font-medium text-foreground">Supported BPM patterns</p>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>Number at start: <code className={codeClass}>120_kick.wav</code></li>
+                <li>Preceded by underscore: <code className={codeClass}>kick_120.wav</code></li>
+                <li>Followed by bpm or _bpm: <code className={codeClass}>120bpm.wav</code>, <code className={codeClass}>120_bpm.wav</code></li>
+                <li>At end before extension: <code className={codeClass}>kick_120.wav</code></li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-medium text-foreground">BPM range</p>
+              <p>Only BPM values between 50 and 240 are recognized. Numbers outside this range are ignored.</p>
+            </div>
+
+            <div>
+              <p className="font-medium text-foreground">Renaming</p>
+              <p className="mt-1">
+                When tempo conversion is applied, the output path is updated to reflect the new BPM:
+              </p>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li><strong className="text-foreground">BPM from filename:</strong> The filename is updated (e.g. <code className={codeClass}>120_kick.wav</code> → <code className={codeClass}>140_kick.wav</code>)</li>
+                <li><strong className="text-foreground">BPM from folder:</strong> The folder segment containing the BPM is updated; the filename stays the same</li>
+              </ul>
+            </div>
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -124,7 +190,7 @@ export default function Help() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border px-4 py-3 flex items-center gap-4">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-4 py-3 flex items-center gap-4">
         <Button variant="ghost" size="sm" asChild>
           <Link to="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
@@ -132,17 +198,24 @@ export default function Help() {
           </Link>
         </Button>
       </header>
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="flex items-center gap-3 mb-8">
-          <HelpCircle className="h-8 w-8 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-semibold">Format options help</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              How to use the Format dropdown when copying audio files
-            </p>
+      <main className="max-w-2xl mx-auto px-4 py-10 sm:py-14">
+        <div className="mb-10">
+          <div className="flex items-center gap-4 mb-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <HelpCircle className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Help</h1>
+              <p className="text-muted-foreground mt-0.5">
+                Format options and conversion tips for OctaCard
+              </p>
+            </div>
           </div>
+          <p className="text-sm text-muted-foreground">
+            Use the Format dropdown when copying audio files to convert, transpose, or change tempo. Expand each section below for details.
+          </p>
         </div>
-        <FormatHelpContent />
+        <HelpContent />
       </main>
     </div>
   );
