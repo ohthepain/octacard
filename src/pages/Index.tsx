@@ -19,6 +19,7 @@ import { Play, FolderPlus } from "lucide-react";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
+import { useAppOptionsStore } from "@/stores/app-options-store";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -45,6 +46,8 @@ function isSafari(): boolean {
 
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
+  const devMode = useAppOptionsStore((currentState) => currentState.devMode);
+  const setDevMode = useAppOptionsStore((currentState) => currentState.setDevMode);
   const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -349,6 +352,20 @@ const Index = () => {
           Convert
         </Button>
         <div className="flex items-center gap-2 justify-self-end">
+          <Button
+            variant={devMode ? "default" : "outline"}
+            size="sm"
+            data-testid="dev-mode-button"
+            aria-pressed={devMode}
+            onClick={() => setDevMode(!devMode)}
+            className={
+              devMode
+                ? "border-orange-500 bg-orange-500 text-white hover:bg-orange-600 hover:text-white"
+                : "border-orange-500 text-orange-600 hover:border-orange-600 hover:bg-orange-50 hover:text-orange-700"
+            }
+          >
+            Dev Mode
+          </Button>
           <FormatDropdown settings={formatSettings} onSettingsChange={setFormatSettings} />
           <Button
             variant="ghost"
