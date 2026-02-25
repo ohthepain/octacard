@@ -7,6 +7,7 @@ import { assertRevealInFinder } from "../../tests/reveal-in-finder.mjs";
 import { assertRevealInFinderDest } from "../../tests/reveal-in-finder-dest.mjs";
 import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
 import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
+import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -250,6 +251,8 @@ try {
   });
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
+  await sourceAlphaNode.waitFor({ state: "visible" });
+  await assertExpandedFoldersPersistOnReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
