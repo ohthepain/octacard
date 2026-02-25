@@ -8,6 +8,8 @@ import { assertRevealInFinderDest } from "../../tests/reveal-in-finder-dest.mjs"
 import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
 import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
+import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
+import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -203,10 +205,13 @@ try {
 
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
   const convertButton = page.getByRole("button", { name: "Convert" });
+  const devModeButton = page.getByTestId("dev-mode-button");
   const formatButton = page.getByRole("button", { name: "Format" });
   await convertButton.waitFor({ state: "visible" });
+  await devModeButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
+  await assertSampleRateOptions(page);
   const convertBox = await convertButton.boundingBox();
   const formatBox = await formatButton.boundingBox();
   assert.ok(convertBox, "Expected convert button to have a visible bounding box.");
@@ -222,10 +227,7 @@ try {
   );
   assert.ok(convertBox.x >= 0, "Expected convert button to remain inside the viewport.");
   assert.ok(convertBox.x + convertBox.width <= viewport.width, "Expected convert button to remain fully visible.");
-  assert.ok(
-    formatBox.x > convertBox.x + convertBox.width,
-    `Expected format button to be to the right of convert. convertRight=${convertBox.x + convertBox.width}, formatLeft=${formatBox.x}`,
-  );
+  await assertDevModeButton(page, { convertButton, formatButton });
   await page.locator("#main-layout").waitFor({ state: "visible" });
   const sourcePanel = page.getByTestId("panel-source");
   const destPanel = page.getByTestId("panel-dest");
