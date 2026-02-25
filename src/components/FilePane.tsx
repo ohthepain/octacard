@@ -43,6 +43,7 @@ import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
 import { capture } from "@/lib/analytics";
 import { toast } from "sonner";
+import { useMultiSampleStore } from "@/stores/multi-sample-store";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -229,6 +230,8 @@ export const FilePane = ({
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
   const paneType = (paneName === "dest" ? "dest" : "source") as "source" | "dest";
   const volumeId = currentVolumeUUID ?? "_default";
+  const previewMode = useMultiSampleStore((s) => s.previewMode);
+  const addToStack = useMultiSampleStore((s) => s.addToStack);
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
@@ -2689,7 +2692,11 @@ export const FilePane = ({
                       toggleFolder(node);
                     }
                   } else if (node.type === "file" && isAudioFile(node.name)) {
-                    setSelectedAudioFile({ path: node.path, name: node.name });
+                    if (previewMode === "multi") {
+                      addToStack({ path: node.path, name: node.name, paneType });
+                    } else {
+                      setSelectedAudioFile({ path: node.path, name: node.name });
+                    }
                     setSelectedVideoFile(null); // Clear video preview if audio is selected
                   } else if (node.type === "file" && isVideoFile(node.name)) {
                     setSelectedVideoFile({ path: node.path, name: node.name });
@@ -3299,8 +3306,8 @@ export const FilePane = ({
           </div>
         </ScrollArea>
 
-        {/* Audio Preview */}
-        {selectedAudioFile && (
+        {/* Audio Preview - only in single mode */}
+        {previewMode === "single" && selectedAudioFile && (
           <AudioPreview
             filePath={selectedAudioFile.path}
             fileName={selectedAudioFile.name}
