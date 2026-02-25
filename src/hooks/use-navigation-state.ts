@@ -7,6 +7,12 @@ interface NavigationState {
   expandedFolders: string[];
 }
 
+const DEFAULT_VOLUME_KEY = "_default";
+
+function getStorageKey(paneName: string, volumeUUID?: string | null): string {
+  return `${STORAGE_KEY_PREFIX}${paneName}_${volumeUUID ?? DEFAULT_VOLUME_KEY}`;
+}
+
 /**
  * Hook for managing navigation state per pane per volume UUID
  */
@@ -15,10 +21,10 @@ export function useNavigationState(paneName: string) {
    * Save navigation state for a pane and volume UUID
    */
   const saveNavigationState = useCallback(
-    (volumeUUID: string, folderPath: string, expandedFolders: Set<string>) => {
+    (volumeUUID: string | null | undefined, folderPath: string, expandedFolders: Set<string>) => {
       try {
         console.log("Saving navigation state for pane:", paneName, "volume:", volumeUUID, "path:", folderPath);
-        const key = `${STORAGE_KEY_PREFIX}${paneName}_${volumeUUID}`;
+        const key = getStorageKey(paneName, volumeUUID);
         const state: NavigationState = {
           currentPath: folderPath,
           expandedFolders: Array.from(expandedFolders),
@@ -35,9 +41,9 @@ export function useNavigationState(paneName: string) {
    * Get saved navigation state for a pane and volume UUID
    */
   const getNavigationState = useCallback(
-    (volumeUUID: string): NavigationState | null => {
+    (volumeUUID: string | null | undefined): NavigationState | null => {
       try {
-        const key = `${STORAGE_KEY_PREFIX}${paneName}_${volumeUUID}`;
+        const key = getStorageKey(paneName, volumeUUID);
         const saved = localStorage.getItem(key);
         if (!saved) return null;
 
@@ -62,9 +68,9 @@ export function useNavigationState(paneName: string) {
    * Clear navigation state for a pane and volume UUID
    */
   const clearNavigationState = useCallback(
-    (volumeUUID: string) => {
+    (volumeUUID: string | null | undefined) => {
       try {
-        const key = `${STORAGE_KEY_PREFIX}${paneName}_${volumeUUID}`;
+        const key = getStorageKey(paneName, volumeUUID);
         localStorage.removeItem(key);
       } catch (error) {
         console.error("Failed to clear navigation state:", error);
