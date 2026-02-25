@@ -44,6 +44,7 @@ import { fileSystemService } from "@/lib/fileSystem";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
+const NAV_STATE_FALLBACK_VOLUME = "_default";
 
 // Simple path join utility for cross-platform compatibility
 function joinPath(...parts: string[]): string {
@@ -218,6 +219,7 @@ export const FilePane = ({
   const searchCancelledRef = useRef<boolean>(false);
   const isSearchingRef = useRef<boolean>(false);
   const currentSearchQueryRef = useRef<string>("");
+  const hasInitializedNavStateRef = useRef<boolean>(false);
   const paneContainerRef = useRef<HTMLDivElement>(null);
   const handleDeleteRef = useRef<((node?: FileNode) => Promise<void>) | null>(null);
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
@@ -699,7 +701,7 @@ export const FilePane = ({
       cancelled = true;
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
-  }, [pendingExpandedFolders, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Added isSearchingFolders to prevent running during search
+  }, [pendingExpandedFolders, fileTree, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Include fileTree so restoration can run once async directory load completes
 
   // Restore selected items after expanded folders are restored
   useEffect(() => {
@@ -746,6 +748,7 @@ export const FilePane = ({
   useEffect(() => {
     let cancelled = false;
     const timeouts: NodeJS.Timeout[] = [];
+    hasInitializedNavStateRef.current = false;
 
     console.log("useEffect: autoNavigateToCard, paneName:", paneName);
 
@@ -910,29 +913,28 @@ export const FilePane = ({
 
           // Try to restore saved navigation state for home volume
           initialPath = homePath;
-          if (volumeUUID) {
-            const savedState = getNavigationState(volumeUUID);
-            if (savedState) {
-              // Verify the saved path still exists and is accessible
-              try {
-                const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
-                if (statsResult.success && statsResult.data?.isDirectory) {
-                  initialPath = savedState.currentPath;
-                  console.log(
-                    `${paneName} - Restored navigation state for home volume UUID:`,
-                    volumeUUID,
-                    "to:",
-                    savedState.currentPath,
-                  );
-                } else {
-                  console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
-                }
-              } catch {
-                console.log(`${paneName} - Saved path no longer exists, using home directory`);
+          const navStateVolumeUUID = volumeUUID ?? NAV_STATE_FALLBACK_VOLUME;
+          const savedState = getNavigationState(navStateVolumeUUID);
+          if (savedState) {
+            // Verify the saved path still exists and is accessible
+            try {
+              const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
+              if (statsResult.success && statsResult.data?.isDirectory) {
+                initialPath = savedState.currentPath;
+                console.log(
+                  `${paneName} - Restored navigation state for home volume UUID:`,
+                  navStateVolumeUUID,
+                  "to:",
+                  savedState.currentPath,
+                );
+              } else {
+                console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
               }
-            } else {
-              console.log(`${paneName} - No saved navigation state found for home volume UUID:`, volumeUUID);
+            } catch {
+              console.log(`${paneName} - Saved path no longer exists, using home directory`);
             }
+          } else {
+            console.log(`${paneName} - No saved navigation state found for home volume UUID:`, navStateVolumeUUID);
           }
 
           setCurrentRootPath(initialPath);
@@ -942,11 +944,8 @@ export const FilePane = ({
           await loadDirectory(initialPath, "root");
 
           // Restore expanded folders after loading
-          if (volumeUUID) {
-            const savedState = getNavigationState(volumeUUID);
-            if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
-              setPendingExpandedFolders(savedState.expandedFolders);
-            }
+          if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
+            setPendingExpandedFolders(savedState.expandedFolders);
           }
         } else {
           console.error(`${paneName} - Failed to get home directory`);
@@ -957,6 +956,7 @@ export const FilePane = ({
         }
       } finally {
         if (!cancelled) {
+          hasInitializedNavStateRef.current = true;
           setLoading(false);
         }
       }
@@ -1018,9 +1018,7 @@ export const FilePane = ({
     setExpandedFolders(newExpanded);
 
     // Save navigation state with expanded folders
-    if (currentVolumeUUID) {
-      saveNavigationState(currentVolumeUUID, currentRootPath, newExpanded);
-    }
+    saveNavigationState(currentVolumeUUID ?? NAV_STATE_FALLBACK_VOLUME, currentRootPath, newExpanded);
   };
 
   const navigateToFolder = useCallback(
@@ -1038,11 +1036,10 @@ export const FilePane = ({
 
       // Get volume UUID for the new path and save navigation state
       const volumeUUID = await getVolumeUUIDForPath(folderPath);
-      if (volumeUUID) {
-        setCurrentVolumeUUID(volumeUUID);
-        saveNavigationState(volumeUUID, folderPath, new Set());
-        console.log(`${paneName} - Saved navigation state for volume UUID:`, volumeUUID, "path:", folderPath);
-      }
+      const navStateVolumeUUID = volumeUUID ?? NAV_STATE_FALLBACK_VOLUME;
+      setCurrentVolumeUUID(volumeUUID);
+      saveNavigationState(navStateVolumeUUID, folderPath, new Set());
+      console.log(`${paneName} - Saved navigation state for volume UUID:`, navStateVolumeUUID, "path:", folderPath);
 
       await loadDirectory(folderPath, "root");
     },
@@ -1194,21 +1191,32 @@ export const FilePane = ({
   // Save navigation state whenever currentRootPath or expandedFolders changes
   useEffect(() => {
     const saveCurrentPath = async () => {
-      if (!currentRootPath || !currentVolumeUUID) return;
+      if (!currentRootPath) return;
+      if (!fileSystemService.hasRootForPane(paneType)) return;
+      if (!hasInitializedNavStateRef.current) return;
+      if (pendingExpandedFolders.length > 0 || isRestoringExpanded) return;
 
-      if (currentVolumeUUID) {
-        saveNavigationState(currentVolumeUUID, currentRootPath, expandedFolders);
-        console.log(
-          `${paneName} - Auto-saved navigation state for volume UUID:`,
-          currentVolumeUUID,
-          "path:",
-          currentRootPath,
-        );
-      }
+      const navStateVolumeUUID = currentVolumeUUID ?? NAV_STATE_FALLBACK_VOLUME;
+      saveNavigationState(navStateVolumeUUID, currentRootPath, expandedFolders);
+      console.log(
+        `${paneName} - Auto-saved navigation state for volume UUID:`,
+        navStateVolumeUUID,
+        "path:",
+        currentRootPath,
+      );
     };
 
     saveCurrentPath();
-  }, [currentRootPath, currentVolumeUUID, expandedFolders, saveNavigationState, paneName]);
+  }, [
+    currentRootPath,
+    currentVolumeUUID,
+    expandedFolders,
+    saveNavigationState,
+    paneName,
+    paneType,
+    pendingExpandedFolders,
+    isRestoringExpanded,
+  ]);
 
   // Notify parent of path/volume changes for external favorites columns
   useEffect(() => {
@@ -2294,25 +2302,24 @@ export const FilePane = ({
 
         // Try to restore saved navigation state
         let initialPath = homePath;
-        if (volumeUUID) {
-          const savedState = getNavigationState(volumeUUID);
-          if (savedState) {
-            try {
-              const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
-              if (statsResult.success && statsResult.data?.isDirectory) {
-                initialPath = savedState.currentPath;
-                console.log(
-                  `${paneName} - Restored navigation state for home volume UUID:`,
-                  volumeUUID,
-                  "to:",
-                  savedState.currentPath,
-                );
-              } else {
-                console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
-              }
-            } catch {
-              console.log(`${paneName} - Saved path no longer exists, using home directory`);
+        const navStateVolumeUUID = volumeUUID ?? NAV_STATE_FALLBACK_VOLUME;
+        const savedState = getNavigationState(navStateVolumeUUID);
+        if (savedState) {
+          try {
+            const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
+            if (statsResult.success && statsResult.data?.isDirectory) {
+              initialPath = savedState.currentPath;
+              console.log(
+                `${paneName} - Restored navigation state for home volume UUID:`,
+                navStateVolumeUUID,
+                "to:",
+                savedState.currentPath,
+              );
+            } else {
+              console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
             }
+          } catch {
+            console.log(`${paneName} - Saved path no longer exists, using home directory`);
           }
         }
 
@@ -2324,11 +2331,8 @@ export const FilePane = ({
         await loadDirectory(initialPath, "root");
 
         // Restore expanded folders after loading
-        if (volumeUUID) {
-          const savedState = getNavigationState(volumeUUID);
-          if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
-            setPendingExpandedFolders(savedState.expandedFolders);
-          }
+        if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
+          setPendingExpandedFolders(savedState.expandedFolders);
         }
         void refreshAvailableVolumes();
       }
