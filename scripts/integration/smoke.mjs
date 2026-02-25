@@ -6,6 +6,7 @@ import { assertDestRefreshAfterConvert } from "../../tests/refresh-dest.mjs";
 import { assertRevealInFinder } from "../../tests/reveal-in-finder.mjs";
 import { assertRevealInFinderDest } from "../../tests/reveal-in-finder-dest.mjs";
 import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
+import { assertRevealInFinderDoesNotOpenPickerFallback } from "../../tests/reveal-in-finder-no-picker-fallback.mjs";
 import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
@@ -272,6 +273,7 @@ try {
     window.__revealCalls = [];
   });
   await assertRevealFileInFinder(page);
+  await assertRevealInFinderDoesNotOpenPickerFallback(page);
   await page.evaluate(() => {
     const sourceFavorite = document.querySelector('[data-testid="favorite-open-source-_Alpha"]');
     const destFavorite = document.querySelector('[data-testid="favorite-open-dest-_Beta"]');
