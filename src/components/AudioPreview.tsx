@@ -641,11 +641,16 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
     <div className="border-t border-border bg-card p-4 space-y-3 shrink-0" data-testid={`audio-preview-${paneType}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm font-semibold uppercase tracking-wide text-muted-foreground truncate">
+          <span
+            data-testid="audio-preview-filename"
+            title={fileName}
+            className="block max-w-full text-sm font-semibold uppercase tracking-wide text-muted-foreground truncate"
+          >
             Preview: {fileName}
           </span>
         </div>
         <Button
+          data-testid="audio-preview-close"
           size="sm"
           variant="ghost"
           className="h-6 w-6 p-0"
