@@ -42,6 +42,7 @@ import { VideoPreview } from "@/components/VideoPreview";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
 import { capture } from "@/lib/analytics";
+import { toast } from "sonner";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -2544,10 +2545,11 @@ export const FilePane = ({
         try {
           const result = await fileSystemService.revealInFinder(node.path, paneType, node.type === "folder");
           if (!result.success) {
-            console.error("Failed to reveal in finder:", result.error);
+            toast.error("Reveal in Finder is not available in the browser. We would need to create a the desktop version for this feature.");
           }
         } catch (error) {
           console.error("Error revealing in finder:", error);
+          toast.error("Failed to reveal in Finder");
         }
       };
 
