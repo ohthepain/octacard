@@ -392,32 +392,10 @@ class FileSystemService {
       }
       return { success: true };
     }
-
-    if (!("showDirectoryPicker" in window) && typeof (window as any).__octacardPickDirectory !== "function") {
-      return {
-        success: false,
-        error: "File System Access API not supported in this browser",
-      };
-    }
-
-    try {
-      const registry = this.getRegistry(paneType);
-      const targetPath = isDirectory ? virtualPath : this.getParentPath(virtualPath);
-      const cachedHandle = registry.getCachedDirectoryHandle(targetPath) ?? registry.getRoot();
-      await this.pickDirectoryHandle(paneType, cachedHandle ?? undefined);
-      return { success: true };
-    } catch (error: any) {
-      if (error?.name === "AbortError") {
-        return {
-          success: false,
-          error: "User cancelled directory selection",
-        };
-      }
-      return {
-        success: false,
-        error: String(error),
-      };
-    }
+    return {
+      success: false,
+      error: "Reveal in Finder is not supported in this environment",
+    };
   }
 
   getRootDirectoryName(paneType?: PaneType): string {
