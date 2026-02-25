@@ -17,6 +17,9 @@ import {
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
 import { Play, HelpCircle } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { MultiSampleStack } from "@/components/MultiSampleStack";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
@@ -49,8 +52,11 @@ function isSafari(): boolean {
 
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
-  const devMode = useAppOptionsStore((currentState) => currentState.devMode);
-  const setDevMode = useAppOptionsStore((currentState) => currentState.setDevMode);
+  const devMode = useAppOptionsStore((s) => s.devMode);
+  const setDevMode = useAppOptionsStore((s) => s.setDevMode);
+  const previewMode = useMultiSampleStore((s) => s.previewMode);
+  const setPreviewMode = useMultiSampleStore((s) => s.setPreviewMode);
+  const addToStack = useMultiSampleStore((s) => s.addToStack);
   const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -431,6 +437,31 @@ const Index = () => {
     }
   };
 
+  const handlePreviewModeChange = useCallback(
+    (value: string) => {
+      if (value === "multi") {
+        setPreviewMode("multi");
+        if (selectedSourceItem?.type === "file" && isAudioFile(selectedSourceItem.name)) {
+          addToStack({
+            path: selectedSourceItem.path,
+            name: selectedSourceItem.name,
+            paneType: "source",
+          });
+        }
+        if (selectedDestItem?.type === "file" && isAudioFile(selectedDestItem.name)) {
+          addToStack({
+            path: selectedDestItem.path,
+            name: selectedDestItem.name,
+            paneType: "dest",
+          });
+        }
+      } else {
+        setPreviewMode("single");
+      }
+    },
+    [setPreviewMode, addToStack, selectedSourceItem, selectedDestItem]
+  );
+
   const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
     if (result.success && result.data) {
@@ -460,6 +491,19 @@ const Index = () => {
             </div>
             <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
           </div>
+          <ToggleGroup
+            type="single"
+            value={previewMode}
+            onValueChange={(v) => v && handlePreviewModeChange(v)}
+            className="border rounded-md p-0.5"
+          >
+            <ToggleGroupItem value="single" size="sm" aria-label="Single preview">
+              Single
+            </ToggleGroupItem>
+            <ToggleGroupItem value="multi" size="sm" aria-label="Multi preview">
+              Multi
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
@@ -507,10 +551,10 @@ const Index = () => {
       </header>
 
       {/* Main Content: Flat 4-panel layout so favorites and browser dividers are independent */}
-      <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <ResizablePanelGroup
           orientation="horizontal"
-          className="flex-1 min-w-0"
+          className="flex-1 min-h-0 min-w-0"
           id="main-layout"
           defaultLayout={{
             "left-fav": 20,
@@ -617,6 +661,7 @@ const Index = () => {
             />
           </ResizablePanel>
         </ResizablePanelGroup>
+        {previewMode === "multi" && <MultiSampleStack className="shrink-0" />}
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
