@@ -383,6 +383,14 @@ class FileSystemService {
     return this.getRegistry(paneType).hasRoot();
   }
 
+  /** Returns true if Reveal in Finder is available (e.g. when running in Electron). */
+  canRevealInFinder(): boolean {
+    if (typeof window === "undefined") return false;
+    const testHooks = this.getTestHooks();
+    if (testHooks?.revealInFinder) return true;
+    return typeof (window as any).__octacardRevealInFinder === "function";
+  }
+
   async revealInFinder(
     virtualPath: string,
     paneType: PaneType = "source",
