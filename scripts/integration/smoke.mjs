@@ -15,6 +15,7 @@ import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-selec
 import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-preview-position.mjs";
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
+import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -114,6 +115,7 @@ try {
     const alpha = root.addDirectory(new MockDirectoryHandle("Alpha"));
     const beta = root.addDirectory(new MockDirectoryHandle("Beta"));
     const longNames = root.addDirectory(new MockDirectoryHandle("LongNames"));
+    const bulk = root.addDirectory(new MockDirectoryHandle("Bulk"));
     alpha.addFile("inside-alpha.wav", 128);
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
@@ -121,6 +123,9 @@ try {
       "this-is-an-extremely-long-sample-name-designed-to-overflow-the-dialog-display.wav",
       128,
     );
+    for (let i = 1; i <= 6; i++) {
+      bulk.addFile(`bulk-${i}.wav`, 128);
+    }
 
     const ensureDirectoryByPath = (virtualPath) => {
       const parts = virtualPath.split("/").filter(Boolean);
@@ -183,10 +188,30 @@ try {
             ],
           };
         }
+        if (startPath === "/Bulk") {
+          return {
+            success: true,
+            data: Array.from({ length: 6 }, (_, i) => ({
+              name: `bulk-${i + 1}.wav`,
+              path: `/Bulk/bulk-${i + 1}.wav`,
+              type: "file",
+              size: 128,
+              isDirectory: false,
+            })),
+          };
+        }
         return { success: true, data: [] };
       },
       convertAndCopyFile: async (args) => {
         window.__convertCalls.push(args);
+        if (args.sourceVirtualPath?.startsWith("/Bulk/")) {
+          for (let i = 0; i < 20; i++) {
+            if (args.signal?.aborted) {
+              return { success: false, error: "Operation cancelled", cancelled: true };
+            }
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+        }
         addFileToPath(args.destVirtualPath, args.fileName);
         if (args.fileName.length > 40) {
           await new Promise((resolve) => setTimeout(resolve, 300));
@@ -387,8 +412,10 @@ try {
   await destBetaNode.click();
 
   await assertConvertDialogEllipsis(page);
+  await assertConversionCanBeCancelled(page);
 
   await page.getByTestId("tree-node-source-_Alpha").click();
+  await destBetaNode.click();
 
   await formatButton.click();
   await page.getByRole("menuitem", { name: "Sample Rate" }).hover();
