@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { createRouter } from "../router";
+import { BuildHashBadge } from "@/components/BuildHashBadge";
 
 const queryClient = new QueryClient();
 const router = createRouter();
@@ -16,6 +17,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <RouterProvider router={router} />
+        <BuildHashBadge />
       </TooltipProvider>
     </QueryClientProvider>
   </ThemeProvider>
