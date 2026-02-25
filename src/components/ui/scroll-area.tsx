@@ -23,9 +23,10 @@ const ScrollBar = React.forwardRef<
     ref={ref}
     orientation={orientation}
     className={cn(
-      "flex touch-none select-none transition-colors",
-      orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent p-[1px]",
-      orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent p-[1px]",
+      // Overlay scrollbars so showing/hiding them doesn't change layout width/height.
+      "absolute flex touch-none select-none transition-colors",
+      orientation === "vertical" && "right-0 top-0 h-full w-2.5 border-l border-l-transparent p-px",
+      orientation === "horizontal" && "bottom-0 left-0 h-2.5 w-full flex-col border-t border-t-transparent p-px",
       className,
     )}
     {...props}
