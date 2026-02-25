@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -20,6 +22,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { capture } from "@/lib/analytics";
+import { HelpCircle } from "lucide-react";
 
 const BPM_MIN = 50;
 const BPM_MAX = 240;
@@ -271,6 +275,17 @@ export function FormatDropdown({ settings, onSettingsChange }: FormatDropdownPro
             </DropdownMenuItem>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link
+            to="/help"
+            className="flex cursor-default items-center"
+            onClick={() => capture("octacard_format_help_clicked", { source: "format_dropdown" })}
+          >
+            <HelpCircle className="mr-2 h-4 w-4" />
+            Help
+          </Link>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
     <TempoChooseDialog

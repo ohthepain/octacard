@@ -3,7 +3,8 @@ import posthog from "posthog-js";
 type Properties = Record<string, unknown>;
 
 const POSTHOG_KEY = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string | undefined;
-const POSTHOG_HOST = import.meta.env.VITE_PUBLIC_POSTHOG_HOST as string | undefined;
+// Reverse proxy at /ph avoids ad blockers. Configured in vite.config.ts (dev) and vercel.json (prod).
+const POSTHOG_PROXY_PATH = "/ph";
 
 const SESSION_ID_KEY = "octacard_session_id";
 const SESSION_STARTED_AT_KEY = "octacard_session_started_at";
@@ -39,7 +40,7 @@ function getSessionDurationMs(): number {
 }
 
 function hasConfig(): boolean {
-  return Boolean(POSTHOG_KEY && POSTHOG_HOST);
+  return Boolean(POSTHOG_KEY);
 }
 
 export function initAnalytics(): void {
@@ -49,7 +50,8 @@ export function initAnalytics(): void {
   didInit = true;
 
   posthog.init(POSTHOG_KEY!, {
-    api_host: POSTHOG_HOST!,
+    api_host: POSTHOG_PROXY_PATH,
+    ui_host: "https://eu.posthog.com",
     defaults: "2026-01-30",
     autocapture: false,
     disable_session_recording: true,
