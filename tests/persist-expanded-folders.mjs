@@ -22,11 +22,11 @@ export async function assertExpandedFoldersPersistOnReload(page) {
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
   await page.evaluate(() => {
-    const button = Array.from(document.querySelectorAll("button")).find((el) =>
-      el.textContent?.includes("Select Directory"),
-    );
-    if (!button) throw new Error("Select Directory button not found after reload");
-    button.click();
+    const sourcePanel = document.querySelector('[data-testid="panel-source"]');
+    if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found after reload");
+    const browseButton = sourcePanel.querySelector('button[title="Browse for folder to navigate to"]');
+    if (!(browseButton instanceof HTMLElement)) throw new Error("Source browse button not found after reload");
+    browseButton.click();
   });
 
   const reloadedAlphaNode = page.getByTestId(alphaNodeTestId);
