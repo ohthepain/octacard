@@ -8,12 +8,17 @@ import {
 
 export type { Favorite };
 
+const EMPTY_FAVORITES: Favorite[] = [];
+
 /**
  * Hook for managing favorites per pane type (source/dest) and per volume.
  * Backed by a centralized persisted store.
  */
 export function useFavorites(paneType: FavoritePaneType, volumeId: string) {
-  const favorites = useFavoritesSelector((state) => state.favoritesByVolume[`${paneType}__${volumeId || "_default"}`] ?? []);
+  const volumeKey = `${paneType}__${volumeId || "_default"}`;
+  const favorites = useFavoritesSelector(
+    (state) => state.favoritesByVolume[volumeKey] ?? EMPTY_FAVORITES
+  );
 
   const addFavorite = useCallback(
     (path: string, name: string) => {
