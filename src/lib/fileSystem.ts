@@ -40,6 +40,8 @@ interface OctacardTestHooks {
     mono?: boolean;
     normalize?: boolean;
     trimStart?: boolean;
+    targetTempo?: number;
+    sourceTempo?: number;
     sourcePane: PaneType;
     destPane: PaneType;
   }) => Promise<FileSystemResult> | FileSystemResult;
@@ -715,6 +717,8 @@ class FileSystemService {
     mono?: boolean,
     normalize?: boolean,
     trimStart?: boolean,
+    targetTempo?: number,
+    sourceTempo?: number,
     sourcePane: PaneType = "source",
     destPane: PaneType = "dest",
   ): Promise<FileSystemResult> {
@@ -731,6 +735,8 @@ class FileSystemService {
         mono,
         normalize,
         trimStart,
+        targetTempo,
+        sourceTempo,
         sourcePane,
         destPane,
       });
@@ -754,7 +760,8 @@ class FileSystemService {
         normalize ||
         fileFormat === "WAV" ||
         trimStart ||
-        pitch === "C"
+        pitch === "C" ||
+        (targetTempo != null && sourceTempo != null)
       );
 
       let finalFile: File | Blob = sourceFile;
@@ -783,6 +790,9 @@ class FileSystemService {
           format: fileFormat as "WAV" | "dont-change",
           pitchToC,
           sourceFileName: fileName,
+          ...(targetTempo != null && sourceTempo != null
+            ? { targetTempo, sourceTempo }
+            : {}),
         });
 
         // Update filename: pitch first, then format extension

@@ -3,6 +3,7 @@ import { FilePane } from "@/components/FilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown, type FormatSettings } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
+import { HelpDialog } from "@/components/HelpDialog";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
@@ -15,12 +16,13 @@ import {
 } from "@/components/ui/dialog";
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
-import { Play } from "lucide-react";
+import { Play, HelpCircle } from "lucide-react";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
 import { useAppOptionsStore } from "@/stores/app-options-store";
 import { capture } from "@/lib/analytics";
+import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -47,6 +49,7 @@ function isSafari(): boolean {
 
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const devMode = useAppOptionsStore((currentState) => currentState.devMode);
   const setDevMode = useAppOptionsStore((currentState) => currentState.setDevMode);
   const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
@@ -71,6 +74,7 @@ const Index = () => {
     mono: false,
     normalize: false,
     trim: false,
+    tempo: "dont-change",
   });
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<{
@@ -232,8 +236,53 @@ const Index = () => {
         ? entry.path.slice(sourcePrefix.length)
         : entry.name;
       const dirParts = relativePath.split("/");
-      const fileName = dirParts.pop() || entry.name;
-      const destDir = dirParts.length ? `${destinationBasePath}/${dirParts.join("/")}` : destinationBasePath;
+      let fileName = dirParts.pop() || entry.name;
+
+      // Parse BPM: filename first, then immediate parent folder
+      let bpmResult = parseBpmFromString(entry.name);
+      let tempoFromFolder = false;
+      let parentFolderName: string | undefined;
+      if (!bpmResult) {
+        const pathParts = entry.path.split("/").filter(Boolean);
+        if (pathParts.length >= 2) {
+          parentFolderName = pathParts[pathParts.length - 2];
+          bpmResult = parentFolderName
+            ? parseBpmFromString(parentFolderName)
+            : null;
+          tempoFromFolder = !!bpmResult;
+        }
+      }
+
+      const targetBpm =
+        formatSettings.tempo !== "dont-change"
+          ? parseInt(formatSettings.tempo, 10)
+          : undefined;
+      const sourceBpm = bpmResult?.bpm;
+      const applyTempo =
+        targetBpm != null &&
+        Number.isFinite(targetBpm) &&
+        sourceBpm != null &&
+        formatSettings.tempo !== "dont-change";
+
+      let destDir = dirParts.length
+        ? `${destinationBasePath}/${dirParts.join("/")}`
+        : destinationBasePath;
+
+      if (applyTempo) {
+        if (tempoFromFolder && parentFolderName) {
+          const updatedDirParts = dirParts.map((p) =>
+            p === parentFolderName
+              ? replaceBpmInString(p, sourceBpm, targetBpm)
+              : p
+          );
+          destDir =
+            updatedDirParts.length > 0
+              ? `${destinationBasePath}/${updatedDirParts.join("/")}`
+              : destinationBasePath;
+        } else {
+          fileName = replaceBpmInString(entry.name, sourceBpm, targetBpm);
+        }
+      }
 
       const result = await fileSystemService.convertAndCopyFile(
         entry.path,
@@ -246,6 +295,8 @@ const Index = () => {
         formatSettings.mono,
         formatSettings.normalize,
         formatSettings.trim,
+        applyTempo ? targetBpm : undefined,
+        applyTempo ? sourceBpm : undefined,
         "source",
         "dest"
       );
@@ -283,7 +334,8 @@ const Index = () => {
       formatSettings.pitch !== "dont-change" ||
       formatSettings.mono ||
       formatSettings.normalize ||
-      formatSettings.trim;
+      formatSettings.trim ||
+      formatSettings.tempo !== "dont-change";
 
     capture("octacard_conversion_completed", {
       file_count: files.length,
@@ -297,6 +349,7 @@ const Index = () => {
         mono: formatSettings.mono,
         normalize: formatSettings.normalize,
         trimStart: formatSettings.trim,
+        tempo: formatSettings.tempo,
       },
     });
     } catch (err) {
@@ -313,7 +366,8 @@ const Index = () => {
         formatSettings.fileFormat !== "dont-change" ||
         formatSettings.mono ||
         formatSettings.normalize ||
-        formatSettings.trim;
+        formatSettings.trim ||
+        formatSettings.tempo !== "dont-change";
 
       capture("octacard_conversion_failed", {
         file_count: files.length,
@@ -325,6 +379,7 @@ const Index = () => {
           mono: formatSettings.mono,
           normalize: formatSettings.normalize,
           trimStart: formatSettings.trim,
+          tempo: formatSettings.tempo,
         },
         error: err instanceof Error ? err.message : String(err),
       });
@@ -427,6 +482,15 @@ const Index = () => {
             Dev Mode
           </Button>
           <FormatDropdown settings={formatSettings} onSettingsChange={setFormatSettings} />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => setHelpOpen(true)}
+            aria-label="Help"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -552,6 +616,7 @@ const Index = () => {
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       <Dialog open={unsupportedBrowserDialogOpen} onOpenChange={setUnsupportedBrowserDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -582,6 +647,7 @@ const Index = () => {
             mono: formatSettings.mono,
             normalize: formatSettings.normalize,
             trimStart: formatSettings.trim,
+            tempo: formatSettings.tempo,
           }}
         />
       )}
