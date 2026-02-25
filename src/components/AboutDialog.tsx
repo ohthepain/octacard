@@ -16,6 +16,9 @@ interface AboutDialogProps {
 }
 
 export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
+  const termsUrl = "/terms-of-service.html";
+  const privacyUrl = "/privacy-policy.html";
+
   useEffect(() => {
     if (!open) return;
     capture("octacard_dialog_opened", { dialog_name: "about" });
@@ -59,15 +62,25 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
             </ul>
           </div>
 
-          <div className="pt-4 border-t border-border">
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={() => window.open("https://github.com/yourusername/octacard", "_blank")}
-            >
-              <ExternalLink className="w-4 h-4" />
-              View on GitHub
+          <div className="pt-4 border-t border-border space-y-2">
+            <Button variant="outline" className="w-full gap-2" asChild>
+              <a href="https://github.com/yourusername/octacard" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4" />
+                View on GitHub
+              </a>
             </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" className="w-full" asChild>
+                <a href={termsUrl} target="_blank" rel="noopener noreferrer">
+                  Terms of Service
+                </a>
+              </Button>
+              <Button variant="outline" className="w-full" asChild>
+                <a href={privacyUrl} target="_blank" rel="noopener noreferrer">
+                  Privacy Policy
+                </a>
+              </Button>
+            </div>
           </div>
 
           <div className="text-xs text-muted-foreground pt-2 space-y-1">
