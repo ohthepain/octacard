@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
-import { Play, FolderPlus } from "lucide-react";
+import { Play } from "lucide-react";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
@@ -103,6 +103,26 @@ const Index = () => {
   const handleRequestedDestPathHandled = useCallback(() => setRequestedDestPath(null), []);
   const handleRequestedSourceRevealPathHandled = useCallback(() => setRequestedSourceRevealPath(null), []);
   const handleRequestedDestRevealPathHandled = useCallback(() => setRequestedDestRevealPath(null), []);
+
+  const initializeRootDirectories = useCallback(async () => {
+    const result = await fileSystemService.requestRootDirectory();
+    if (result.success) {
+      setSourceRootVersion((v) => v + 1);
+      setDestRootVersion((v) => v + 1);
+      return true;
+    }
+    if (isSafari()) {
+      toast.error("Safari Not Supported", {
+        description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
+        duration: 8000,
+      });
+    } else if (result.error !== "User cancelled directory selection") {
+      toast.error("Failed to Browse Folder", {
+        description: result.error || "Unable to open folder picker. Please try again.",
+      });
+    }
+    return false;
+  }, []);
 
   const handleFileTransfer = (sourcePath: string, destinationPath: string) => {
     console.log("File transfer completed:", { sourcePath, destinationPath });
@@ -257,43 +277,35 @@ const Index = () => {
     }
   };
 
-  const handleSelectDirectory = async () => {
-    const result = await fileSystemService.requestRootDirectory();
-    if (result.success) {
-      setSourceRootVersion((v) => v + 1);
-      setDestRootVersion((v) => v + 1);
-    } else {
-      if (isSafari()) {
-        toast.error("Safari Not Supported", {
-          description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
-          duration: 8000,
-        });
-      } else {
-        toast.error("Failed to Select Directory", {
-          description: result.error || "Unable to open folder picker. Please try again.",
-        });
-      }
-    }
-  };
-
   const applyBrowseSelection = (
     paneType: "source" | "dest",
     selection: { reusedExistingRoot: boolean; virtualPath: string }
   ) => {
+    const revealPath = selection.virtualPath === "/" ? null : selection.virtualPath;
     if (paneType === "source") {
       if (!selection.reusedExistingRoot) {
         setSourceRootVersion((v) => v + 1);
       }
-      setRequestedSourceRevealPath(selection.virtualPath);
+      if (revealPath) {
+        setRequestedSourceRevealPath(revealPath);
+      }
     } else {
       if (!selection.reusedExistingRoot) {
         setDestRootVersion((v) => v + 1);
       }
-      setRequestedDestRevealPath(selection.virtualPath);
+      if (revealPath) {
+        setRequestedDestRevealPath(revealPath);
+      }
     }
   };
 
   const handleBrowseForFolder = async (paneType: "source" | "dest", currentPath?: string) => {
+    if (!fileSystemService.hasRootDirectory()) {
+      const initialized = await initializeRootDirectories();
+      if (initialized) {
+        return;
+      }
+    }
     const result = await fileSystemService.requestDirectoryForPane(paneType, currentPath);
     if (result.success && result.data) {
       applyBrowseSelection(paneType, result.data);
@@ -340,12 +352,6 @@ const Index = () => {
             </div>
             <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
           </div>
-          {!fileSystemService.hasRootDirectory() && (
-            <Button variant="outline" size="sm" onClick={handleSelectDirectory} className="gap-2">
-              <FolderPlus className="w-4 h-4" />
-              Select Directory
-            </Button>
-          )}
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
