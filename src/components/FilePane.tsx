@@ -41,6 +41,7 @@ import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
+import { capture } from "@/lib/analytics";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -1553,19 +1554,6 @@ export const FilePane = ({
       e.dataTransfer.setData("isMultiple", "false");
     }
     e.dataTransfer.effectAllowed = "copy";
-    // #region agent log
-    fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "FilePane.tsx:handleDragStart",
-        message: "dragStart",
-        data: { path: node.path, type: node.type },
-        timestamp: Date.now(),
-        hypothesisId: "H3",
-      }),
-    }).catch(() => {});
-    // #endregion
   };
 
   const handleDragOver = (e: React.DragEvent, node?: FileNode) => {
@@ -1633,6 +1621,15 @@ export const FilePane = ({
         }
       }
 
+      capture("octacard_copy_started", {
+        file_count: totalFiles,
+        item_count: items.length,
+        is_external: isExternal,
+        source_pane: sourcePane,
+        dest_pane: "dest",
+        convert_files: convertFiles,
+      });
+
       // Only show progress for multiple files
       const showProgress = totalFiles > 1;
       if (showProgress) {
@@ -1645,6 +1642,8 @@ export const FilePane = ({
       }
 
       let currentFileIndex = 0;
+      let convertedFileCount = 0;
+      let copiedFileCount = 0;
       const errors: Array<{ name: string; error: string }> = [];
 
       // Helper to copy folder recursively with progress tracking
@@ -1691,6 +1690,7 @@ export const FilePane = ({
 
               let copyResult;
               if (needsConversion) {
+                convertedFileCount++;
                 copyResult = await fileSystemService.convertAndCopyFile(
                   entry.path,
                   dirname(finalDestPath),
@@ -1705,6 +1705,7 @@ export const FilePane = ({
                   "dest",
                 );
               } else {
+                copiedFileCount++;
                 copyResult = await fileSystemService.copyFile(
                   entry.path,
                   dirname(entryDestPath),
@@ -1767,6 +1768,7 @@ export const FilePane = ({
 
           let result;
           if (needsConversion) {
+            convertedFileCount++;
             result = await fileSystemService.convertAndCopyFile(
               item.path,
               dirname(finalDestFilePath),
@@ -1781,6 +1783,7 @@ export const FilePane = ({
               "dest",
             );
           } else {
+            copiedFileCount++;
             result = await fileSystemService.copyFile(
               item.path,
               dirname(destFilePath),
@@ -1817,6 +1820,18 @@ export const FilePane = ({
           .join("\n")}`;
         alert(errorMessage);
       }
+
+      capture("octacard_copy_completed", {
+        file_count: totalFiles,
+        item_count: items.length,
+        error_count: errors.length,
+        converted_file_count: convertedFileCount,
+        copied_file_count: copiedFileCount,
+        is_external: isExternal,
+        source_pane: sourcePane,
+        dest_pane: "dest",
+        convert_files: convertFiles,
+      });
     },
     [
       countFilesRecursively,
@@ -2067,7 +2082,19 @@ export const FilePane = ({
 
     let currentFileIndex = 0;
     const totalFiles = itemsToProcess.length;
+    let convertedFileCount = 0;
+    let copiedFileCount = 0;
     const showProgress = totalFiles > 1;
+
+    capture("octacard_copy_started", {
+      file_count: totalFiles,
+      item_count: totalFiles,
+      is_external: true,
+      flow: "external_drop",
+      source_pane: "external",
+      dest_pane: paneType,
+      convert_files: true,
+    });
 
     if (showProgress) {
       setCopyProgress({
@@ -2125,6 +2152,7 @@ export const FilePane = ({
 
         let result;
         if (needsConversion) {
+          convertedFileCount++;
           // Add file first, then convert it
           const addResult = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
           if (addResult.success && addResult.data) {
@@ -2146,6 +2174,7 @@ export const FilePane = ({
             result = addResult;
           }
         } else {
+          copiedFileCount++;
           result = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
         }
 
@@ -2175,6 +2204,19 @@ export const FilePane = ({
         .join("\n")}`;
       alert(errorMessage);
     }
+
+    capture("octacard_copy_completed", {
+      file_count: totalFiles,
+      item_count: totalFiles,
+      error_count: errors.length,
+      converted_file_count: convertedFileCount,
+      copied_file_count: copiedFileCount,
+      is_external: true,
+      flow: "external_drop",
+      source_pane: "external",
+      dest_pane: paneType,
+      convert_files: true,
+    });
 
     // Clear pending state
     setPendingConversionItems(null);

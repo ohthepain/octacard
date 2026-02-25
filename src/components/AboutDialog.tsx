@@ -7,6 +7,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
+import { useEffect } from "react";
+import { capture } from "@/lib/analytics";
 
 interface AboutDialogProps {
   open: boolean;
@@ -14,8 +16,21 @@ interface AboutDialogProps {
 }
 
 export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
+  useEffect(() => {
+    if (!open) return;
+    capture("octacard_dialog_opened", { dialog_name: "about" });
+  }, [open]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && open) {
+          capture("octacard_dialog_closed", { dialog_name: "about" });
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

@@ -20,6 +20,7 @@ import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
 import { useAppOptionsStore } from "@/stores/app-options-store";
+import { capture } from "@/lib/analytics";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -88,6 +89,11 @@ const Index = () => {
       setUnsupportedBrowserDialogOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!unsupportedBrowserDialogOpen) return;
+    capture("octacard_dialog_opened", { dialog_name: "unsupported_browser" });
+  }, [unsupportedBrowserDialogOpen]);
 
   const handleSourcePathChange = useCallback((path: string, volumeId: string) => {
     setSourcePath(path);
@@ -247,12 +253,56 @@ const Index = () => {
         }
       );
     }
+
+    const hasConversion =
+      formatSettings.sampleRate !== "dont-change" ||
+      formatSettings.sampleDepth !== "dont-change" ||
+      formatSettings.fileFormat !== "dont-change" ||
+      formatSettings.mono ||
+      formatSettings.normalize ||
+      formatSettings.trim;
+
+    capture("octacard_conversion_completed", {
+      file_count: files.length,
+      error_count: errors.length,
+      has_conversion: hasConversion,
+      settings: {
+        sampleRate: formatSettings.sampleRate,
+        sampleDepth: formatSettings.sampleDepth,
+        fileFormat: formatSettings.fileFormat,
+        mono: formatSettings.mono,
+        normalize: formatSettings.normalize,
+        trimStart: formatSettings.trim,
+      },
+    });
     } catch (err) {
       setConversionProgress(null);
       setPendingConversionRequest(null);
       toast.error("Conversion Failed", {
         description: err instanceof Error ? err.message : "Unable to convert files.",
         duration: 6000,
+      });
+
+      const hasConversion =
+        formatSettings.sampleRate !== "dont-change" ||
+        formatSettings.sampleDepth !== "dont-change" ||
+        formatSettings.fileFormat !== "dont-change" ||
+        formatSettings.mono ||
+        formatSettings.normalize ||
+        formatSettings.trim;
+
+      capture("octacard_conversion_failed", {
+        file_count: files.length,
+        has_conversion: hasConversion,
+        settings: {
+          sampleRate: formatSettings.sampleRate,
+          sampleDepth: formatSettings.sampleDepth,
+          fileFormat: formatSettings.fileFormat,
+          mono: formatSettings.mono,
+          normalize: formatSettings.normalize,
+          trimStart: formatSettings.trim,
+        },
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   };
@@ -384,7 +434,12 @@ const Index = () => {
           orientation="horizontal"
           className="flex-1 min-w-0"
           id="main-layout"
-          defaultLayout={[20, 30, 30, 20]}
+          defaultLayout={{
+            "left-fav": 20,
+            "source-browser": 30,
+            "dest-browser": 30,
+            "right-fav": 20,
+          }}
         >
           {/* Left: Source Favorites - only this separator affects favorites vs center */}
           <ResizablePanel id="left-fav" defaultSize="20%" minSize="10%" maxSize="30%">

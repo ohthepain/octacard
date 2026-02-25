@@ -7,6 +7,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useEffect, useRef } from "react";
+import { capture } from "@/lib/analytics";
 
 interface ConversionConfirmDialogProps {
   open: boolean;
@@ -30,6 +32,7 @@ export const ConversionConfirmDialog = ({
   fileCount,
   settings,
 }: ConversionConfirmDialogProps) => {
+  const wasOpenRef = useRef(false);
   const hasConversion =
     settings.sampleRate !== "dont-change" ||
     settings.sampleDepth !== "dont-change" ||
@@ -85,8 +88,40 @@ export const ConversionConfirmDialog = ({
     return parts.length > 0 ? parts.join(", ") : "No conversion (copy only)";
   };
 
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (open && !wasOpen) {
+      capture("octacard_dialog_opened", {
+        dialog_name: "conversion_confirm",
+        file_count: fileCount,
+        has_conversion: hasConversion,
+        settings: {
+          sampleRate: settings.sampleRate,
+          sampleDepth: settings.sampleDepth,
+          fileFormat: settings.fileFormat,
+          mono: settings.mono,
+          normalize: settings.normalize,
+          trimStart: settings.trimStart,
+        },
+      });
+    }
+  }, [open, fileCount, hasConversion, settings.sampleRate, settings.sampleDepth, settings.fileFormat, settings.mono, settings.normalize, settings.trimStart]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && open) {
+          capture("octacard_dialog_closed", {
+            dialog_name: "conversion_confirm",
+            file_count: fileCount,
+            has_conversion: hasConversion,
+          });
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{titleLabel}</DialogTitle>
@@ -99,10 +134,38 @@ export const ConversionConfirmDialog = ({
           <div className="mt-2 text-sm">{formatSettings()}</div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              capture("octacard_dialog_cancelled", {
+                dialog_name: "conversion_confirm",
+                file_count: fileCount,
+                has_conversion: hasConversion,
+              });
+              onOpenChange(false);
+            }}
+          >
             Cancel
           </Button>
-          <Button onClick={onConfirm}>{actionLabel}</Button>
+          <Button
+            onClick={() => {
+              capture("octacard_conversion_confirmed", {
+                file_count: fileCount,
+                has_conversion: hasConversion,
+                settings: {
+                  sampleRate: settings.sampleRate,
+                  sampleDepth: settings.sampleDepth,
+                  fileFormat: settings.fileFormat,
+                  mono: settings.mono,
+                  normalize: settings.normalize,
+                  trimStart: settings.trimStart,
+                },
+              });
+              onConfirm();
+            }}
+          >
+            {actionLabel}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
