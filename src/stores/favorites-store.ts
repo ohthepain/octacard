@@ -14,6 +14,7 @@ interface FavoritesState {
 const LEGACY_STORAGE_PREFIX = "octacard_favorites";
 const STORE_STORAGE_KEY = "octacard_favorites_store_v1";
 const EMPTY_STATE: FavoritesState = { favoritesByVolume: {} };
+const EMPTY_FAVORITES: Favorite[] = [];
 
 function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof localStorage !== "undefined";
@@ -141,7 +142,7 @@ export const favoritesStore = {
   },
   getFavorites(paneType: FavoritePaneType, volumeId: string): Favorite[] {
     const key = getVolumeKey(paneType, volumeId);
-    return state.favoritesByVolume[key] ?? [];
+    return state.favoritesByVolume[key] ?? EMPTY_FAVORITES;
   },
   addFavorite(paneType: FavoritePaneType, volumeId: string, path: string, name: string) {
     const key = getVolumeKey(paneType, volumeId);
