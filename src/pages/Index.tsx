@@ -67,6 +67,7 @@ const Index = () => {
     fileFormat: "dont-change",
     sampleRate: "dont-change",
     sampleDepth: "dont-change",
+    pitch: "dont-change",
     mono: false,
     normalize: false,
     trim: false,
@@ -241,6 +242,7 @@ const Index = () => {
         targetSampleRate,
         formatSettings.sampleDepth === "dont-change" ? undefined : formatSettings.sampleDepth,
         formatSettings.fileFormat === "dont-change" ? undefined : formatSettings.fileFormat,
+        formatSettings.pitch === "dont-change" ? undefined : formatSettings.pitch,
         formatSettings.mono,
         formatSettings.normalize,
         formatSettings.trim,
@@ -278,6 +280,7 @@ const Index = () => {
       formatSettings.sampleRate !== "dont-change" ||
       formatSettings.sampleDepth !== "dont-change" ||
       formatSettings.fileFormat !== "dont-change" ||
+      formatSettings.pitch !== "dont-change" ||
       formatSettings.mono ||
       formatSettings.normalize ||
       formatSettings.trim;
@@ -290,6 +293,7 @@ const Index = () => {
         sampleRate: formatSettings.sampleRate,
         sampleDepth: formatSettings.sampleDepth,
         fileFormat: formatSettings.fileFormat,
+        pitch: formatSettings.pitch,
         mono: formatSettings.mono,
         normalize: formatSettings.normalize,
         trimStart: formatSettings.trim,
@@ -482,6 +486,7 @@ const Index = () => {
                 sampleRate={formatSettings.sampleRate}
                 sampleDepth={formatSettings.sampleDepth}
                 fileFormat={formatSettings.fileFormat}
+                pitch={formatSettings.pitch}
                 mono={formatSettings.mono}
                 normalize={formatSettings.normalize}
                 trimStart={formatSettings.trim}
@@ -517,6 +522,7 @@ const Index = () => {
                 sampleRate={formatSettings.sampleRate}
                 sampleDepth={formatSettings.sampleDepth}
                 fileFormat={formatSettings.fileFormat}
+                pitch={formatSettings.pitch}
                 mono={formatSettings.mono}
                 normalize={formatSettings.normalize}
                 trimStart={formatSettings.trim}
@@ -572,6 +578,7 @@ const Index = () => {
             sampleRate: formatSettings.sampleRate,
             sampleDepth: formatSettings.sampleDepth,
             fileFormat: formatSettings.fileFormat,
+            pitch: formatSettings.pitch,
             mono: formatSettings.mono,
             normalize: formatSettings.normalize,
             trimStart: formatSettings.trim,

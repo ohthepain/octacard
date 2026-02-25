@@ -19,6 +19,7 @@ interface ConversionConfirmDialogProps {
     sampleRate: string;
     sampleDepth: string;
     fileFormat: string;
+    pitch: string;
     mono: boolean;
     normalize: boolean;
     trimStart: boolean;
@@ -37,6 +38,7 @@ export const ConversionConfirmDialog = ({
     settings.sampleRate !== "dont-change" ||
     settings.sampleDepth !== "dont-change" ||
     settings.fileFormat !== "dont-change" ||
+    settings.pitch !== "dont-change" ||
     settings.mono ||
     settings.normalize ||
     settings.trimStart;
@@ -75,6 +77,9 @@ export const ConversionConfirmDialog = ({
     if (settings.fileFormat !== "dont-change") {
       parts.push(`Format: ${settings.fileFormat}`);
     }
+    if (settings.pitch !== "dont-change") {
+      parts.push(`Pitch: ${settings.pitch}`);
+    }
     if (settings.mono) {
       parts.push("Mono");
     }
@@ -100,6 +105,7 @@ export const ConversionConfirmDialog = ({
           sampleRate: settings.sampleRate,
           sampleDepth: settings.sampleDepth,
           fileFormat: settings.fileFormat,
+          pitch: settings.pitch,
           mono: settings.mono,
           normalize: settings.normalize,
           trimStart: settings.trimStart,

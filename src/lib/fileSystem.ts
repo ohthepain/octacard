@@ -36,6 +36,7 @@ interface OctacardTestHooks {
     targetSampleRate?: number;
     sampleDepth?: string;
     fileFormat?: string;
+    pitch?: string;
     mono?: boolean;
     normalize?: boolean;
     trimStart?: boolean;
@@ -710,6 +711,7 @@ class FileSystemService {
     targetSampleRate?: number,
     sampleDepth?: string,
     fileFormat?: string,
+    pitch?: string,
     mono?: boolean,
     normalize?: boolean,
     trimStart?: boolean,
@@ -725,6 +727,7 @@ class FileSystemService {
         targetSampleRate,
         sampleDepth,
         fileFormat,
+        pitch,
         mono,
         normalize,
         trimStart,
@@ -750,11 +753,23 @@ class FileSystemService {
         mono ||
         normalize ||
         fileFormat === "WAV" ||
-        trimStart
+        trimStart ||
+        pitch === "C"
       );
 
       let finalFile: File | Blob = sourceFile;
       let finalFileName = fileName;
+
+      // Compute pitch-to-C filename if applicable
+      const pitchToC = pitch === "C";
+      let pitchFileName = fileName;
+      if (pitchToC) {
+        const { analyzeFilenameForNote } = await import("./batch-math");
+        const analysis = analyzeFilenameForNote(fileName);
+        if (analysis && analysis.semitonesDownToC !== 0) {
+          pitchFileName = fileName.replace(analysis.originalString, "C");
+        }
+      }
 
       // Perform conversion if needed
       if (needsConversion) {
@@ -766,11 +781,14 @@ class FileSystemService {
           normalize,
           trimStart,
           format: fileFormat as "WAV" | "dont-change",
+          pitchToC,
+          sourceFileName: fileName,
         });
 
-        // Update filename extension if converting to WAV
+        // Update filename: pitch first, then format extension
+        finalFileName = pitchFileName;
         if (fileFormat === "WAV") {
-          finalFileName = fileName.replace(/\.\w+$/i, ".wav");
+          finalFileName = finalFileName.replace(/\.\w+$/i, ".wav");
         }
 
         finalFile = convertedBlob;
