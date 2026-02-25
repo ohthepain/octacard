@@ -82,6 +82,12 @@ export const SampleFormatDialog = ({
                   44100 Hz
                 </Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="48000" id="48000" />
+                <Label htmlFor="48000" className="text-sm font-normal cursor-pointer text-foreground">
+                  48000 Hz
+                </Label>
+              </div>
             </RadioGroup>
           </div>
 

@@ -8,6 +8,7 @@ import { assertRevealInFinderDest } from "../../tests/reveal-in-finder-dest.mjs"
 import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
 import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
+import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
@@ -210,6 +211,7 @@ try {
   await devModeButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
+  await assertSampleRateOptions(page);
   const convertBox = await convertButton.boundingBox();
   const formatBox = await formatButton.boundingBox();
   assert.ok(convertBox, "Expected convert button to have a visible bounding box.");
