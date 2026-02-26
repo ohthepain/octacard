@@ -17,6 +17,7 @@ import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-previe
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
+import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -115,9 +116,11 @@ try {
     const root = new MockDirectoryHandle("Root");
     const alpha = root.addDirectory(new MockDirectoryHandle("Alpha"));
     const beta = root.addDirectory(new MockDirectoryHandle("Beta"));
+    const guitars = alpha.addDirectory(new MockDirectoryHandle("Guitars"));
     const longNames = root.addDirectory(new MockDirectoryHandle("LongNames"));
     const bulk = root.addDirectory(new MockDirectoryHandle("Bulk"));
     alpha.addFile("inside-alpha.wav", 128);
+    guitars.addFile("clean_gtr_center.wav", 128);
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
     longNames.addFile(
@@ -409,6 +412,7 @@ try {
   });
   const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
   await destBetaNode.waitFor({ state: "visible" });
+  await assertDragFolderDropConvertsWithoutConfirmation(page);
 
   await page.getByTestId("tree-node-source-_Alpha").click();
   await destBetaNode.click();
