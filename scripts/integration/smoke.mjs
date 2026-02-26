@@ -17,6 +17,7 @@ import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-previe
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
+import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -506,6 +507,9 @@ try {
     "/Alpha",
     "When source and destination folder names match, conversion should copy only the source contents.",
   );
+
+  await assertDragDropConvertsWithFormat(page);
+
   assert.equal(domNestingWarnings.length, 0, "No DOM nesting warnings should be emitted during conversion flow.");
 
   const title = await page.title();
