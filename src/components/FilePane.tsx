@@ -74,6 +74,15 @@ function dirname(filePath: string): string {
   return filePath.startsWith("/") ? "/" + parentParts.join("/") : parentParts.join("/");
 }
 
+function isNoOpDrop(sourcePath: string, sourceType: "file" | "folder", destinationPath: string): boolean {
+  const n = (p: string) => (p === "/" || p === "" ? "/" : p.replace(/\/+$/, ""));
+  const src = n(sourcePath);
+  const dst = n(destinationPath);
+  if (src === dst) return true; // dropping on self
+  if (sourceType === "file" && n(dirname(sourcePath)) === dst) return true; // file into own folder
+  return false;
+}
+
 function isAudioFile(fileName: string): boolean {
   return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
 }
@@ -369,6 +378,7 @@ export const FilePane = ({
       setCurrentRootPath("/");
       setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
       await refreshAvailableVolumes();
+      void fileSystemService.ensureSearchIndex(paneType);
       await loadDirectory("/", "root");
     }
   }, []);
@@ -383,6 +393,7 @@ export const FilePane = ({
       setCurrentRootPath("/");
       setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
       void refreshAvailableVolumes();
+      void fileSystemService.ensureSearchIndex(paneType);
       loadDirectory("/", "root");
     }
   }, []);
@@ -1562,9 +1573,12 @@ export const FilePane = ({
 
   const handleContainerDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     e.dataTransfer.dropEffect = "copy";
-    // Clear any folder drag state when dragging over empty space
+    // Don't override folder highlight when dragging over a tree node (folder/file row)
+    if (e.target instanceof Element && e.target.closest('[data-testid^="tree-node-"]')) {
+      return;
+    }
+    e.stopPropagation();
     if (dragOverPath) {
       setDragOverPath(null);
     }
@@ -1590,6 +1604,17 @@ export const FilePane = ({
     const y = e.clientY;
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
       setIsDraggingOverRoot(false);
+      setDragOverPath(null);
+    }
+  };
+
+  const handlePaneDragLeave = (e: React.DragEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setIsDraggingOverRoot(false);
+      setIsDraggingOverBreadcrumb(false);
       setDragOverPath(null);
     }
   };
@@ -2069,7 +2094,12 @@ export const FilePane = ({
           return;
         }
 
-        await copyMultipleItems(itemsToCopy, destinationPath, destinationNode, false, sourcePane);
+        const filtered = itemsToCopy.filter(
+          (item) => !isNoOpDrop(item.path, item.type, destinationPath)
+        );
+        if (filtered.length === 0) return;
+
+        await copyMultipleItems(filtered, destinationPath, destinationNode, false, sourcePane);
         return;
       }
     }
@@ -2139,9 +2169,12 @@ export const FilePane = ({
         ];
       }
 
-      if (itemsToCopy.length > 0) {
+      const filtered = itemsToCopy.filter(
+        (item) => !isNoOpDrop(item.path, item.type, destinationPath)
+      );
+      if (filtered.length > 0) {
         const sourcePane = sourcePaneData === "dest" ? "dest" : "source";
-        await copyMultipleItems(itemsToCopy, destinationPath, destinationNode, false, sourcePane);
+        await copyMultipleItems(filtered, destinationPath, destinationNode, false, sourcePane);
       }
       return;
     }
@@ -2492,7 +2525,7 @@ export const FilePane = ({
     }
   };
 
-  // Effect to search files using mdfind (macOS Spotlight) - much faster than recursive directory reading
+  // Effect to search files using shared in-memory index from FileSystemService
   useEffect(() => {
     if (!searchQuery || loading) {
       setIsSearchingFolders(false);
@@ -2530,10 +2563,9 @@ export const FilePane = ({
       setIsSearchingFolders(true);
 
       try {
-        console.log("Searching with mdfind:", currentSearchQuery);
-        // Optionally limit search to current root path or search entire system
+        // Optionally limit search to current root path or search entire selected root
         const searchPath = currentRootPath || undefined;
-        const result = await fileSystemService.searchFiles(currentSearchQuery, searchPath, paneType);
+        const result = await fileSystemService.searchFilesIndexed(currentSearchQuery, searchPath, paneType);
 
         // Double-check this search is still valid (query hasn't changed)
         if (cancelled || currentSearchQueryRef.current !== currentSearchQuery) {
@@ -2673,6 +2705,11 @@ export const FilePane = ({
                 data-expanded={node.type === "folder" && isExpanded ? "true" : "false"}
                 draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
                 onDragStart={(e) => !isParentLink && handleDragStart(e, node)}
+                onDragEnd={() => {
+                  setDragOverPath(null);
+                  setIsDraggingOverRoot(false);
+                  setIsDraggingOverBreadcrumb(false);
+                }}
                 onDragOver={(e) => {
                   if (!isParentLink && node.type === "folder") {
                     handleDragOver(e, node);
@@ -3025,7 +3062,11 @@ export const FilePane = ({
   };
 
   return (
-    <div ref={paneContainerRef} className="flex h-full w-full min-w-0 bg-background overflow-hidden">
+    <div
+      ref={paneContainerRef}
+      className="flex h-full w-full min-w-0 bg-background overflow-hidden"
+      onDragLeave={handlePaneDragLeave}
+    >
       {/* Left Sidebar - Finder style (hidden when showSidebar=false) */}
       {showSidebar && (
         <div className="w-56 bg-muted border-r border-border flex flex-col shrink-0 h-full overflow-hidden">

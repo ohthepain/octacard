@@ -19,6 +19,7 @@ import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
 import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
 import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
+import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReindex } from "../../tests/search-indexing.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -78,6 +79,7 @@ try {
       }
 
       async *entries() {
+        window.__readDirectoryCalls = (window.__readDirectoryCalls ?? 0) + 1;
         for (const entry of this.children.entries()) {
           yield entry;
         }
@@ -162,6 +164,7 @@ try {
     window.__listCalls = [];
     window.__convertCalls = [];
     window.__revealCalls = [];
+    window.__readDirectoryCalls = 0;
     window.__octacardTestHooks = {
       listAudioFilesRecursively: ({ startPath, paneType }) => {
         window.__listCalls.push({ startPath, paneType });
@@ -333,6 +336,7 @@ try {
     "Beta",
     "Destination favorite should open picker starting from destination favorite folder.",
   );
+  await assertIndexedSearchUsesCache(page);
 
   const sourcePanelLocator = page.getByTestId("panel-source");
   await page.evaluate(() => {
@@ -457,6 +461,7 @@ try {
   assert.equal(convertCalls[0].targetSampleRate, 44100, "Conversion should pass sample rate in Hz.");
   assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
   await assertDestRefreshAfterConvert(page);
+  await assertSearchFindsConvertedFileAfterReindex(page);
 
   await page.evaluate(() => {
     window.__listCalls = [];
