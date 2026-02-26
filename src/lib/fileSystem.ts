@@ -19,6 +19,18 @@ export interface FileSystemResult<T = any> {
   cancelled?: boolean;
 }
 
+interface SearchIndexEntry extends FileSystemEntry {
+  lowerName: string;
+  parentPath: string;
+}
+
+interface RootSearchIndex {
+  entriesByPath: Map<string, SearchIndexEntry>;
+  buildPromise: Promise<void> | null;
+  ready: boolean;
+  version: number;
+}
+
 export interface PaneDirectorySelection {
   handle: FileSystemDirectoryHandle;
   virtualPath: string;
@@ -190,7 +202,13 @@ class HandleRegistry {
           return currentPath;
         }
 
-        for await (const [name, childHandle] of currentHandle.entries()) {
+        const entriesFn = (currentHandle as any).entries;
+        if (typeof entriesFn !== "function") {
+          return null;
+        }
+        for await (const [name, childHandle] of entriesFn.call(currentHandle) as AsyncIterable<
+          [string, FileSystemHandle]
+        >) {
           if (childHandle.kind !== "directory") {
             continue;
           }
@@ -248,6 +266,7 @@ export type PaneType = "source" | "dest";
 class FileSystemService {
   private sourceRegistry = new HandleRegistry();
   private destRegistry = new HandleRegistry();
+  private searchIndexesByRoot = new WeakMap<FileSystemDirectoryHandle, RootSearchIndex>();
 
   private getRegistry(paneType: PaneType): HandleRegistry {
     return paneType === "source" ? this.sourceRegistry : this.destRegistry;
@@ -259,6 +278,229 @@ class FileSystemService {
     const parts = normalized.split("/").filter(Boolean);
     parts.pop();
     return parts.length ? `/${parts.join("/")}` : "/";
+  }
+
+  private normalizeVirtualPath(path: string): string {
+    const parts = path.split("/").filter(Boolean);
+    return "/" + parts.join("/");
+  }
+
+  private isPathWithin(basePath: string, candidatePath: string): boolean {
+    const normalizedBase = this.normalizeVirtualPath(basePath);
+    const normalizedCandidate = this.normalizeVirtualPath(candidatePath);
+    if (normalizedBase === "/") return true;
+    return normalizedCandidate === normalizedBase || normalizedCandidate.startsWith(`${normalizedBase}/`);
+  }
+
+  private getRootHandleForPane(paneType: PaneType): FileSystemDirectoryHandle | null {
+    return this.getRegistry(paneType).getRoot();
+  }
+
+  private async *iterateDirectoryEntries(
+    directoryHandle: FileSystemDirectoryHandle,
+  ): AsyncGenerator<[string, FileSystemHandle], void, unknown> {
+    const entriesFn = (directoryHandle as any).entries;
+    if (typeof entriesFn !== "function") {
+      return;
+    }
+    for await (const entry of entriesFn.call(directoryHandle) as AsyncIterable<[string, FileSystemHandle]>) {
+      yield entry;
+    }
+  }
+
+  private getOrCreateSearchIndex(paneType: PaneType): RootSearchIndex | null {
+    const rootHandle = this.getRootHandleForPane(paneType);
+    if (!rootHandle) {
+      return null;
+    }
+    const existing = this.searchIndexesByRoot.get(rootHandle);
+    if (existing) {
+      return existing;
+    }
+    const created: RootSearchIndex = {
+      entriesByPath: new Map<string, SearchIndexEntry>(),
+      buildPromise: null,
+      ready: false,
+      version: 0,
+    };
+    this.searchIndexesByRoot.set(rootHandle, created);
+    return created;
+  }
+
+  private async collectSearchEntriesRecursive(
+    virtualPath: string,
+    paneType: PaneType,
+    output: SearchIndexEntry[],
+  ): Promise<void> {
+    const entries = await this.readDirectory(virtualPath, paneType);
+    if (!entries.success || !entries.data) {
+      return;
+    }
+
+    for (const entry of entries.data) {
+      output.push({
+        ...entry,
+        lowerName: entry.name.toLowerCase(),
+        parentPath: this.getParentPath(entry.path),
+      });
+      if (entry.isDirectory) {
+        await this.collectSearchEntriesRecursive(entry.path, paneType, output);
+      }
+    }
+  }
+
+  private async rebuildSearchIndex(paneType: PaneType, index: RootSearchIndex): Promise<void> {
+    const collected: SearchIndexEntry[] = [];
+    await this.collectSearchEntriesRecursive("/", paneType, collected);
+
+    index.entriesByPath.clear();
+    for (const entry of collected) {
+      index.entriesByPath.set(entry.path, entry);
+    }
+    index.ready = true;
+    index.version += 1;
+  }
+
+  async ensureSearchIndex(paneType: PaneType = "source"): Promise<FileSystemResult> {
+    if (!this.hasRootForPane(paneType)) {
+      return {
+        success: false,
+        error: "No root directory selected",
+      };
+    }
+
+    const index = this.getOrCreateSearchIndex(paneType);
+    if (!index) {
+      return {
+        success: false,
+        error: "No root directory selected",
+      };
+    }
+
+    if (index.ready) {
+      return { success: true };
+    }
+
+    if (!index.buildPromise) {
+      index.buildPromise = this.rebuildSearchIndex(paneType, index)
+        .catch((error) => {
+          index.ready = false;
+          throw error;
+        })
+        .finally(() => {
+          index.buildPromise = null;
+        });
+    }
+
+    try {
+      await index.buildPromise;
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  }
+
+  async clearSearchIndexForPaneRoot(paneType: PaneType = "source"): Promise<void> {
+    const rootHandle = this.getRootHandleForPane(paneType);
+    if (!rootHandle) return;
+    this.searchIndexesByRoot.delete(rootHandle);
+  }
+
+  async reindexSubtree(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
+    const ensured = await this.ensureSearchIndex(paneType);
+    if (!ensured.success) {
+      return ensured;
+    }
+
+    const index = this.getOrCreateSearchIndex(paneType);
+    if (!index) {
+      return {
+        success: false,
+        error: "No root directory selected",
+      };
+    }
+
+    const targetPath = this.normalizeVirtualPath(virtualPath || "/");
+
+    for (const existingPath of Array.from(index.entriesByPath.keys())) {
+      if (this.isPathWithin(targetPath, existingPath)) {
+        index.entriesByPath.delete(existingPath);
+      }
+    }
+
+    const collected: SearchIndexEntry[] = [];
+    try {
+      await this.collectSearchEntriesRecursive(targetPath, paneType, collected);
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+
+    for (const entry of collected) {
+      index.entriesByPath.set(entry.path, entry);
+    }
+    index.version += 1;
+
+    return { success: true };
+  }
+
+  async searchFilesIndexed(
+    query: string,
+    searchPath?: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<FileSystemEntry[]>> {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return { success: true, data: [] };
+    }
+
+    const ensured = await this.ensureSearchIndex(paneType);
+    if (!ensured.success) {
+      return {
+        success: false,
+        error: ensured.error,
+      };
+    }
+
+    const index = this.getOrCreateSearchIndex(paneType);
+    if (!index) {
+      return {
+        success: false,
+        error: "No root directory selected",
+      };
+    }
+
+    const scopePath = this.normalizeVirtualPath(searchPath || "/");
+    const results: FileSystemEntry[] = [];
+
+    for (const entry of index.entriesByPath.values()) {
+      if (!this.isPathWithin(scopePath, entry.path)) {
+        continue;
+      }
+      if (!entry.lowerName.includes(normalizedQuery)) {
+        continue;
+      }
+      results.push({
+        name: entry.name,
+        path: entry.path,
+        type: entry.type,
+        size: entry.size,
+        isDirectory: entry.isDirectory,
+        birthtime: entry.birthtime,
+        mtime: entry.mtime,
+        atime: entry.atime,
+      });
+    }
+
+    return {
+      success: true,
+      data: results,
+    };
   }
 
   private async pickDirectoryHandle(
@@ -298,6 +540,7 @@ class FileSystemService {
       const handle = await this.pickDirectoryHandle("root");
       await this.sourceRegistry.setRoot(handle);
       await this.destRegistry.setRoot(handle);
+      void this.ensureSearchIndex("source");
       return {
         success: true,
         data: handle,
@@ -347,6 +590,7 @@ class FileSystemService {
       const virtualPath = await registry.resolvePathFromRoot(handle);
 
       if (virtualPath) {
+        void this.ensureSearchIndex(paneType);
         return {
           success: true,
           data: {
@@ -358,6 +602,7 @@ class FileSystemService {
       }
 
       await registry.setRoot(handle);
+      void this.ensureSearchIndex(paneType);
       return {
         success: true,
         data: {
@@ -451,7 +696,7 @@ class FileSystemService {
       const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
       const entries: FileSystemEntry[] = [];
 
-      for await (const [name, handle] of dirHandle.entries()) {
+      for await (const [name, handle] of this.iterateDirectoryEntries(dirHandle)) {
         // Skip hidden files/folders
         if (name.startsWith(".") || name.startsWith("~")) {
           continue;
@@ -529,7 +774,7 @@ class FileSystemService {
         };
       } catch {
         // Not a file, try as directory
-        const dirHandle = await registry.getDirectoryHandle(virtualPath);
+        await registry.getDirectoryHandle(virtualPath);
         return {
           success: true,
           data: {
@@ -555,6 +800,7 @@ class FileSystemService {
     try {
       const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
       await dirHandle.getDirectoryHandle(folderName, { create: true });
+      await this.reindexSubtree(virtualPath, paneType);
       return { success: true };
     } catch (error) {
       return {
@@ -567,11 +813,12 @@ class FileSystemService {
   async deleteFile(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
     try {
       const registry = this.getRegistry(paneType);
-      const fileHandle = await registry.getFileHandle(virtualPath);
+      await registry.getFileHandle(virtualPath);
       const dirPath = virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
       const dirHandle = await registry.getDirectoryHandle(dirPath);
       const fileName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
       await dirHandle.removeEntry(fileName);
+      await this.reindexSubtree(dirPath, paneType);
       return { success: true };
     } catch (error) {
       return {
@@ -584,11 +831,12 @@ class FileSystemService {
   async deleteFolder(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
     try {
       const registry = this.getRegistry(paneType);
-      const dirHandle = await registry.getDirectoryHandle(virtualPath);
+      await registry.getDirectoryHandle(virtualPath);
       const parentPath = virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
       const parentHandle = await registry.getDirectoryHandle(parentPath);
       const folderName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
       await parentHandle.removeEntry(folderName, { recursive: true });
+      await this.reindexSubtree(parentPath, paneType);
       return { success: true };
     } catch (error) {
       return {
@@ -624,6 +872,7 @@ class FileSystemService {
       const writable = await destFileHandle.createWritable();
       await writable.write(sourceFile);
       await writable.close();
+      await this.reindexSubtree(destVirtualPath, destPane);
 
       return { success: true };
     } catch (error) {
@@ -650,6 +899,7 @@ class FileSystemService {
 
       // Recursively copy all entries
       await this.copyFolderRecursive(sourceDirHandle, newFolderHandle);
+      await this.reindexSubtree(destVirtualPath, destPane);
 
       return { success: true };
     } catch (error) {
@@ -664,7 +914,7 @@ class FileSystemService {
     sourceHandle: FileSystemDirectoryHandle,
     destHandle: FileSystemDirectoryHandle,
   ): Promise<void> {
-    for await (const [name, handle] of sourceHandle.entries()) {
+    for await (const [name, handle] of this.iterateDirectoryEntries(sourceHandle)) {
       if (handle.kind === "directory") {
         const subFolderHandle = await destHandle.getDirectoryHandle(name, { create: true });
         await this.copyFolderRecursive(handle as FileSystemDirectoryHandle, subFolderHandle);
@@ -875,6 +1125,7 @@ class FileSystemService {
         };
       }
 
+      await this.reindexSubtree(destVirtualPath, destPane);
       return { success: true };
     } catch (error) {
       if (signal?.aborted) {
@@ -900,49 +1151,7 @@ class FileSystemService {
     searchPath?: string,
     paneType: PaneType = "source",
   ): Promise<FileSystemResult<FileSystemEntry[]>> {
-    // Simple recursive search implementation
-    try {
-      const startPath = searchPath || "/";
-      const results: FileSystemEntry[] = [];
-
-      await this.searchRecursive(startPath, query, results, paneType);
-
-      return {
-        success: true,
-        data: results,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: String(error),
-      };
-    }
-  }
-
-  private async searchRecursive(
-    virtualPath: string,
-    query: string,
-    results: FileSystemEntry[],
-    paneType: PaneType,
-  ): Promise<void> {
-    try {
-      const entries = await this.readDirectory(virtualPath, paneType);
-      if (!entries.success || !entries.data) {
-        return;
-      }
-
-      for (const entry of entries.data) {
-        if (entry.name.toLowerCase().includes(query.toLowerCase())) {
-          results.push(entry);
-        }
-        if (entry.isDirectory) {
-          await this.searchRecursive(entry.path, query, results, paneType);
-        }
-      }
-    } catch (error) {
-      // Skip directories we can't access
-      console.error(`Error searching in ${virtualPath}:`, error);
-    }
+    return this.searchFilesIndexed(query, searchPath, paneType);
   }
 
   private static readonly AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
@@ -1014,6 +1223,7 @@ class FileSystemService {
       await writable.close();
 
       const newPath = destVirtualPath === "/" ? `/${file.name}` : `${destVirtualPath}/${file.name}`;
+      await this.reindexSubtree(destVirtualPath, paneType);
 
       return {
         success: true,
