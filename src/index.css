@@ -4,37 +4,99 @@
 All colors MUST be HSL.
 */
 
+/* Tailwind v4: @theme defines design tokens. Dark mode overrides must be in @layer theme
+   so they cascade correctly over the default @theme values. */
 @theme {
-  --color-background: hsl(220 18% 8%);
-  --color-foreground: hsl(210 20% 98%);
-  --color-card: hsl(220 18% 10%);
-  --color-card-foreground: hsl(210 20% 98%);
-  --color-popover: hsl(220 18% 12%);
-  --color-popover-foreground: hsl(210 20% 98%);
-  --color-primary: hsl(187 85% 55%);
-  --color-primary-foreground: hsl(220 18% 8%);
-  --color-secondary: hsl(220 15% 18%);
-  --color-secondary-foreground: hsl(210 20% 98%);
-  --color-muted: hsl(220 15% 15%);
-  --color-muted-foreground: hsl(210 10% 65%);
-  --color-accent: hsl(187 85% 55%);
-  --color-accent-foreground: hsl(220 18% 8%);
+  /* Light mode defaults */
+  --color-background: hsl(0 0% 98%);
+  --color-foreground: hsl(220 18% 12%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(220 18% 12%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(220 18% 12%);
+  --color-primary: hsl(187 85% 45%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(220 14% 96%);
+  --color-secondary-foreground: hsl(220 18% 12%);
+  --color-muted: hsl(220 14% 96%);
+  --color-muted-foreground: hsl(220 10% 45%);
+  --color-accent: hsl(187 85% 45%);
+  --color-accent-foreground: hsl(0 0% 100%);
   --color-destructive: hsl(0 72% 51%);
-  --color-destructive-foreground: hsl(210 20% 98%);
-  --color-border: hsl(220 15% 20%);
-  --color-input: hsl(220 15% 18%);
-  --color-ring: hsl(187 85% 55%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(220 13% 91%);
+  --color-input: hsl(220 14% 96%);
+  --color-ring: hsl(187 85% 45%);
   --radius: 0.375rem;
-  --color-waveform: hsl(187 85% 55%);
-  --color-waveform-bg: hsl(220 15% 12%);
-  --color-toolbar: hsl(220 18% 12%);
+  --color-waveform: hsl(187 85% 45%);
+  --color-waveform-bg: hsl(220 14% 94%);
+  --color-toolbar: hsl(220 14% 96%);
   --color-status-success: hsl(142 76% 36%);
   --color-status-warning: hsl(38 92% 50%);
   --color-status-error: hsl(0 72% 51%);
 }
 
+@layer theme {
+  .dark {
+    --color-background: hsl(220 18% 8%);
+    --color-foreground: hsl(210 20% 98%);
+    --color-card: hsl(220 18% 10%);
+    --color-card-foreground: hsl(210 20% 98%);
+    --color-popover: hsl(220 18% 12%);
+    --color-popover-foreground: hsl(210 20% 98%);
+    --color-primary: hsl(187 85% 55%);
+    --color-primary-foreground: hsl(220 18% 8%);
+    --color-secondary: hsl(220 15% 18%);
+    --color-secondary-foreground: hsl(210 20% 98%);
+    --color-muted: hsl(220 15% 15%);
+    --color-muted-foreground: hsl(210 10% 65%);
+    --color-accent: hsl(187 85% 55%);
+    --color-accent-foreground: hsl(220 18% 8%);
+    --color-destructive: hsl(0 72% 51%);
+    --color-destructive-foreground: hsl(210 20% 98%);
+    --color-border: hsl(220 15% 20%);
+    --color-input: hsl(220 15% 18%);
+    --color-ring: hsl(187 85% 55%);
+    --color-waveform: hsl(187 85% 55%);
+    --color-waveform-bg: hsl(220 15% 12%);
+    --color-toolbar: hsl(220 18% 12%);
+    --color-status-success: hsl(142 76% 36%);
+    --color-status-warning: hsl(38 92% 50%);
+    --color-status-error: hsl(0 72% 51%);
+  }
+}
+
 @layer base {
   :root {
+    --background: 0 0% 98%;
+    --foreground: 220 18% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 18% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 18% 12%;
+    --primary: 187 85% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 18% 12%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 10% 45%;
+    --accent: 187 85% 45%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 14% 96%;
+    --ring: 187 85% 45%;
+    --radius: 0.375rem;
+    --waveform: 187 85% 45%;
+    --waveform-bg: 220 14% 94%;
+    --toolbar: 220 14% 96%;
+    --status-success: 142 76% 36%;
+    --status-warning: 38 92% 50%;
+    --status-error: 0 72% 51%;
+  }
+
+  .dark {
     --background: 220 18% 8%;
     --foreground: 210 20% 98%;
     --card: 220 18% 10%;
@@ -54,7 +116,6 @@ All colors MUST be HSL.
     --border: 220 15% 20%;
     --input: 220 15% 18%;
     --ring: 187 85% 55%;
-    --radius: 0.375rem;
     --waveform: 187 85% 55%;
     --waveform-bg: 220 15% 12%;
     --toolbar: 220 18% 12%;
