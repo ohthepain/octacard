@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { FilePane } from "@/components/FilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown, type FormatSettings } from "@/components/FormatDropdown";
@@ -10,6 +10,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -84,6 +85,9 @@ const Index = () => {
     sourceBasePath: string;
     destinationBasePath: string;
   } | null>(null);
+  const [cancelConversionPromptOpen, setCancelConversionPromptOpen] = useState(false);
+  const conversionCancelRequestedRef = useRef(false);
+  const conversionAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (isSafari()) {
@@ -206,6 +210,8 @@ const Index = () => {
     const request = pendingConversionRequest;
     if (!request || request.files.length === 0) return;
     const { files, sourceBasePath, destinationBasePath } = request;
+    conversionCancelRequestedRef.current = false;
+    conversionAbortControllerRef.current = new AbortController();
 
     const targetSampleRate =
       formatSettings.sampleRate === "dont-change"
@@ -221,85 +227,106 @@ const Index = () => {
 
     const errors: Array<{ name: string; error: string }> = [];
     try {
-    for (let i = 0; i < files.length; i++) {
-      const entry = files[i];
-      setConversionProgress((p) =>
-        p ? { ...p, current: i, currentFile: entry.name } : p
-      );
-
-      const sourcePrefix = sourceBasePath === "/" ? "/" : `${sourceBasePath}/`;
-      const relativePath = entry.path.startsWith(sourcePrefix)
-        ? entry.path.slice(sourcePrefix.length)
-        : entry.name;
-      const dirParts = relativePath.split("/");
-      const fileName = dirParts.pop() || entry.name;
-      const destDir = dirParts.length ? `${destinationBasePath}/${dirParts.join("/")}` : destinationBasePath;
-
-      const result = await fileSystemService.convertAndCopyFile(
-        entry.path,
-        destDir,
-        fileName,
-        targetSampleRate,
-        formatSettings.sampleDepth === "dont-change" ? undefined : formatSettings.sampleDepth,
-        formatSettings.fileFormat === "dont-change" ? undefined : formatSettings.fileFormat,
-        formatSettings.pitch === "dont-change" ? undefined : formatSettings.pitch,
-        formatSettings.mono,
-        formatSettings.normalize,
-        formatSettings.trim,
-        "source",
-        "dest"
-      );
-      if (!result.success) {
-        errors.push({ name: entry.name, error: result.error || "Conversion failed" });
-      }
-    }
-
-    setConversionProgress((p) =>
-      p ? { ...p, current: files.length, currentFile: "" } : p
-    );
-    setDestRefreshToken((v) => v + 1);
-    setPendingConversionRequest(null);
-    setTimeout(() => setConversionProgress(null), 500);
-
-    if (errors.length > 0) {
-      const failedCount = errors.length;
-      const totalCount = files.length;
-      toast.error(
-        failedCount === totalCount ? "Conversion Failed" : "Some Files Failed",
-        {
-          description:
-            failedCount === totalCount
-              ? errors[0]?.error ?? "Unable to convert files."
-              : `${failedCount} of ${totalCount} files failed: ${errors.map((e) => e.name).join(", ")}`,
-          duration: 6000,
+      for (let i = 0; i < files.length; i++) {
+        if (conversionCancelRequestedRef.current) {
+          break;
         }
+        const entry = files[i];
+        setConversionProgress((p) =>
+          p ? { ...p, current: i, currentFile: entry.name } : p
+        );
+
+        const sourcePrefix = sourceBasePath === "/" ? "/" : `${sourceBasePath}/`;
+        const relativePath = entry.path.startsWith(sourcePrefix)
+          ? entry.path.slice(sourcePrefix.length)
+          : entry.name;
+        const dirParts = relativePath.split("/");
+        const fileName = dirParts.pop() || entry.name;
+        const destDir = dirParts.length ? `${destinationBasePath}/${dirParts.join("/")}` : destinationBasePath;
+
+        const result = await fileSystemService.convertAndCopyFile(
+          entry.path,
+          destDir,
+          fileName,
+          targetSampleRate,
+          formatSettings.sampleDepth === "dont-change" ? undefined : formatSettings.sampleDepth,
+          formatSettings.fileFormat === "dont-change" ? undefined : formatSettings.fileFormat,
+          formatSettings.pitch === "dont-change" ? undefined : formatSettings.pitch,
+          formatSettings.mono,
+          formatSettings.normalize,
+          formatSettings.trim,
+          "source",
+          "dest",
+          conversionAbortControllerRef.current.signal,
+        );
+        if (!result.success) {
+          if (result.cancelled || conversionCancelRequestedRef.current) {
+            break;
+          }
+          errors.push({ name: entry.name, error: result.error || "Conversion failed" });
+        }
+      }
+
+      if (conversionCancelRequestedRef.current) {
+        setConversionProgress(null);
+        setPendingConversionRequest(null);
+        toast("Conversion Cancelled", {
+          description: "Stopped converting files.",
+        });
+        return;
+      }
+
+      setConversionProgress((p) =>
+        p ? { ...p, current: files.length, currentFile: "" } : p
       );
-    }
+      setDestRefreshToken((v) => v + 1);
+      setPendingConversionRequest(null);
+      setTimeout(() => setConversionProgress(null), 500);
 
-    const hasConversion =
-      formatSettings.sampleRate !== "dont-change" ||
-      formatSettings.sampleDepth !== "dont-change" ||
-      formatSettings.fileFormat !== "dont-change" ||
-      formatSettings.pitch !== "dont-change" ||
-      formatSettings.mono ||
-      formatSettings.normalize ||
-      formatSettings.trim;
+      if (errors.length > 0) {
+        const failedCount = errors.length;
+        const totalCount = files.length;
+        toast.error(
+          failedCount === totalCount ? "Conversion Failed" : "Some Files Failed",
+          {
+            description:
+              failedCount === totalCount
+                ? errors[0]?.error ?? "Unable to convert files."
+                : `${failedCount} of ${totalCount} files failed: ${errors.map((e) => e.name).join(", ")}`,
+            duration: 6000,
+          }
+        );
+      }
 
-    capture("octacard_conversion_completed", {
-      file_count: files.length,
-      error_count: errors.length,
-      has_conversion: hasConversion,
-      settings: {
-        sampleRate: formatSettings.sampleRate,
-        sampleDepth: formatSettings.sampleDepth,
-        fileFormat: formatSettings.fileFormat,
-        pitch: formatSettings.pitch,
-        mono: formatSettings.mono,
-        normalize: formatSettings.normalize,
-        trimStart: formatSettings.trim,
-      },
-    });
+      const hasConversion =
+        formatSettings.sampleRate !== "dont-change" ||
+        formatSettings.sampleDepth !== "dont-change" ||
+        formatSettings.fileFormat !== "dont-change" ||
+        formatSettings.pitch !== "dont-change" ||
+        formatSettings.mono ||
+        formatSettings.normalize ||
+        formatSettings.trim;
+
+      capture("octacard_conversion_completed", {
+        file_count: files.length,
+        error_count: errors.length,
+        has_conversion: hasConversion,
+        settings: {
+          sampleRate: formatSettings.sampleRate,
+          sampleDepth: formatSettings.sampleDepth,
+          fileFormat: formatSettings.fileFormat,
+          pitch: formatSettings.pitch,
+          mono: formatSettings.mono,
+          normalize: formatSettings.normalize,
+          trimStart: formatSettings.trim,
+        },
+      });
     } catch (err) {
+      if (conversionCancelRequestedRef.current) {
+        setConversionProgress(null);
+        setPendingConversionRequest(null);
+        return;
+      }
       setConversionProgress(null);
       setPendingConversionRequest(null);
       toast.error("Conversion Failed", {
@@ -328,6 +355,9 @@ const Index = () => {
         },
         error: err instanceof Error ? err.message : String(err),
       });
+    } finally {
+      conversionAbortControllerRef.current = null;
+      setCancelConversionPromptOpen(false);
     }
   };
 
@@ -587,7 +617,14 @@ const Index = () => {
       )}
 
       {conversionProgress?.isVisible && (
-        <Dialog open={true} onOpenChange={() => {}}>
+        <Dialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) {
+              setCancelConversionPromptOpen(true);
+            }
+          }}
+        >
           <DialogContent className="sm:max-w-md">
             <DialogHeader className="min-w-0">
               <DialogTitle>Converting Files</DialogTitle>
@@ -620,6 +657,34 @@ const Index = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      <Dialog open={cancelConversionPromptOpen} onOpenChange={setCancelConversionPromptOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel conversion?</DialogTitle>
+            <DialogDescription>
+              Conversion is currently running. You can keep converting or cancel now.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelConversionPromptOpen(false)}>
+              Keep Converting
+            </Button>
+            <Button
+              onClick={() => {
+                conversionCancelRequestedRef.current = true;
+                setCancelConversionPromptOpen(false);
+                conversionAbortControllerRef.current?.abort();
+                setConversionProgress((p) =>
+                  p ? { ...p, currentFile: "Cancelling conversion..." } : p
+                );
+              }}
+            >
+              Cancel Conversion
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

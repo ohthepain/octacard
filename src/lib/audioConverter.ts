@@ -6,6 +6,19 @@ let ffmpegInstance: FFmpeg | null = null;
 let isInitialized = false;
 let isInitializing = false;
 
+export function cancelActiveConversion(): void {
+  if (ffmpegInstance) {
+    try {
+      ffmpegInstance.terminate();
+    } catch {
+      // Ignore terminate errors during cancellation.
+    }
+  }
+  ffmpegInstance = null;
+  isInitialized = false;
+  isInitializing = false;
+}
+
 interface ConversionOptions {
   sampleRate?: number;
   bitDepth?: '16-bit' | 'dont-change';
