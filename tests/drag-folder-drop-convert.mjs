@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 export async function assertDragFolderDropConvertsWithoutConfirmation(page) {
   const formatButton = page.getByRole("button", { name: "Format" });
   await formatButton.click();
-  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
-  await page.getByRole("menuitemradio", { name: "16-bit" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await page.locator('label[for="sample-depth-16-bit"]').click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("dialog", { name: "Format Settings" }).waitFor({ state: "hidden" });
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
