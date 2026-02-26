@@ -17,9 +17,12 @@ import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-previe
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
+import { assertLargeBatchConversionCanBeCancelledQuickly } from "../../tests/conversion-cancel-large-batch.mjs";
 import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
 import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
 import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReindex } from "../../tests/search-indexing.mjs";
+import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
+import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -85,17 +88,27 @@ try {
         }
       }
 
-      async getDirectoryHandle(name) {
+      async getDirectoryHandle(name, options = {}) {
         const entry = this.children.get(name);
         if (!entry || entry.kind !== "directory") {
+          if (options?.create) {
+            const created = new MockDirectoryHandle(name);
+            this.addDirectory(created);
+            return created;
+          }
           throw new DOMException("Directory not found", "NotFoundError");
         }
         return entry;
       }
 
-      async getFileHandle(name) {
+      async getFileHandle(name, options = {}) {
         const entry = this.children.get(name);
         if (!entry || entry.kind !== "file") {
+          if (options?.create) {
+            const created = new MockFileHandle(name);
+            this.children.set(name, created);
+            return created;
+          }
           throw new DOMException("File not found", "NotFoundError");
         }
         return entry;
@@ -122,6 +135,7 @@ try {
     const guitars = alpha.addDirectory(new MockDirectoryHandle("Guitars"));
     const longNames = root.addDirectory(new MockDirectoryHandle("LongNames"));
     const bulk = root.addDirectory(new MockDirectoryHandle("Bulk"));
+    const huge = root.addDirectory(new MockDirectoryHandle("Huge"));
     alpha.addFile("inside-alpha.wav", 128);
     guitars.addFile("clean_gtr_center.wav", 128);
     beta.addFile("inside-beta.wav", 128);
@@ -132,6 +146,9 @@ try {
     );
     for (let i = 1; i <= 6; i++) {
       bulk.addFile(`bulk-${i}.wav`, 128);
+    }
+    for (let i = 1; i <= 300; i++) {
+      huge.addFile(`huge-${i}.wav`, 64);
     }
 
     const ensureDirectoryByPath = (virtualPath) => {
@@ -208,6 +225,18 @@ try {
             })),
           };
         }
+        if (startPath === "/Huge") {
+          return {
+            success: true,
+            data: Array.from({ length: 300 }, (_, i) => ({
+              name: `huge-${i + 1}.wav`,
+              path: `/Huge/huge-${i + 1}.wav`,
+              type: "file",
+              size: 64,
+              isDirectory: false,
+            })),
+          };
+        }
         return { success: true, data: [] };
       },
       convertAndCopyFile: async (args) => {
@@ -250,6 +279,7 @@ try {
   await devModeButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
+  await assertMultiModeToggle(page);
   await assertFormatMenuCategories(page);
   await assertTermsAndPrivacyLinks(page, { baseUrl });
   await assertSampleRateOptions(page);
@@ -417,6 +447,10 @@ try {
   });
   const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
   await destBetaNode.waitFor({ state: "visible" });
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
+  await page.getByRole("menuitemradio", { name: "16-bit" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
   await assertDragFolderDropConvertsWithoutConfirmation(page);
 
   await page.getByTestId("tree-node-source-_Alpha").click();
@@ -498,6 +532,8 @@ try {
   );
 
   await assertDragDropConvertsWithFormat(page);
+  await assertSearchQueryPersistsWhenNavigatingSearchResult(page);
+  await assertLargeBatchConversionCanBeCancelledQuickly(page);
 
   assert.equal(domNestingWarnings.length, 0, "No DOM nesting warnings should be emitted during conversion flow.");
 
