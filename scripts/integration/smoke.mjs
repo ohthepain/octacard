@@ -17,6 +17,7 @@ import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-previe
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
+import { assertLargeBatchConversionCanBeCancelledQuickly } from "../../tests/conversion-cancel-large-batch.mjs";
 import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
 import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
 import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReindex } from "../../tests/search-indexing.mjs";
@@ -133,6 +134,7 @@ try {
     const guitars = alpha.addDirectory(new MockDirectoryHandle("Guitars"));
     const longNames = root.addDirectory(new MockDirectoryHandle("LongNames"));
     const bulk = root.addDirectory(new MockDirectoryHandle("Bulk"));
+    const huge = root.addDirectory(new MockDirectoryHandle("Huge"));
     alpha.addFile("inside-alpha.wav", 128);
     guitars.addFile("clean_gtr_center.wav", 128);
     beta.addFile("inside-beta.wav", 128);
@@ -143,6 +145,9 @@ try {
     );
     for (let i = 1; i <= 6; i++) {
       bulk.addFile(`bulk-${i}.wav`, 128);
+    }
+    for (let i = 1; i <= 300; i++) {
+      huge.addFile(`huge-${i}.wav`, 64);
     }
 
     const ensureDirectoryByPath = (virtualPath) => {
@@ -215,6 +220,18 @@ try {
               path: `/Bulk/bulk-${i + 1}.wav`,
               type: "file",
               size: 128,
+              isDirectory: false,
+            })),
+          };
+        }
+        if (startPath === "/Huge") {
+          return {
+            success: true,
+            data: Array.from({ length: 300 }, (_, i) => ({
+              name: `huge-${i + 1}.wav`,
+              path: `/Huge/huge-${i + 1}.wav`,
+              type: "file",
+              size: 64,
               isDirectory: false,
             })),
           };
@@ -534,6 +551,7 @@ try {
   );
 
   await assertDragDropConvertsWithFormat(page);
+  await assertLargeBatchConversionCanBeCancelledQuickly(page);
 
   assert.equal(domNestingWarnings.length, 0, "No DOM nesting warnings should be emitted during conversion flow.");
 
