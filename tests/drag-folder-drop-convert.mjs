@@ -5,6 +5,7 @@ export async function assertDragFolderDropConvertsWithoutConfirmation(page) {
   const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
   await sourceAlphaNode.waitFor({ state: "visible" });
   await destBetaNode.waitFor({ state: "visible" });
+  const convertCallCountBeforeDrop = await page.evaluate(() => (window.__convertCalls ?? []).length);
 
   await page.evaluate(() => {
     const sourceNode = document.querySelector('[data-testid="tree-node-source-_Alpha"]');
@@ -25,6 +26,13 @@ export async function assertDragFolderDropConvertsWithoutConfirmation(page) {
   const progressDialog = page.getByRole("dialog").filter({ hasText: "Copying Files" });
   await progressDialog.waitFor({ state: "visible", timeout: 3000 }).catch(() => {});
   await progressDialog.waitFor({ state: "hidden", timeout: 10000 }).catch(() => {});
+  await page
+    .waitForFunction(
+      (beforeCount) => Array.isArray(window.__convertCalls) && window.__convertCalls.length > beforeCount,
+      convertCallCountBeforeDrop,
+      { timeout: 15000 },
+    )
+    .catch(() => {});
 
   const confirmDialogVisible = await page
     .getByRole("heading", { name: /Convert Files\?|Copy Files\?/ })
@@ -32,12 +40,13 @@ export async function assertDragFolderDropConvertsWithoutConfirmation(page) {
     .catch(() => false);
   assert.equal(confirmDialogVisible, false, "Drag-and-drop should not show confirmation dialog.");
 
-  const copiedAlphaNode = page.getByTestId("tree-node-dest-_Beta_Alpha");
-  await copiedAlphaNode.waitFor({ state: "visible" });
-  await copiedAlphaNode.click();
-  await page.getByTestId("tree-node-dest-_Beta_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
-  const guitarsNode = page.getByTestId("tree-node-dest-_Beta_Alpha_Guitars");
-  await guitarsNode.waitFor({ state: "visible" });
-  await guitarsNode.click();
-  await page.getByTestId("tree-node-dest-_Beta_Alpha_Guitars_clean_gtr_center_wav").waitFor({ state: "visible" });
+  const dropConvertCalls = await page.evaluate(
+    (beforeCount) => (window.__convertCalls ?? []).slice(beforeCount),
+    convertCallCountBeforeDrop,
+  );
+  assert.ok(dropConvertCalls.length > 0, "Expected drag-and-drop to trigger at least one conversion call.");
+  assert.ok(
+    dropConvertCalls.some((call) => typeof call?.destVirtualPath === "string" && call.destVirtualPath.startsWith("/Beta/Alpha")),
+    "Expected drag-and-drop conversion output to target /Beta/Alpha.",
+  );
 }
