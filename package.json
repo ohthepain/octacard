@@ -6,6 +6,7 @@
     "name": "Paul Wilkinson",
     "email": "cremoni@gmail.com"
   },
+  "license": "MIT",
   "private": true,
   "type": "module",
   "homepage": "./",
