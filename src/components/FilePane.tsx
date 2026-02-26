@@ -198,6 +198,7 @@ export const FilePane = ({
   const [currentRootPath, setCurrentRootPath] = useState<string>("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [isDraggingOverRoot, setIsDraggingOverRoot] = useState(false);
+  const [isDraggingOverBreadcrumb, setIsDraggingOverBreadcrumb] = useState(false);
   const [currentVolumeUUID, setCurrentVolumeUUID] = useState<string | null>(null);
   const [pathDoesNotExist, setPathDoesNotExist] = useState(false);
   const [isCardMounted, setIsCardMounted] = useState(false);
@@ -3207,9 +3208,33 @@ export const FilePane = ({
               )}
             </div>
           </div>
-          {/* Breadcrumb row: full width below header */}
+          {/* Breadcrumb row: full width below header - accepts drops to copy/convert into currentRootPath */}
           {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
-            <div className="px-4 pb-2 flex items-center gap-2 min-w-0 text-sm text-muted-foreground">
+            <div
+              className={`px-4 pb-2 flex items-center gap-2 min-w-0 text-sm text-muted-foreground rounded transition-colors border ${
+                isDraggingOverBreadcrumb ? "bg-primary/20 border-primary" : "border-transparent"
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+                setIsDraggingOverBreadcrumb(true);
+              }}
+              onDragLeave={(e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const { clientX: x, clientY: y } = e;
+                if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+                  setIsDraggingOverBreadcrumb(false);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverPath(null);
+                setIsDraggingOverRoot(false);
+                setIsDraggingOverBreadcrumb(false);
+                handleDrop(e);
+              }}
+            >
               <div className="flex items-center gap-1 min-w-0 overflow-x-auto flex-1">
                 <span className="text-muted-foreground/60 shrink-0">/</span>
                 <button
