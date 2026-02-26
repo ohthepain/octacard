@@ -448,9 +448,9 @@ try {
   const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
   await destBetaNode.waitFor({ state: "visible" });
   await formatButton.click();
-  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
-  await page.getByRole("menuitemradio", { name: "16-bit" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await page.locator('label[for="sample-depth-16-bit"]').click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("dialog", { name: "Format Settings" }).waitFor({ state: "hidden" });
   await assertDragFolderDropConvertsWithoutConfirmation(page);
 
   await page.getByTestId("tree-node-source-_Alpha").click();
