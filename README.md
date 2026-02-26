@@ -1,74 +1,86 @@
-# Welcome to Octacard
+# OctaCard
 
-## Project info
+OctaCard is a browser-based sample manager for Elektron Octatrack workflows. It focuses on fast folder navigation, preview, and bulk copy/conversion into Octatrack-friendly audio settings.
 
-**URL**: https://lovable.dev/projects/a087aa7f-0d83-445e-ae56-08153c41bbcf
+## Why use this project
 
-## How can I edit this code?
+- It is purpose-built for source-folder -> destination-folder sample prep, not full DAW editing.
+- It runs locally in Chromium browsers using the File System Access API (no cloud upload requirement).
+- It combines file management, preview, favorites, and batch conversion in one UI.
+- It can convert/copy whole folder trees while preserving structure.
 
-There are several ways of editing your application.
+## Features (current)
 
-**Use Lovable**
+### File and folder workflow
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/a087aa7f-0d83-445e-ae56-08153c41bbcf) and start prompting.
+- Dual-pane source/destination browser.
+- Folder favorites per pane.
+- Search, recursive browsing, and folder expansion state persistence.
+- Drag/drop and context-menu actions for copy/convert flows.
 
-Changes made via Lovable will be committed automatically to this repo.
+### Conversion workflow
 
-**Use your preferred IDE**
+- Batch convert or copy selected files/folders.
+- Output format control for Octatrack prep:
+  - WAV output
+  - 44.1 kHz or 48 kHz sample rate
+  - 16-bit depth
+  - Mono downmix
+  - Loudness normalization
+  - Trim leading silence
+  - Pitch-to-C (filename note parsing)
+- Cancellation support during long conversions.
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Preview and UX
 
-The only requirement is having Node.js & pnpm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating) and `corepack enable` (pnpm comes with Node 16.13+).
+- Audio preview with waveform, timeline, minimap, zoom, and transport controls.
+- Video preview panel for supported video files.
+- Conversion confirmation dialog with settings summary and file counts.
 
-Follow these steps:
+### Compatibility and limits
+
+- Designed for Chrome/Edge/Chromium browsers.
+- Safari is not supported (File System Access API limitation).
+- It is not a DAW/editor and does not include waveform editing, slicing, or arrangement tools.
+
+## Honest comparison with similar tools
+
+Legend: `Yes` = core supported workflow, `Partial` = possible but not the primary UX, `No` = not a core feature.
+
+| Capability | OctaCard | Elektron Transfer | Sononym | fre:ac | Audacity | FFmpeg CLI |
+| --- | --- | --- | --- | --- | --- | --- |
+| Octatrack-oriented workflow | Yes | Partial (device transfer focus) | No | No | No | No |
+| Batch folder conversion | Yes | No | No | Yes | Partial | Yes |
+| Built-in waveform preview/player | Yes | No | Yes | No | Yes | No |
+| Similarity-based sample discovery | No | No | Yes | No | No | No |
+| Multi-track editing/recording | No | No | No | No | Yes | No |
+| Command-line automation | No | No | No | No | No | Yes |
+| Runs as browser app | Yes | No | No | No | No | No |
+
+## Gaps (on purpose or not built yet)
+
+- No sample slicing/chain editor UI yet.
+- No metadata/tag library management.
+- No CLI/headless conversion mode.
+- Browser support depends on File System Access API.
+
+## Development
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
 pnpm install
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
 pnpm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Integration tests
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```sh
+npm run test:it
+```
 
-**Use GitHub Codespaces**
+## Sources used for comparison
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- TanStack Start
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-For web deployment, simply open [Lovable](https://lovable.dev/projects/a087aa7f-0d83-445e-ae56-08153c41bbcf) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Elektron Transfer FAQ: https://support.elektron.se/support/solutions/articles/43000572495-elektron-transfer-faq
+- Sononym home/features: https://www.sononym.net/
+- fre:ac feature overview: https://www.freac.org/
+- Audacity manual (editing/mixing workflows): https://manual.audacityteam.org/man/tutorial_your_first_recording.html
+- FFmpeg documentation/CLI scope: https://ffmpeg.org/ffmpeg-all.html
