@@ -3,10 +3,16 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import WaveSurfer from "wavesurfer.js";
 import { fileSystemService } from "@/lib/fileSystem";
+import { toast } from "sonner";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
-import type { StackSample } from "@/stores/multi-sample-store";
+import type { StackSample, PaneType } from "@/stores/multi-sample-store";
 import { cn } from "@/lib/utils";
+
+const AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
+function isAudioFile(name: string): boolean {
+  return AUDIO_EXT.test(name);
+}
 
 const DEFAULT_BPM = 120;
 
@@ -26,16 +32,71 @@ interface MultiSampleBlockProps {
   sample: StackSample;
   index: number;
   onRemove: () => void;
+  onDropSample?: (sample: { path: string; name: string; paneType: PaneType }) => void;
   onRegisterPlay?: (sampleId: string, play: () => void) => void;
+  onRegisterStop?: (sampleId: string, stop: () => void) => void;
   className?: string;
 }
 
-export const MultiSampleBlock = ({ sample, index, onRemove, onRegisterPlay, className }: MultiSampleBlockProps) => {
+export const MultiSampleBlock = ({ sample, index, onRemove, onDropSample, onRegisterPlay, onRegisterStop, className }: MultiSampleBlockProps) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
   const updateSampleBars = useMultiSampleStore((s) => s.updateSampleBars);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (!onDropSample) return;
+
+    const sourcePath = e.dataTransfer.getData("sourcePath");
+    const sourceType = e.dataTransfer.getData("sourceType");
+    const sourcePane = e.dataTransfer.getData("sourcePane") as PaneType | "";
+
+    if (sourcePath && sourceType === "file" && sourcePane && isAudioFile(sourcePath.split("/").pop() || "")) {
+      const name = sourcePath.split("/").filter(Boolean).pop() || sourcePath;
+      onDropSample({ path: sourcePath, name, paneType: sourcePane as PaneType });
+      return;
+    }
+
+    const items = e.dataTransfer.items;
+    if (items?.length && items[0].kind === "file") {
+      const item = items[0];
+      item.getAsFile().then(async (file) => {
+        if (!file || !isAudioFile(file.name)) return;
+        if (!fileSystemService.hasRootForPane("source")) {
+          toast.error("Select a source folder first to add files from your computer");
+          return;
+        }
+        const result = await fileSystemService.addFileFromDrop(file, "/", "source");
+        if (result.success && result.data) {
+          const path = result.data;
+          const name = path.split("/").filter(Boolean).pop() || file.name;
+          onDropSample({ path, name, paneType: "source" });
+        } else {
+          toast.error(result.error || "Failed to add file");
+        }
+      });
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +141,10 @@ export const MultiSampleBlock = ({ sample, index, onRemove, onRegisterPlay, clas
             wavesurfer.seekTo(0);
             wavesurfer.play();
           });
+          onRegisterStop?.(sample.id, () => {
+            wavesurfer.seekTo(0);
+            wavesurfer.pause();
+          });
         });
 
         wavesurfer.on("error", (err) => {
@@ -104,6 +169,7 @@ export const MultiSampleBlock = ({ sample, index, onRemove, onRegisterPlay, clas
     return () => {
       cancelled = true;
       onRegisterPlay?.(sample.id, () => {});
+      onRegisterStop?.(sample.id, () => {});
       if (wavesurferRef.current) {
         try {
           wavesurferRef.current.pause();
@@ -114,14 +180,18 @@ export const MultiSampleBlock = ({ sample, index, onRemove, onRegisterPlay, clas
         wavesurferRef.current = null;
       }
     };
-  }, [sample.path, sample.paneType, sample.name, index, updateSampleBars, onRegisterPlay]);
+  }, [sample.path, sample.paneType, sample.name, index, updateSampleBars, onRegisterPlay, onRegisterStop]);
 
   return (
     <div
       className={cn(
-        "flex flex-col border border-border rounded-lg bg-card overflow-hidden",
+        "flex flex-col border border-border rounded-lg bg-card overflow-hidden transition-colors",
+        isDragOver && "border-primary bg-primary/5",
         className
       )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0">
         <span

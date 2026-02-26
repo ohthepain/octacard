@@ -39,7 +39,6 @@ import { useNavigationState } from "@/hooks/use-navigation-state";
 import { useFavorites } from "@/hooks/use-favorites";
 import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
-import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
 import { capture } from "@/lib/analytics";
 import { toast } from "sonner";
@@ -235,18 +234,7 @@ export const FilePane = ({
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
-  const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
   const [treeViewMode, setTreeViewMode] = useState<"all" | "folders">("all");
-  const [pendingConversionItems, setPendingConversionItems] = useState<Array<{
-    path: string;
-    name: string;
-    type: "file" | "folder";
-    targetDir: string;
-    file?: File;
-    handle?: FileSystemDirectoryHandle;
-  }> | null>(null);
-  const [pendingDestinationPath, setPendingDestinationPath] = useState<string>("");
-  const [pendingDestinationNode, setPendingDestinationNode] = useState<FileNode | undefined>(undefined);
   const [sortBy, setSortBy] = useState<"name" | "dateAdded" | "dateCreated" | "dateModified" | "dateLastOpened">(
     "name",
   );
@@ -1709,6 +1697,8 @@ export const FilePane = ({
                   mono,
                   normalize,
                   trimStart,
+                  undefined,
+                  undefined,
                   "source",
                   "dest",
                 );
@@ -1828,7 +1818,7 @@ export const FilePane = ({
         const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
           .map((e) => `- ${e.name}: ${e.error}`)
           .join("\n")}`;
-        alert(errorMessage);
+        toast.error(errorMessage);
       }
 
       capture("octacard_copy_completed", {
@@ -1857,6 +1847,160 @@ export const FilePane = ({
     ],
   );
 
+  const performExternalConversion = useCallback(
+    async (
+      itemsToProcess: Array<{
+        file?: File;
+        handle?: FileSystemDirectoryHandle;
+        name: string;
+        type: string;
+        targetDir: string;
+      }>,
+      destinationPath: string,
+      destinationNode?: FileNode,
+    ) => {
+      if (!fileSystemService.hasRootForPane(paneType)) return;
+
+      let currentFileIndex = 0;
+      const totalFiles = itemsToProcess.length;
+      let convertedFileCount = 0;
+      let copiedFileCount = 0;
+      const showProgress = totalFiles > 1;
+
+      capture("octacard_copy_started", {
+        file_count: totalFiles,
+        item_count: totalFiles,
+        is_external: true,
+        flow: "external_drop",
+        source_pane: "external",
+        dest_pane: paneType,
+        convert_files: true,
+      });
+
+      if (showProgress) {
+        setCopyProgress({
+          isVisible: true,
+          current: 0,
+          total: totalFiles,
+          currentFile: "",
+        });
+      }
+
+      const errors: Array<{ name: string; error: string }> = [];
+
+      for (const item of itemsToProcess) {
+        if (item.type === "file") {
+          currentFileIndex++;
+          if (showProgress) {
+            setCopyProgress({
+              isVisible: true,
+              current: currentFileIndex,
+              total: totalFiles,
+              currentFile: item.name,
+            });
+          }
+
+          let file: File | null = null;
+          if (item.file) {
+            file = item.file;
+          } else if ((item as any).handle && (item as any).handle.kind === "file") {
+            file = await ((item as any).handle as FileSystemFileHandle).getFile();
+          } else {
+            errors.push({ name: item.name, error: "File object not available" });
+            continue;
+          }
+
+          const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.name);
+          let finalDestFileName = item.name;
+          if (isAudioFile && pitch === "C") {
+            const { analyzeFilenameForNote } = await import("@/lib/batch-math");
+            const pitchAnalysis = analyzeFilenameForNote(item.name);
+            if (pitchAnalysis && pitchAnalysis.semitonesDownToC !== 0) {
+              finalDestFileName = finalDestFileName.replace(pitchAnalysis.originalString, "C");
+            }
+          }
+          if (isAudioFile && fileFormat === "WAV") {
+            finalDestFileName = finalDestFileName.replace(/\.\w+$/i, ".wav");
+          }
+
+          const needsConversion =
+            isAudioFile &&
+            (fileFormat === "WAV" ||
+              sampleRate !== "dont-change" ||
+              sampleDepth === "16-bit" ||
+              pitch !== "dont-change" ||
+              mono ||
+              normalize ||
+              trimStart);
+
+          let result;
+          if (needsConversion) {
+            convertedFileCount++;
+            const addResult = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
+            if (addResult.success && addResult.data) {
+              result = await fileSystemService.convertAndCopyFile(
+                addResult.data,
+                item.targetDir,
+                finalDestFileName,
+                parseSampleRateToHz(sampleRate),
+                sampleDepth,
+                fileFormat,
+                pitch,
+                mono,
+                normalize,
+                trimStart,
+                undefined,
+                undefined,
+                paneType,
+                paneType,
+              );
+            } else {
+              result = addResult;
+            }
+          } else {
+            copiedFileCount++;
+            result = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
+          }
+
+          if (result.success) {
+            const finalPath = needsConversion
+              ? joinPath(item.targetDir, finalDestFileName)
+              : joinPath(item.targetDir, item.name);
+            onFileTransfer?.(finalPath, finalPath);
+          } else {
+            errors.push({ name: item.name, error: result.error || "Unknown error" });
+          }
+        }
+      }
+
+      if (showProgress) setCopyProgress(null);
+
+      const nodeId = destinationNode ? destinationNode.id : "root";
+      await loadDirectory(destinationPath, nodeId);
+
+      if (errors.length > 0) {
+        const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
+          .map((e) => `- ${e.name}: ${e.error}`)
+          .join("\n")}`;
+        toast.error(errorMessage);
+      }
+
+      capture("octacard_copy_completed", {
+        file_count: totalFiles,
+        item_count: totalFiles,
+        error_count: errors.length,
+        converted_file_count: convertedFileCount,
+        copied_file_count: copiedFileCount,
+        is_external: true,
+        flow: "external_drop",
+        source_pane: "external",
+        dest_pane: paneType,
+        convert_files: true,
+      });
+    },
+    [paneType, pitch, fileFormat, sampleRate, sampleDepth, mono, normalize, trimStart, loadDirectory, onFileTransfer],
+  );
+
   const handleDrop = async (e: React.DragEvent, destinationNode?: FileNode) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1868,12 +2012,12 @@ export const FilePane = ({
       return;
     }
 
-    // When dropMode is "navigate", navigate to dropped folder instead of converting
-    if (dropMode === "navigate") {
-      const sourcePath = e.dataTransfer.getData("sourcePath");
-      const sourceType = e.dataTransfer.getData("sourceType");
-      if (sourcePath && sourceType === "folder") {
-        await navigateToFolder(sourcePath);
+    // When dropMode is "navigate" and we're on source pane, navigate to dropped folder
+    if (dropMode === "navigate" && paneName === "source") {
+      const navSourcePath = e.dataTransfer.getData("sourcePath");
+      const navSourceType = e.dataTransfer.getData("sourceType");
+      if (navSourcePath && navSourceType === "folder") {
+        await navigateToFolder(navSourcePath);
         return;
       }
       // Try OS drop - get path from directory handle if it's under our root
@@ -1893,6 +2037,36 @@ export const FilePane = ({
           } catch {
             // Fall through to normal handling
           }
+        }
+      }
+    }
+
+    // Check if this is an in-app drag (from our file tree)
+    const sourcePath = e.dataTransfer.getData("sourcePath");
+    const sourceType = e.dataTransfer.getData("sourceType");
+    const sourcePane = e.dataTransfer.getData("sourcePane") as "source" | "dest" | "";
+    const isMultiple = e.dataTransfer.getData("isMultiple") === "true";
+    const multipleItemsJson = e.dataTransfer.getData("multipleItems");
+
+    if (sourcePath && sourcePane) {
+      let items: Array<{ path: string; name: string; type: "file" | "folder" }>;
+      if (isMultiple && multipleItemsJson) {
+        try {
+          items = JSON.parse(multipleItemsJson);
+        } catch {
+          items = [];
+        }
+      } else {
+        const name = sourcePath.split("/").filter(Boolean).pop() || sourcePath;
+        items = [{ path: sourcePath, name, type: sourceType as "file" | "folder" }];
+      }
+
+      if (items.length > 0) {
+        const destinationPath =
+          destinationNode && destinationNode.type === "folder" ? destinationNode.path : currentRootPath || rootPath;
+        if (destinationPath) {
+          await copyMultipleItems(items, destinationPath, destinationNode, false, sourcePane as "source" | "dest");
+          return;
         }
       }
     }
@@ -2066,195 +2240,14 @@ export const FilePane = ({
         }
       }
 
-      // Show confirmation dialog before converting
+      // Perform conversion immediately (no confirmation for drop)
       if (itemsToProcess.length > 0) {
-        // Store items with File objects/handles
-        setPendingConversionItems(itemsToProcess as any);
-        setPendingDestinationPath(destinationPath);
-        setPendingDestinationNode(destinationNode);
-        setConversionConfirmOpen(true);
+        await performExternalConversion(itemsToProcess as any, destinationPath, destinationNode);
       }
 
       return;
     }
   };
-
-  // Process conversion after user confirms
-  const handleConversionConfirm = useCallback(async () => {
-    if (!pendingConversionItems || !pendingDestinationPath || !fileSystemService.hasRootForPane(paneType)) {
-      return;
-    }
-
-    setConversionConfirmOpen(false);
-    const itemsToProcess = pendingConversionItems;
-    const destinationPath = pendingDestinationPath;
-    const destinationNode = pendingDestinationNode;
-
-    let currentFileIndex = 0;
-    const totalFiles = itemsToProcess.length;
-    let convertedFileCount = 0;
-    let copiedFileCount = 0;
-    const showProgress = totalFiles > 1;
-
-    capture("octacard_copy_started", {
-      file_count: totalFiles,
-      item_count: totalFiles,
-      is_external: true,
-      flow: "external_drop",
-      source_pane: "external",
-      dest_pane: paneType,
-      convert_files: true,
-    });
-
-    if (showProgress) {
-      setCopyProgress({
-        isVisible: true,
-        current: 0,
-        total: totalFiles,
-        currentFile: "",
-      });
-    }
-
-    const errors: Array<{ name: string; error: string }> = [];
-
-    for (const item of itemsToProcess) {
-      if (item.type === "file") {
-        currentFileIndex++;
-        if (showProgress) {
-          setCopyProgress({
-            isVisible: true,
-            current: currentFileIndex,
-            total: totalFiles,
-            currentFile: item.name,
-          });
-        }
-
-        // Get File object from item (either directly or from handle)
-        let file: File | null = null;
-        if (item.file) {
-          file = item.file;
-        } else if ((item as any).handle && (item as any).handle.kind === "file") {
-          file = await ((item as any).handle as FileSystemFileHandle).getFile();
-        } else {
-          errors.push({ name: item.name, error: "File object not available" });
-          continue;
-        }
-
-        const finalDestFilePath = joinPath(item.targetDir, item.name);
-
-        // Check if file conversion is needed
-        const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.name);
-
-        let finalDestFileName = item.name;
-        if (isAudioFile && pitch === "C") {
-          const { analyzeFilenameForNote } = await import("@/lib/batch-math");
-          const pitchAnalysis = analyzeFilenameForNote(item.name);
-          if (pitchAnalysis && pitchAnalysis.semitonesDownToC !== 0) {
-            finalDestFileName = finalDestFileName.replace(pitchAnalysis.originalString, "C");
-          }
-        }
-        if (isAudioFile && fileFormat === "WAV") {
-          finalDestFileName = finalDestFileName.replace(/\.\w+$/i, ".wav");
-        }
-
-        // Always convert audio files according to settings
-        const needsConversion =
-          isAudioFile &&
-          (fileFormat === "WAV" ||
-            sampleRate !== "dont-change" ||
-            sampleDepth === "16-bit" ||
-            pitch !== "dont-change" ||
-            mono ||
-            normalize ||
-            trimStart);
-
-        let result;
-        if (needsConversion) {
-          convertedFileCount++;
-          // Add file first, then convert it
-          const addResult = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
-          if (addResult.success && addResult.data) {
-            // Now convert the file we just added
-            result = await fileSystemService.convertAndCopyFile(
-              addResult.data,
-              item.targetDir,
-              finalDestFileName,
-              parseSampleRateToHz(sampleRate),
-              sampleDepth,
-              fileFormat,
-              pitch,
-              mono,
-              normalize,
-              trimStart,
-              paneType,
-              paneType,
-            );
-          } else {
-            result = addResult;
-          }
-        } else {
-          copiedFileCount++;
-          result = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
-        }
-
-        if (result.success) {
-          const finalPath = needsConversion
-            ? joinPath(item.targetDir, finalDestFileName)
-            : joinPath(item.targetDir, item.name);
-          onFileTransfer?.(finalPath, finalPath);
-        } else {
-          errors.push({ name: item.name, error: result.error || "Unknown error" });
-        }
-      }
-    }
-
-    if (showProgress) {
-      setCopyProgress(null);
-    }
-
-    // Refresh the destination folder
-    const nodeId = destinationNode ? destinationNode.id : "root";
-    await loadDirectory(destinationPath, nodeId);
-
-    // Show errors if any
-    if (errors.length > 0) {
-      const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
-        .map((e) => `- ${e.name}: ${e.error}`)
-        .join("\n")}`;
-      alert(errorMessage);
-    }
-
-    capture("octacard_copy_completed", {
-      file_count: totalFiles,
-      item_count: totalFiles,
-      error_count: errors.length,
-      converted_file_count: convertedFileCount,
-      copied_file_count: copiedFileCount,
-      is_external: true,
-      flow: "external_drop",
-      source_pane: "external",
-      dest_pane: paneType,
-      convert_files: true,
-    });
-
-    // Clear pending state
-    setPendingConversionItems(null);
-    setPendingDestinationPath("");
-    setPendingDestinationNode(undefined);
-  }, [
-    pendingConversionItems,
-    pendingDestinationPath,
-    pendingDestinationNode,
-    fileFormat,
-    sampleRate,
-    sampleDepth,
-    pitch,
-    mono,
-    normalize,
-    trimStart,
-    loadDirectory,
-    onFileTransfer,
-  ]);
 
   const handleDelete = async (node?: FileNode) => {
     // Check if we have multiple selected items
@@ -2328,7 +2321,7 @@ export const FilePane = ({
       const errorMessage = `Failed to delete ${errors.length} item(s):\n${errors
         .map((e) => `- ${e.name}: ${e.error}`)
         .join("\n")}`;
-      alert(errorMessage);
+      toast.error(errorMessage);
     }
   };
 
@@ -2347,7 +2340,7 @@ export const FilePane = ({
 
       if (!ejectResult.success) {
         console.error("Failed to eject volume:", ejectResult.error);
-        alert(`Failed to eject card: ${ejectResult.error}`);
+        toast.error(`Failed to eject card: ${ejectResult.error}`);
         return;
       }
 
@@ -2400,7 +2393,7 @@ export const FilePane = ({
       }
     } catch (error) {
       console.error(`${paneName} - Error ejecting card:`, error);
-      alert(`Error ejecting card: ${error}`);
+      toast.error(`Error ejecting card: ${error}`);
     }
   };
 
@@ -2421,11 +2414,11 @@ export const FilePane = ({
         setNewFolderName("");
       } else {
         console.error("Failed to create folder:", result.error);
-        alert(`Failed to create folder: ${result.error}`);
+        toast.error(`Failed to create folder: ${result.error}`);
       }
     } catch (error) {
       console.error("Error creating folder:", error);
-      alert(`Error creating folder: ${error}`);
+      toast.error(`Error creating folder: ${error}`);
     }
   };
 
@@ -2564,7 +2557,9 @@ export const FilePane = ({
         try {
           const result = await fileSystemService.revealInFinder(node.path, paneType, node.type === "folder");
           if (!result.success) {
-            toast.error("Reveal in Finder is not available in the browser. We would need to create a the desktop version for this feature.");
+            toast.error(
+              "Reveal in Finder is not available in the browser. We would need to create a the desktop version for this feature.",
+            );
           }
         } catch (error) {
           console.error("Error revealing in finder:", error);
@@ -2735,7 +2730,9 @@ export const FilePane = ({
                     <File className="w-4 h-4 text-muted-foreground shrink-0" />
                   </>
                 )}
-                <span className={`text-sm truncate flex-1 min-w-0 ${isParentLink ? "text-muted-foreground italic" : ""}`}>
+                <span
+                  className={`text-sm truncate flex-1 min-w-0 ${isParentLink ? "text-muted-foreground italic" : ""}`}
+                >
                   {node.name}
                 </span>
                 {node.size && <span className="text-xs text-muted-foreground font-mono">{node.size}</span>}
@@ -2771,6 +2768,16 @@ export const FilePane = ({
                     disabled={isFavorite(node.path)}
                   >
                     {isFavorite(node.path) ? "Already in favourites" : "Add favourite"}
+                  </ContextMenuItem>
+                )}
+                {previewMode === "multi" && node.type === "file" && isAudioFile(node.name) && (
+                  <ContextMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addToStack({ path: node.path, name: node.name, paneType });
+                    }}
+                  >
+                    Add to multi
                   </ContextMenuItem>
                 )}
                 <ContextMenuItem
@@ -3031,14 +3038,14 @@ export const FilePane = ({
         <div className="border-b border-border flex flex-col shrink-0">
           <div className="p-4 pb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
-            {onBrowseForFolder && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={() => onBrowseForFolder(currentRootPath || "/")}
-                title="Browse for folder to navigate to"
-              >
+              {onBrowseForFolder && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => onBrowseForFolder(currentRootPath || "/")}
+                  title="Browse for folder to navigate to"
+                >
                   <FolderOpen className="w-4 h-4" />
                 </Button>
               )}
@@ -3400,24 +3407,6 @@ export const FilePane = ({
             </div>
           </DialogContent>
         </Dialog>
-      )}
-
-      {/* Conversion Confirmation Dialog */}
-      {pendingConversionItems && (
-        <ConversionConfirmDialog
-          open={conversionConfirmOpen}
-          onOpenChange={setConversionConfirmOpen}
-          onConfirm={handleConversionConfirm}
-          fileCount={pendingConversionItems.length}
-          settings={{
-            sampleRate,
-            sampleDepth,
-            fileFormat,
-            mono,
-            normalize,
-            trimStart,
-          }}
-        />
       )}
     </div>
   );

@@ -42,21 +42,26 @@ export function FavoritesColumn({
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
 
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FavoritesColumn.tsx:handleDrop',message:'handleDrop fired',data:{types:e.dataTransfer.types,sourcePath:e.dataTransfer.getData("sourcePath"),sourceType:e.dataTransfer.getData("sourceType"),textPlain:e.dataTransfer.getData("text/plain"),volumeId,paneType},timestamp:Date.now(),hypothesisId:'H1,H2,H3'})}).catch(()=>{});
-    // #endregion
-
     // Check for drag from our file browser (has sourcePath/sourceType)
     const sourcePath = e.dataTransfer.getData("sourcePath");
     const sourceType = e.dataTransfer.getData("sourceType");
-    if (sourcePath && sourceType === "folder") {
-      const name = sourcePath.split("/").filter(Boolean).pop() || sourcePath;
-      addFavorite(sourcePath, name);
-      onDropFolder?.(sourcePath, name);
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FavoritesColumn.tsx:handleDrop',message:'addFavorite called (in-app path)',data:{sourcePath,name},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
-      return;
+    if (sourcePath) {
+      if (sourceType === "folder") {
+        const name = sourcePath.split("/").filter(Boolean).pop() || sourcePath;
+        addFavorite(sourcePath, name);
+        onDropFolder?.(sourcePath, name);
+        return;
+      }
+      if (sourceType === "file") {
+        const parts = sourcePath.split("/").filter(Boolean);
+        if (parts.length >= 2) {
+          const parentPath = "/" + parts.slice(0, -1).join("/");
+          const parentName = parts[parts.length - 2];
+          addFavorite(parentPath, parentName);
+          onDropFolder?.(parentPath, parentName);
+        }
+        return;
+      }
     }
 
     // Check for drag from OS (FileSystemDirectoryHandle)
@@ -72,9 +77,6 @@ export function FavoritesColumn({
         if (handle?.kind === "directory") {
           const dirHandle = handle as FileSystemDirectoryHandle;
           const path = await getPathFromHandle(dirHandle, paneType);
-          // #region agent log
-          fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'FavoritesColumn.tsx:handleDrop',message:'OS dir handle',data:{path,handleName:dirHandle.name},timestamp:Date.now(),hypothesisId:'H1,H4'})}).catch(()=>{});
-          // #endregion
           if (path) {
             addFavorite(path, dirHandle.name);
             onDropFolder?.(path, dirHandle.name);

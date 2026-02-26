@@ -21,6 +21,8 @@ export interface MultiSampleState {
   globalTempoBpm: number;
   setPreviewMode: (mode: PreviewMode) => void;
   addToStack: (sample: { path: string; name: string; paneType: PaneType }) => void;
+  addSamplesToStack: (samples: Array<{ path: string; name: string; paneType: PaneType }>, maxCount?: number) => void;
+  replaceSampleAt: (index: number, sample: { path: string; name: string; paneType: PaneType }) => void;
   removeFromStack: (index: number) => void;
   updateSampleBars: (index: number, bars: number, duration: number, bpm?: number) => void;
   setGlobalTempoBpm: (bpm: number) => void;
@@ -62,6 +64,39 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
         stack: newStack,
         globalTempoBpm: newTempo,
       };
+    }),
+
+  addSamplesToStack: (samples, maxCount = 8) =>
+    set((state) => {
+      const toAdd = samples.slice(0, maxCount).map((s) => ({
+        id: crypto.randomUUID(),
+        ...s,
+        bpm: getBpmFromSample(s.name, s.path),
+      }));
+      const newStack = [...toAdd, ...state.stack];
+      const newTempo =
+        state.stack.length === 0 && toAdd.length > 0
+          ? toAdd[0].bpm
+          : state.globalTempoBpm;
+      return {
+        stack: newStack,
+        globalTempoBpm: newTempo,
+      };
+    }),
+
+  replaceSampleAt: (index, sample) =>
+    set((state) => {
+      if (index < 0 || index >= state.stack.length) return state;
+      const bpm = getBpmFromSample(sample.name, sample.path);
+      const newSample: StackSample = {
+        id: crypto.randomUUID(),
+        ...sample,
+        bpm,
+      };
+      const newStack = state.stack.map((s, i) =>
+        i === index ? newSample : s
+      );
+      return { stack: newStack };
     }),
 
   removeFromStack: (index) =>
