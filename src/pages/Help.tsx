@@ -60,7 +60,7 @@ function HelpContent() {
         <CollapsibleContent>
           <div className="ml-12 mt-2 pl-4 border-l-2 border-muted space-y-3 text-sm text-muted-foreground">
             <p>
-              Use the Format dropdown to tell the converter how to process files when copying between panes:
+              Use the Format dialog to tell the converter how to process files when copying between panes:
             </p>
             <ul className="space-y-1.5">
               <li><strong className="text-foreground">Convert to WAV</strong> — Output as WAV format</li>
@@ -212,7 +212,7 @@ export default function Help() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Use the Format dropdown when copying audio files to convert, transpose, or change tempo. Expand each section below for details.
+            Use the Format dialog when copying audio files to convert, transpose, or change tempo. Expand each section below for details.
           </p>
         </div>
         <HelpContent />

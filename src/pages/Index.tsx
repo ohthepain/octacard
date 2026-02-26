@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { FilePane } from "@/components/FilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
-import { FormatDropdown, type FormatSettings } from "@/components/FormatDropdown";
+import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
 import { Link } from "@tanstack/react-router";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
@@ -25,6 +25,7 @@ import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
 import { useAppOptionsStore } from "@/stores/app-options-store";
+import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { capture } from "@/lib/analytics";
 import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
 
@@ -72,16 +73,7 @@ const Index = () => {
   const [sourceRootVersion, setSourceRootVersion] = useState(0);
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
-  const [formatSettings, setFormatSettings] = useState<FormatSettings>({
-    fileFormat: "dont-change",
-    sampleRate: "dont-change",
-    sampleDepth: "dont-change",
-    pitch: "dont-change",
-    mono: false,
-    normalize: false,
-    trim: false,
-    tempo: "dont-change",
-  });
+  const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<{
     isVisible: boolean;
@@ -554,7 +546,7 @@ const Index = () => {
           >
             Dev Mode
           </Button>
-          <FormatDropdown settings={formatSettings} onSettingsChange={setFormatSettings} />
+          <FormatDropdown />
           <Button
             variant="ghost"
             size="sm"
