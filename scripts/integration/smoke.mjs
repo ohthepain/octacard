@@ -20,6 +20,7 @@ import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mj
 import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
 import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
 import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReindex } from "../../tests/search-indexing.mjs";
+import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -260,6 +261,7 @@ try {
   await devModeButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
+  await assertMultiModeToggle(page);
   await assertFormatMenuCategories(page);
   await assertTermsAndPrivacyLinks(page, { baseUrl });
   await assertSampleRateOptions(page);
@@ -427,6 +429,10 @@ try {
   });
   const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
   await destBetaNode.waitFor({ state: "visible" });
+  await formatButton.click();
+  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
+  await page.getByRole("menuitemradio", { name: "16-bit" }).click();
+  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
   await assertDragFolderDropConvertsWithoutConfirmation(page);
 
   await page.getByTestId("tree-node-source-_Alpha").click();
