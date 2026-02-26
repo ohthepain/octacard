@@ -17,6 +17,7 @@ import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-previe
 import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
+import { assertIndexedSearch } from "../../tests/search-indexing.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -76,6 +77,7 @@ try {
       }
 
       async *entries() {
+        window.__entriesCallCount = (window.__entriesCallCount || 0) + 1;
         for (const entry of this.children.entries()) {
           yield entry;
         }
@@ -147,6 +149,7 @@ try {
     };
 
     const pickerQueue = [root, alpha, beta, alpha];
+    window.__entriesCallCount = 0;
     window.__pickerCalls = [];
     window.__octacardPickDirectory = async (startIn, options) => {
       window.__pickerCalls.push({
@@ -288,6 +291,11 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
+  await assertIndexedSearch(page, {
+    pane: "source",
+    query: "inside-alpha",
+    expectedNodeTestId: "tree-node-source-_Alpha",
+  });
   await assertAudioPreviewFilenameTruncation(page);
   await assertExpandedFoldersPersistOnReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
@@ -452,6 +460,12 @@ try {
   assert.equal(convertCalls[0].targetSampleRate, 44100, "Conversion should pass sample rate in Hz.");
   assert.equal(convertCalls[0].sampleDepth, "16-bit", "Conversion should pass selected sample depth.");
   await assertDestRefreshAfterConvert(page);
+  await page.waitForTimeout(300);
+  await assertIndexedSearch(page, {
+    pane: "dest",
+    query: "inside-alpha",
+    expectedNodeTestId: "tree-node-dest-_Beta_Alpha",
+  });
 
   await page.evaluate(() => {
     window.__listCalls = [];
