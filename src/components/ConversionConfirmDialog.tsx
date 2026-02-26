@@ -23,6 +23,7 @@ interface ConversionConfirmDialogProps {
     mono: boolean;
     normalize: boolean;
     trimStart: boolean;
+    tempo?: string;
   };
 }
 
@@ -41,7 +42,8 @@ export const ConversionConfirmDialog = ({
     settings.pitch !== "dont-change" ||
     settings.mono ||
     settings.normalize ||
-    settings.trimStart;
+    settings.trimStart ||
+    (settings.tempo !== undefined && settings.tempo !== "dont-change");
 
   const actionLabel = hasConversion ? "Convert & Save" : "Copy";
   const titleLabel = hasConversion ? "Convert Files?" : "Copy Files?";
@@ -89,6 +91,9 @@ export const ConversionConfirmDialog = ({
     if (settings.trimStart) {
       parts.push("Trim Start");
     }
+    if (settings.tempo !== undefined && settings.tempo !== "dont-change") {
+      parts.push(`Tempo: ${settings.tempo} BPM`);
+    }
 
     return parts.length > 0 ? parts.join(", ") : "No conversion (copy only)";
   };
@@ -109,10 +114,11 @@ export const ConversionConfirmDialog = ({
           mono: settings.mono,
           normalize: settings.normalize,
           trimStart: settings.trimStart,
+          tempo: settings.tempo,
         },
       });
     }
-  }, [open, fileCount, hasConversion, settings.sampleRate, settings.sampleDepth, settings.fileFormat, settings.mono, settings.normalize, settings.trimStart]);
+  }, [open, fileCount, hasConversion, settings.sampleRate, settings.sampleDepth, settings.fileFormat, settings.mono, settings.normalize, settings.trimStart, settings.tempo]);
 
   return (
     <Dialog
@@ -165,6 +171,7 @@ export const ConversionConfirmDialog = ({
                   mono: settings.mono,
                   normalize: settings.normalize,
                   trimStart: settings.trimStart,
+                  tempo: settings.tempo,
                 },
               });
               onConfirm();

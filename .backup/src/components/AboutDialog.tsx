@@ -1,11 +1,6 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import React from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../../src/components/ui/dialog";
+import { Button } from "../../../src/components/ui/button";
 import { ExternalLink } from "lucide-react";
 
 interface AboutDialogProps {
@@ -27,9 +22,7 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
           <DialogDescription className="pt-4 space-y-4">
             <div>
               <div className="font-semibold text-foreground mb-1">Version 1.0.0</div>
-              <div className="text-sm">
-                Sample manager and organizer for Elektron Octatrack
-              </div>
+              <div className="text-sm">Sample manager and organizer for Elektron Octatrack</div>
             </div>
 
             <div className="space-y-2 text-sm">
@@ -48,7 +41,7 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
               <Button
                 variant="outline"
                 className="w-full gap-2"
-                onClick={() => window.open("https://github.com/yourusername/octacard", "_blank")}
+                onClick={() => window.open("https://github.com/ohthepain/octacard", "_blank")}
               >
                 <ExternalLink className="w-4 h-4" />
                 View on GitHub
@@ -56,9 +49,8 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
             </div>
 
             <div className="text-xs text-muted-foreground pt-2">
-              <strong>Note:</strong> This is a UI prototype. To deploy as a desktop app, wrap with 
-              Electron and implement backend features (file system access, audio conversion with 
-              ffmpeg/sox, etc.).
+              <strong>Note:</strong> This is a UI prototype. To deploy as a desktop app, wrap with Electron and
+              implement backend features (file system access, audio conversion with ffmpeg/sox, etc.).
             </div>
           </DialogDescription>
         </DialogHeader>
