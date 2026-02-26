@@ -85,17 +85,27 @@ try {
         }
       }
 
-      async getDirectoryHandle(name) {
+      async getDirectoryHandle(name, options = {}) {
         const entry = this.children.get(name);
         if (!entry || entry.kind !== "directory") {
+          if (options?.create) {
+            const created = new MockDirectoryHandle(name);
+            this.addDirectory(created);
+            return created;
+          }
           throw new DOMException("Directory not found", "NotFoundError");
         }
         return entry;
       }
 
-      async getFileHandle(name) {
+      async getFileHandle(name, options = {}) {
         const entry = this.children.get(name);
         if (!entry || entry.kind !== "file") {
+          if (options?.create) {
+            const created = new MockFileHandle(name);
+            this.children.set(name, created);
+            return created;
+          }
           throw new DOMException("File not found", "NotFoundError");
         }
         return entry;
