@@ -1610,7 +1610,7 @@ export const FilePane = ({
         if (item.type === "file") {
           totalFiles++;
         } else {
-          totalFiles += await countFilesRecursively(item.path);
+          totalFiles += await countFilesRecursively(item.path, sourcePane);
         }
       }
 
@@ -2024,12 +2024,61 @@ export const FilePane = ({
       return;
     }
 
-    // When dropMode is "navigate" and we're on source pane, navigate to dropped folder
-    if (dropMode === "navigate" && paneName === "source") {
-      const navSourcePath = e.dataTransfer.getData("sourcePath");
-      const navSourceType = e.dataTransfer.getData("sourceType");
-      if (navSourcePath && navSourceType === "folder") {
-        await navigateToFolder(navSourcePath);
+    // Internal drag-and-drop between panes should convert/copy immediately without confirmation.
+    // This matches the Convert button flow while skipping the modal prompt.
+    if (paneType === "dest") {
+      const sourcePath = e.dataTransfer.getData("sourcePath");
+      const sourceType = e.dataTransfer.getData("sourceType") as "file" | "folder" | "";
+      const multipleItemsData = e.dataTransfer.getData("multipleItems");
+      const sourcePaneData = e.dataTransfer.getData("sourcePane");
+      const sourcePane = sourcePaneData === "dest" ? "dest" : "source";
+
+      const itemsToCopy: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
+      if (multipleItemsData) {
+        try {
+          const parsedItems = JSON.parse(multipleItemsData) as Array<{
+            path: string;
+            name: string;
+            type: "file" | "folder";
+          }>;
+          for (const item of parsedItems) {
+            if (item?.path && item?.name && (item.type === "file" || item.type === "folder")) {
+              itemsToCopy.push(item);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to parse dragged items:", error);
+        }
+      } else if (sourcePath && (sourceType === "file" || sourceType === "folder")) {
+        itemsToCopy.push({
+          path: sourcePath,
+          name: basename(sourcePath),
+          type: sourceType,
+        });
+      }
+
+      if (itemsToCopy.length > 0) {
+        const destinationPath =
+          destinationNode && destinationNode.type === "folder"
+            ? destinationNode.path
+            : currentRootPath || rootPath;
+
+        if (!destinationPath || destinationPath.trim() === "") {
+          console.error("No destination path available for drop");
+          return;
+        }
+
+        await copyMultipleItems(itemsToCopy, destinationPath, destinationNode, false, sourcePane);
+        return;
+      }
+    }
+
+    // When dropMode is "navigate", navigate to dropped folder instead of converting
+    if (dropMode === "navigate") {
+      const sourcePath = e.dataTransfer.getData("sourcePath");
+      const sourceType = e.dataTransfer.getData("sourceType");
+      if (sourcePath && sourceType === "folder") {
+        await navigateToFolder(sourcePath);
         return;
       }
       // Try OS drop - get path from directory handle if it's under our root
