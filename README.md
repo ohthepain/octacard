@@ -1,11 +1,15 @@
 # OctaCard
 
-OctaCard is a browser-based sample manager for Elektron Octatrack workflows. It focuses on fast folder navigation, preview, and bulk copy/conversion into Octatrack-friendly audio settings.
+## Project description
+
+OctaCard is a browser-based sample manager. It focuses on fast folder navigation, preview, and bulk copy/conversion into device-friendly formats. It was originally designed for Elektron Octatrack but also works perfectly for
+many other devices, including Elektron Digitakt and Intellijel Multigrain
 
 ## Why use this project
 
-- It is purpose-built for source-folder -> destination-folder sample prep, not full DAW editing.
-- It runs locally in Chromium browsers using the File System Access API (no cloud upload requirement).
+- Browser-based, no install required
+- It is purpose-built for source-folder -> destination-folder sample prep, convenient for removable storage
+- It runs locally in Chromium browsers using the File System Access API - no cloud processing.
 - It combines file management, preview, favorites, and batch conversion in one UI.
 - It can convert/copy whole folder trees while preserving structure.
 
@@ -17,6 +21,8 @@ OctaCard is a browser-based sample manager for Elektron Octatrack workflows. It 
 - Folder favorites per pane.
 - Search, recursive browsing, and folder expansion state persistence.
 - Drag/drop and context-menu actions for copy/convert flows.
+- Tempo conversion based on common file and folder name patterns
+- Pitch conversion based on filename
 
 ### Conversion workflow
 
@@ -29,7 +35,6 @@ OctaCard is a browser-based sample manager for Elektron Octatrack workflows. It 
   - Loudness normalization
   - Trim leading silence
   - Pitch-to-C (filename note parsing)
-- Cancellation support during long conversions.
 
 ### Preview and UX
 
@@ -37,9 +42,9 @@ OctaCard is a browser-based sample manager for Elektron Octatrack workflows. It 
 
 - Designed for Chrome/Edge/Chromium browsers.
 - Safari is not supported (File System Access API limitation).
-- It is not a DAW/editor and does not include waveform editing, slicing, or arrangement tools.
+- No sample editing functionality
 
-## Honest comparison with similar tools
+## Comparison with similar tools
 
 Legend: `Yes` = core supported workflow, `Partial` = possible but not the primary UX, `No` = not a core feature.
 
@@ -55,9 +60,9 @@ Legend: `Yes` = core supported workflow, `Partial` = possible but not the primar
 
 ## Gaps (on purpose or not built yet)
 
-- No sample slicing/chain editor UI yet.
+- No drag and drop yet
+- No sample editing
 - No metadata/tag library management.
-- No CLI/headless conversion mode.
 - Browser support depends on File System Access API.
 
 ## Development
