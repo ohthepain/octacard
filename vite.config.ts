@@ -69,6 +69,21 @@ export default defineConfig(({ command }) => {
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "require-corp",
       },
+      proxy: {
+        // PostHog reverse proxy - avoids ad blockers, use /ph path (not /analytics etc)
+        "/ph/static": {
+          target: "https://eu-assets.i.posthog.com",
+          changeOrigin: true,
+          secure: true,
+          rewrite: (path) => path.replace(/^\/ph/, ""),
+        },
+        "/ph": {
+          target: "https://eu.i.posthog.com",
+          changeOrigin: true,
+          secure: true,
+          rewrite: (path) => path.replace(/^\/ph/, ""),
+        },
+      },
     },
     preview: {
       headers: {

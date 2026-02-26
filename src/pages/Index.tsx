@@ -3,6 +3,7 @@ import { FilePane } from "@/components/FilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown, type FormatSettings } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
+import { Link } from "@tanstack/react-router";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
@@ -16,12 +17,16 @@ import {
 } from "@/components/ui/dialog";
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
-import { Play } from "lucide-react";
+import { Play, HelpCircle } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { MultiSampleStack } from "@/components/MultiSampleStack";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
 import { useAppOptionsStore } from "@/stores/app-options-store";
 import { capture } from "@/lib/analytics";
+import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -48,8 +53,11 @@ function isSafari(): boolean {
 
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
-  const devMode = useAppOptionsStore((currentState) => currentState.devMode);
-  const setDevMode = useAppOptionsStore((currentState) => currentState.setDevMode);
+  const devMode = useAppOptionsStore((s) => s.devMode);
+  const setDevMode = useAppOptionsStore((s) => s.setDevMode);
+  const previewMode = useMultiSampleStore((s) => s.previewMode);
+  const setPreviewMode = useMultiSampleStore((s) => s.setPreviewMode);
+  const addToStack = useMultiSampleStore((s) => s.addToStack);
   const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -72,6 +80,7 @@ const Index = () => {
     mono: false,
     normalize: false,
     trim: false,
+    tempo: "dont-change",
   });
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<{
@@ -241,8 +250,53 @@ const Index = () => {
           ? entry.path.slice(sourcePrefix.length)
           : entry.name;
         const dirParts = relativePath.split("/");
-        const fileName = dirParts.pop() || entry.name;
-        const destDir = dirParts.length ? `${destinationBasePath}/${dirParts.join("/")}` : destinationBasePath;
+        let fileName = dirParts.pop() || entry.name;
+
+        // Parse BPM: filename first, then immediate parent folder
+        let bpmResult = parseBpmFromString(entry.name);
+        let tempoFromFolder = false;
+        let parentFolderName: string | undefined;
+        if (!bpmResult) {
+          const pathParts = entry.path.split("/").filter(Boolean);
+          if (pathParts.length >= 2) {
+            parentFolderName = pathParts[pathParts.length - 2];
+            bpmResult = parentFolderName
+              ? parseBpmFromString(parentFolderName)
+              : null;
+            tempoFromFolder = !!bpmResult;
+          }
+        }
+
+        const targetBpm =
+          formatSettings.tempo !== "dont-change"
+            ? parseInt(formatSettings.tempo, 10)
+            : undefined;
+        const sourceBpm = bpmResult?.bpm;
+        const applyTempo =
+          targetBpm != null &&
+          Number.isFinite(targetBpm) &&
+          sourceBpm != null &&
+          formatSettings.tempo !== "dont-change";
+
+        let destDir = dirParts.length
+          ? `${destinationBasePath}/${dirParts.join("/")}`
+          : destinationBasePath;
+
+        if (applyTempo) {
+          if (tempoFromFolder && parentFolderName) {
+            const updatedDirParts = dirParts.map((p) =>
+              p === parentFolderName
+                ? replaceBpmInString(p, sourceBpm, targetBpm)
+                : p
+            );
+            destDir =
+              updatedDirParts.length > 0
+                ? `${destinationBasePath}/${updatedDirParts.join("/")}`
+                : destinationBasePath;
+          } else {
+            fileName = replaceBpmInString(entry.name, sourceBpm, targetBpm);
+          }
+        }
 
         const result = await fileSystemService.convertAndCopyFile(
           entry.path,
@@ -255,6 +309,8 @@ const Index = () => {
           formatSettings.mono,
           formatSettings.normalize,
           formatSettings.trim,
+          applyTempo ? targetBpm : undefined,
+          applyTempo ? sourceBpm : undefined,
           "source",
           "dest",
           conversionAbortControllerRef.current.signal,
@@ -305,7 +361,8 @@ const Index = () => {
         formatSettings.pitch !== "dont-change" ||
         formatSettings.mono ||
         formatSettings.normalize ||
-        formatSettings.trim;
+        formatSettings.trim ||
+        formatSettings.tempo !== "dont-change";
 
       capture("octacard_conversion_completed", {
         file_count: files.length,
@@ -319,6 +376,7 @@ const Index = () => {
           mono: formatSettings.mono,
           normalize: formatSettings.normalize,
           trimStart: formatSettings.trim,
+          tempo: formatSettings.tempo,
         },
       });
     } catch (err) {
@@ -340,7 +398,8 @@ const Index = () => {
         formatSettings.fileFormat !== "dont-change" ||
         formatSettings.mono ||
         formatSettings.normalize ||
-        formatSettings.trim;
+        formatSettings.trim ||
+        formatSettings.tempo !== "dont-change";
 
       capture("octacard_conversion_failed", {
         file_count: files.length,
@@ -352,6 +411,7 @@ const Index = () => {
           mono: formatSettings.mono,
           normalize: formatSettings.normalize,
           trimStart: formatSettings.trim,
+          tempo: formatSettings.tempo,
         },
         error: err instanceof Error ? err.message : String(err),
       });
@@ -407,6 +467,31 @@ const Index = () => {
     }
   };
 
+  const handlePreviewModeChange = useCallback(
+    (value: string) => {
+      if (value === "multi") {
+        setPreviewMode("multi");
+        if (selectedSourceItem?.type === "file" && isAudioFile(selectedSourceItem.name)) {
+          addToStack({
+            path: selectedSourceItem.path,
+            name: selectedSourceItem.name,
+            paneType: "source",
+          });
+        }
+        if (selectedDestItem?.type === "file" && isAudioFile(selectedDestItem.name)) {
+          addToStack({
+            path: selectedDestItem.path,
+            name: selectedDestItem.name,
+            paneType: "dest",
+          });
+        }
+      } else {
+        setPreviewMode("single");
+      }
+    },
+    [setPreviewMode, addToStack, selectedSourceItem, selectedDestItem]
+  );
+
   const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
     if (result.success && result.data) {
@@ -436,6 +521,19 @@ const Index = () => {
             </div>
             <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
           </div>
+          <ToggleGroup
+            type="single"
+            value={previewMode}
+            onValueChange={(v) => v && handlePreviewModeChange(v)}
+            className="border rounded-md p-0.5"
+          >
+            <ToggleGroupItem value="single" size="sm" aria-label="Single preview">
+              Single
+            </ToggleGroupItem>
+            <ToggleGroupItem value="multi" size="sm" aria-label="Multi preview">
+              Multi
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
@@ -461,6 +559,20 @@ const Index = () => {
             variant="ghost"
             size="sm"
             className="text-muted-foreground hover:text-foreground"
+            asChild
+            aria-label="Help"
+          >
+            <Link
+              to="/help"
+              onClick={() => capture("octacard_help_clicked", { source: "header" })}
+            >
+              <HelpCircle className="w-4 h-4" />
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
             onClick={() => setAboutOpen(true)}
           >
             About
@@ -469,10 +581,10 @@ const Index = () => {
       </header>
 
       {/* Main Content: Flat 4-panel layout so favorites and browser dividers are independent */}
-      <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <ResizablePanelGroup
           orientation="horizontal"
-          className="flex-1 min-w-0"
+          className="flex-1 min-h-0 min-w-0"
           id="main-layout"
           defaultLayout={{
             "left-fav": 20,
@@ -579,6 +691,7 @@ const Index = () => {
             />
           </ResizablePanel>
         </ResizablePanelGroup>
+        {previewMode === "multi" && <MultiSampleStack className="shrink-0" />}
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
@@ -612,6 +725,7 @@ const Index = () => {
             mono: formatSettings.mono,
             normalize: formatSettings.normalize,
             trimStart: formatSettings.trim,
+            tempo: formatSettings.tempo,
           }}
         />
       )}

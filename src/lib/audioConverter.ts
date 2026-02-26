@@ -29,6 +29,10 @@ interface ConversionOptions {
   /** When true, shift pitch to C based on note in sourceFileName. Requires sourceFileName. */
   pitchToC?: boolean;
   sourceFileName?: string;
+  /** Target BPM for tempo adjustment. Requires sourceTempo. */
+  targetTempo?: number;
+  /** Source BPM (detected from path). Requires targetTempo. */
+  sourceTempo?: number;
 }
 
 async function initializeFFmpeg(): Promise<FFmpeg> {
@@ -127,6 +131,23 @@ async function detectSilenceStart(file: File, ffmpeg: FFmpeg): Promise<number> {
   }
 }
 
+/** FFmpeg atempo accepts 0.5–2.0 per filter. Chain multiple for factors outside that range. */
+function buildAtempoFilterChain(targetTempo: number, sourceTempo: number): string {
+  const factor = targetTempo / sourceTempo;
+  const factors: number[] = [];
+  let remaining = factor;
+  while (remaining > 2) {
+    factors.push(2);
+    remaining /= 2;
+  }
+  while (remaining < 0.5) {
+    factors.push(0.5);
+    remaining /= 0.5;
+  }
+  factors.push(remaining);
+  return factors.map((f) => `atempo=${f}`).join(",");
+}
+
 export async function convertAudio(
   inputFile: File,
   options: ConversionOptions
@@ -172,7 +193,12 @@ export async function convertAudio(
     // Build audio filter chain
     const audioFilters: string[] = [];
 
-    // Add varispeed (pitch-to-C) first if needed
+    // Add atempo (tempo adjustment) first if needed
+    if (options.targetTempo != null && options.sourceTempo != null) {
+      audioFilters.push(buildAtempoFilterChain(options.targetTempo, options.sourceTempo));
+    }
+
+    // Add varispeed (pitch-to-C) if needed
     if (pitchRatio !== null) {
       const inputRate = await probeSampleRate(ffmpeg, inputFileName);
       audioFilters.push(`asetrate=${inputRate}*${pitchRatio},aresample=${targetSampleRate}`);
@@ -249,6 +275,8 @@ export function needsConversion(options: ConversionOptions): boolean {
     options.normalize ||
     options.format === 'WAV' ||
     options.trimStart ||
-    options.pitchToC
+    options.pitchToC ||
+    options.targetTempo ||
+    options.sourceTempo
   );
 }

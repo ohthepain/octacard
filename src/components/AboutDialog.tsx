@@ -1,10 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
 import { useEffect } from "react";
@@ -64,7 +58,7 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
 
           <div className="pt-4 border-t border-border space-y-2">
             <Button variant="outline" className="w-full gap-2" asChild>
-              <a href="https://github.com/yourusername/octacard" target="_blank" rel="noopener noreferrer">
+              <a href="https://github.com/ohthepain/octacard" target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="w-4 h-4" />
                 View on GitHub
               </a>
