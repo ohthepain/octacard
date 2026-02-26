@@ -16,6 +16,7 @@ export interface FileSystemResult<T = any> {
   success: boolean;
   data?: T;
   error?: string;
+  cancelled?: boolean;
 }
 
 export interface PaneDirectorySelection {
@@ -44,6 +45,7 @@ interface OctacardTestHooks {
     sourceTempo?: number;
     sourcePane: PaneType;
     destPane: PaneType;
+    signal?: AbortSignal;
   }) => Promise<FileSystemResult> | FileSystemResult;
   revealInFinder?: (args: {
     virtualPath: string;
@@ -721,7 +723,16 @@ class FileSystemService {
     sourceTempo?: number,
     sourcePane: PaneType = "source",
     destPane: PaneType = "dest",
+    signal?: AbortSignal,
   ): Promise<FileSystemResult> {
+    if (signal?.aborted) {
+      return {
+        success: false,
+        error: "Operation cancelled",
+        cancelled: true,
+      };
+    }
+
     const testConvert = this.getTestHooks()?.convertAndCopyFile;
     if (typeof testConvert === "function") {
       return await testConvert({
@@ -739,10 +750,33 @@ class FileSystemService {
         sourceTempo,
         sourcePane,
         destPane,
+        signal,
       });
     }
 
+    let abortListener: (() => void) | null = null;
     try {
+      if (signal) {
+        abortListener = () => {
+          import("./audioConverter")
+            .then(({ cancelActiveConversion }) => {
+              cancelActiveConversion();
+            })
+            .catch(() => {
+              // Ignore cancellation cleanup errors
+            });
+        };
+        signal.addEventListener("abort", abortListener, { once: true });
+      }
+
+      if (signal?.aborted) {
+        return {
+          success: false,
+          error: "Operation cancelled",
+          cancelled: true,
+        };
+      }
+
       // Get source file
       const sourceFile = await this.getFile(sourceVirtualPath, sourcePane);
       if (!sourceFile) {
@@ -804,6 +838,14 @@ class FileSystemService {
         finalFile = convertedBlob;
       }
 
+      if (signal?.aborted) {
+        return {
+          success: false,
+          error: "Operation cancelled",
+          cancelled: true,
+        };
+      }
+
       // Write to destination (ensure nested dirs exist)
       const destDirHandle = await this.getRegistry(destPane).ensureDirectory(destVirtualPath);
 
@@ -825,12 +867,31 @@ class FileSystemService {
 
       await writable.close();
 
+      if (signal?.aborted) {
+        return {
+          success: false,
+          error: "Operation cancelled",
+          cancelled: true,
+        };
+      }
+
       return { success: true };
     } catch (error) {
+      if (signal?.aborted) {
+        return {
+          success: false,
+          error: "Operation cancelled",
+          cancelled: true,
+        };
+      }
       return {
         success: false,
         error: String(error),
       };
+    } finally {
+      if (signal && abortListener) {
+        signal.removeEventListener("abort", abortListener);
+      }
     }
   }
 
