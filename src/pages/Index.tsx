@@ -51,6 +51,12 @@ function isSafari(): boolean {
   return ua.includes("safari") && !ua.includes("chrome") && !ua.includes("chromium");
 }
 
+async function yieldToUi(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
   const devMode = useAppOptionsStore((s) => s.devMode);
@@ -237,6 +243,10 @@ const Index = () => {
     const errors: Array<{ name: string; error: string }> = [];
     try {
       for (let i = 0; i < files.length; i++) {
+        if (conversionCancelRequestedRef.current) {
+          break;
+        }
+        await yieldToUi();
         if (conversionCancelRequestedRef.current) {
           break;
         }
