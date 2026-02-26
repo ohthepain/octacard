@@ -8,7 +8,6 @@ OctaCard is a browser-based sample manager for Elektron Octatrack workflows. It 
 - It runs locally in Chromium browsers using the File System Access API (no cloud upload requirement).
 - It combines file management, preview, favorites, and batch conversion in one UI.
 - It can convert/copy whole folder trees while preserving structure.
-## How can I edit this code?
 
 ## Features (current)
 
@@ -33,13 +32,6 @@ OctaCard is a browser-based sample manager for Elektron Octatrack workflows. It 
 - Cancellation support during long conversions.
 
 ### Preview and UX
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes.
-
-- Audio preview with waveform, timeline, minimap, zoom, and transport controls.
-- Video preview panel for supported video files.
-- Conversion confirmation dialog with settings summary and file counts.
 
 ### Compatibility and limits
 
@@ -51,15 +43,15 @@ If you want to work locally using your own IDE, you can clone this repo and push
 
 Legend: `Yes` = core supported workflow, `Partial` = possible but not the primary UX, `No` = not a core feature.
 
-| Capability | OctaCard | Elektron Transfer | Sononym | fre:ac | Audacity | FFmpeg CLI |
-| --- | --- | --- | --- | --- | --- | --- |
-| Octatrack-oriented workflow | Yes | Partial (device transfer focus) | No | No | No | No |
-| Batch folder conversion | Yes | No | No | Yes | Partial | Yes |
-| Built-in waveform preview/player | Yes | No | Yes | No | Yes | No |
-| Similarity-based sample discovery | No | No | Yes | No | No | No |
-| Multi-track editing/recording | No | No | No | No | Yes | No |
-| Command-line automation | No | No | No | No | No | Yes |
-| Runs as browser app | Yes | No | No | No | No | No |
+| Capability                        | OctaCard | Elektron Transfer               | Sononym | fre:ac | Audacity | FFmpeg CLI |
+| --------------------------------- | -------- | ------------------------------- | ------- | ------ | -------- | ---------- |
+| Octatrack-oriented workflow       | Yes      | Partial (device transfer focus) | No      | No     | No       | No         |
+| Batch folder conversion           | Yes      | No                              | No      | Yes    | Partial  | Yes        |
+| Built-in waveform preview/player  | Yes      | No                              | Yes     | No     | Yes      | No         |
+| Similarity-based sample discovery | No       | No                              | Yes     | No     | No       | No         |
+| Multi-track editing/recording     | No       | No                              | No      | No     | Yes      | No         |
+| Command-line automation           | No       | No                              | No      | No     | No       | Yes        |
+| Runs as browser app               | Yes      | No                              | No      | No     | No       | No         |
 
 ## Gaps (on purpose or not built yet)
 
@@ -88,6 +80,7 @@ npm run test:it
 - fre:ac feature overview: https://www.freac.org/
 - Audacity manual (editing/mixing workflows): https://manual.audacityteam.org/man/tutorial_your_first_recording.html
 - FFmpeg documentation/CLI scope: https://ffmpeg.org/ffmpeg-all.html
+
 ## How can I deploy this project?
 
 For web deployment, you can use platforms like Vercel, Netlify, or Cloudflare Pages. Build the project with `pnpm run build` and deploy the output from the `dist` directory.
