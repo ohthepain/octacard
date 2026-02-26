@@ -10,6 +10,7 @@ import { assertRevealInFinderDoesNotOpenPickerFallback } from "../../tests/revea
 import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
+import { assertFormatMenuCategories } from "../../tests/format-menu-categories.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-select-directory.mjs";
 import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-preview-position.mjs";
@@ -242,6 +243,7 @@ try {
   await devModeButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
+  await assertFormatMenuCategories(page);
   await assertTermsAndPrivacyLinks(page, { baseUrl });
   await assertSampleRateOptions(page);
   const convertBox = await convertButton.boundingBox();
