@@ -1623,7 +1623,7 @@ export const FilePane = ({
         if (item.type === "file") {
           totalFiles++;
         } else {
-          totalFiles += await countFilesRecursively(item.path);
+          totalFiles += await countFilesRecursively(item.path, sourcePane);
         }
       }
 
@@ -1632,7 +1632,7 @@ export const FilePane = ({
         item_count: items.length,
         is_external: isExternal,
         source_pane: sourcePane,
-        dest_pane: "dest",
+        dest_pane: paneType,
         convert_files: convertFiles,
       });
 
@@ -1655,10 +1655,10 @@ export const FilePane = ({
       // Helper to copy folder recursively with progress tracking
       const copyFolderWithProgress = async (sourceFolder: string, destFolder: string): Promise<void> => {
         try {
-          const result = await fileSystemService.readDirectory(sourceFolder, "source");
+          const result = await fileSystemService.readDirectory(sourceFolder, sourcePane);
           if (!result.success || !result.data) return;
 
-          await fileSystemService.createFolder(destFolder, basename(destFolder), "dest");
+          await fileSystemService.createFolder(destFolder, basename(destFolder), paneType);
 
           for (const entry of result.data) {
             const entryDestPath = joinPath(destFolder, entry.name);
@@ -1675,7 +1675,7 @@ export const FilePane = ({
 
               // For external drops (from Finder), treat as from different pane
               // For internal drops, check if source is from different pane
-              const isFromDifferentPane = isExternal || (rootPath ? !entry.path.startsWith(rootPath) : false);
+              const isFromDifferentPane = isExternal || sourcePane !== paneType;
               const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(entry.path);
 
               let finalDestPath = entryDestPath;
@@ -1709,8 +1709,8 @@ export const FilePane = ({
                   mono,
                   normalize,
                   trimStart,
-                  "source",
-                  "dest",
+                  sourcePane,
+                  paneType,
                 );
               } else {
                 copiedFileCount++;
@@ -1718,8 +1718,8 @@ export const FilePane = ({
                   entry.path,
                   dirname(entryDestPath),
                   basename(entryDestPath),
-                  "source",
-                  "dest",
+                  sourcePane,
+                  paneType,
                 );
               }
 
@@ -1755,7 +1755,7 @@ export const FilePane = ({
           // Check if file conversion is needed
           // For external drops (from Finder), treat as from different pane
           // For internal drops, check if source is from different pane
-          const isFromDifferentPane = isExternal || (rootPath ? !item.path.startsWith(rootPath) : false);
+          const isFromDifferentPane = isExternal || sourcePane !== paneType;
           const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
 
           let finalDestFilePath = destFilePath;
@@ -1790,7 +1790,7 @@ export const FilePane = ({
               normalize,
               trimStart,
               sourcePane,
-              "dest",
+              paneType,
             );
           } else {
             copiedFileCount++;
@@ -1799,7 +1799,7 @@ export const FilePane = ({
               dirname(destFilePath),
               basename(destFilePath),
               sourcePane,
-              "dest",
+              paneType,
             );
           }
 
@@ -1825,10 +1825,17 @@ export const FilePane = ({
 
       // Show errors if any
       if (errors.length > 0) {
-        const errorMessage = `Failed to copy ${errors.length} item(s):\n${errors
-          .map((e) => `- ${e.name}: ${e.error}`)
-          .join("\n")}`;
-        alert(errorMessage);
+        toast.error(`Failed to copy ${errors.length} item(s)`, {
+          description: errors.map((e) => `${e.name}: ${e.error}`).join("\n"),
+        });
+      } else if (totalFiles > 0) {
+        const actionLabel = convertedFileCount > 0 ? "Converted" : "Copied";
+        toast.success(`${actionLabel} ${totalFiles} file(s)`, {
+          description:
+            convertedFileCount > 0
+              ? `${convertedFileCount} converted, ${copiedFileCount} copied`
+              : undefined,
+        });
       }
 
       capture("octacard_copy_completed", {
@@ -1839,7 +1846,7 @@ export const FilePane = ({
         copied_file_count: copiedFileCount,
         is_external: isExternal,
         source_pane: sourcePane,
-        dest_pane: "dest",
+        dest_pane: paneType,
         convert_files: convertFiles,
       });
     },
@@ -1851,9 +1858,11 @@ export const FilePane = ({
       mono,
       normalize,
       onFileTransfer,
-      rootPath,
+      paneType,
+      pitch,
       sampleDepth,
       sampleRate,
+      trimStart,
     ],
   );
 
@@ -1866,6 +1875,55 @@ export const FilePane = ({
     if (!fileSystemService.hasRootForPane(paneType)) {
       console.error("No root directory selected");
       return;
+    }
+
+    // Internal drag-and-drop between panes should convert/copy immediately without confirmation.
+    // This matches the Convert button flow while skipping the modal prompt.
+    if (paneType === "dest") {
+      const sourcePath = e.dataTransfer.getData("sourcePath");
+      const sourceType = e.dataTransfer.getData("sourceType") as "file" | "folder" | "";
+      const multipleItemsData = e.dataTransfer.getData("multipleItems");
+      const sourcePaneData = e.dataTransfer.getData("sourcePane");
+      const sourcePane = sourcePaneData === "dest" ? "dest" : "source";
+
+      const itemsToCopy: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
+      if (multipleItemsData) {
+        try {
+          const parsedItems = JSON.parse(multipleItemsData) as Array<{
+            path: string;
+            name: string;
+            type: "file" | "folder";
+          }>;
+          for (const item of parsedItems) {
+            if (item?.path && item?.name && (item.type === "file" || item.type === "folder")) {
+              itemsToCopy.push(item);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to parse dragged items:", error);
+        }
+      } else if (sourcePath && (sourceType === "file" || sourceType === "folder")) {
+        itemsToCopy.push({
+          path: sourcePath,
+          name: basename(sourcePath),
+          type: sourceType,
+        });
+      }
+
+      if (itemsToCopy.length > 0) {
+        const destinationPath =
+          destinationNode && destinationNode.type === "folder"
+            ? destinationNode.path
+            : currentRootPath || rootPath;
+
+        if (!destinationPath || destinationPath.trim() === "") {
+          console.error("No destination path available for drop");
+          return;
+        }
+
+        await copyMultipleItems(itemsToCopy, destinationPath, destinationNode, false, sourcePane);
+        return;
+      }
     }
 
     // When dropMode is "navigate", navigate to dropped folder instead of converting
