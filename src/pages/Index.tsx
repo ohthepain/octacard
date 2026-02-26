@@ -18,7 +18,6 @@ import {
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
 import { Play, HelpCircle } from "lucide-react";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { MultiSampleStack } from "@/components/MultiSampleStack";
 import { fileSystemService } from "@/lib/fileSystem";
@@ -49,6 +48,12 @@ function isSafari(): boolean {
   if (typeof window === "undefined") return false;
   const ua = window.navigator.userAgent.toLowerCase();
   return ua.includes("safari") && !ua.includes("chrome") && !ua.includes("chromium");
+}
+
+async function yieldToUi(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 const Index = () => {
@@ -237,6 +242,10 @@ const Index = () => {
     const errors: Array<{ name: string; error: string }> = [];
     try {
       for (let i = 0; i < files.length; i++) {
+        if (conversionCancelRequestedRef.current) {
+          break;
+        }
+        await yieldToUi();
         if (conversionCancelRequestedRef.current) {
           break;
         }
@@ -521,19 +530,16 @@ const Index = () => {
             </div>
             <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
           </div>
-          <ToggleGroup
-            type="single"
-            value={previewMode}
-            onValueChange={(v) => v && handlePreviewModeChange(v)}
-            className="border rounded-md p-0.5"
+          <Button
+            variant={previewMode === "multi" ? "default" : "outline"}
+            size="sm"
+            aria-pressed={previewMode === "multi"}
+            aria-label="Multi preview"
+            data-testid="multi-mode-toggle"
+            onClick={() => handlePreviewModeChange(previewMode === "multi" ? "single" : "multi")}
           >
-            <ToggleGroupItem value="single" size="sm" aria-label="Single preview">
-              Single
-            </ToggleGroupItem>
-            <ToggleGroupItem value="multi" size="sm" aria-label="Multi preview">
-              Multi
-            </ToggleGroupItem>
-          </ToggleGroup>
+            Multi
+          </Button>
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
