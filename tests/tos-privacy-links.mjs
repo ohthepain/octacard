@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 export async function assertTermsAndPrivacyLinks(page, { baseUrl }) {
   await page.getByRole("button", { name: "About" }).click();
-  const aboutDialog = page.getByRole("dialog");
+  const aboutDialog = page.getByRole("dialog").filter({ hasText: "Terms of Service" });
   await aboutDialog.waitFor({ state: "visible" });
 
   const termsLink = aboutDialog.getByRole("link", { name: "Terms of Service" });
@@ -27,6 +27,6 @@ export async function assertTermsAndPrivacyLinks(page, { baseUrl }) {
   assert.match(privacyBody, /<h1>Privacy Policy<\/h1>/, "Privacy page should include heading.");
   assert.match(privacyBody, /do not store your personal files or account data/, "Privacy page should state no storage.");
 
-  await page.keyboard.press("Escape");
+  await aboutDialog.getByRole("button", { name: "Close" }).click();
   await aboutDialog.waitFor({ state: "hidden" });
 }
