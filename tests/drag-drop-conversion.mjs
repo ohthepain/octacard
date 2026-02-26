@@ -4,9 +4,9 @@ export async function assertDragDropConvertsWithFormat(page) {
   const formatButton = page.getByRole("button", { name: "Format" });
 
   await formatButton.click();
-  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
-  await page.getByRole("menuitemradio", { name: "16-bit" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await page.getByLabel("16-bit").first().click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("dialog", { name: "Format Settings" }).waitFor({ state: "hidden" });
 
   await page.evaluate(() => {
     window.__convertCalls = [];

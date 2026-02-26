@@ -429,15 +429,10 @@ try {
   await destBetaNode.click();
 
   await formatButton.click();
-  await page.getByRole("menuitem", { name: "Sample Rate" }).hover();
-  await page.getByRole("menuitemradio", { name: "44100" }).click();
-  // Wait for dropdown menu to close before opening again
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {
-    // Menu might already be closed or not found, continue
-  });
-  await formatButton.click();
-  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
-  await page.getByRole("menuitemradio", { name: "16-bit" }).click();
+  await page.locator('label[for="sample-rate-44100"]').click();
+  await page.locator('label[for="sample-depth-16-bit"]').click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("dialog", { name: "Format Settings" }).waitFor({ state: "hidden" });
 
   await convertButton.click();
   await page.getByRole("button", { name: "Convert & Save" }).click();
@@ -468,29 +463,14 @@ try {
     window.__convertCalls = [];
   });
   await formatButton.click();
-  await page.getByRole("menuitem", { name: "Sample Rate" }).hover();
-  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
-  await formatButton.click();
-  await page.getByRole("menuitem", { name: "Sample Depth" }).hover();
-  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
-  await formatButton.click();
-  await page.getByRole("menuitem", { name: "Format" }).hover();
-  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
-  await formatButton.click();
-  await page.getByRole("menuitem", { name: "Mono" }).hover();
-  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
-  await formatButton.click();
-  await page.getByRole("menuitem", { name: "Normalize" }).hover();
-  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
-  await formatButton.click();
-  await page.getByRole("menuitem", { name: "Trim" }).hover();
-  await page.getByRole("menuitemradio", { name: "Don't change" }).click();
-  await page.waitForSelector('[role="menu"]', { state: "hidden", timeout: 2000 }).catch(() => {});
+  await page.locator('label[for="sample-rate-dont-change"]').click();
+  await page.locator('label[for="sample-depth-dont-change"]').click();
+  await page.locator('label[for="file-format-dont-change"]').click();
+  await page.locator('label[for="mono-no"]').click();
+  await page.locator('label[for="normalize-no"]').click();
+  await page.locator('label[for="trim-no"]').click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("dialog", { name: "Format Settings" }).waitFor({ state: "hidden" });
 
   await convertButton.click();
   await page.getByRole("heading", { name: "Copy Files?" }).waitFor({ state: "visible" });
