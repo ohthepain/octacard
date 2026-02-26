@@ -2786,9 +2786,8 @@ export const FilePane = ({
                   handlePaneClick();
 
                   if (node.type === "folder") {
-                    // If this is a search result folder, navigate to it and clear search
+                    // If this is a search result folder, navigate to it and keep search text.
                     if (searchQuery && node.id.startsWith("search-folder-")) {
-                      setSearchQuery("");
                       navigateToFolder(node.path);
                     } else {
                       toggleFolder(node);
@@ -2807,10 +2806,7 @@ export const FilePane = ({
                 }}
                 onDoubleClick={() => {
                   if (!isParentLink && node.type === "folder") {
-                    // If this is a search result folder, clear search when navigating
-                    if (searchQuery && node.id.startsWith("search-folder-")) {
-                      setSearchQuery("");
-                    }
+                    // If this is a search result folder, keep search text when navigating.
                     navigateToFolder(node.path);
                   }
                 }}

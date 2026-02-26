@@ -20,6 +20,7 @@ import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mj
 import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
 import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
 import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReindex } from "../../tests/search-indexing.mjs";
+import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -518,6 +519,7 @@ try {
   );
 
   await assertDragDropConvertsWithFormat(page);
+  await assertSearchQueryPersistsWhenNavigatingSearchResult(page);
 
   assert.equal(domNestingWarnings.length, 0, "No DOM nesting warnings should be emitted during conversion flow.");
 
