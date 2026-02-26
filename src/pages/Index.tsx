@@ -18,6 +18,7 @@ import {
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
 import { Play, HelpCircle } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { MultiSampleStack } from "@/components/MultiSampleStack";
 import { fileSystemService } from "@/lib/fileSystem";
@@ -575,6 +576,7 @@ const Index = () => {
           >
             About
           </Button>
+          <ThemeToggle />
         </div>
       </header>
 
