@@ -244,10 +244,32 @@ class HandleRegistry {
 
 export type PaneType = "source" | "dest";
 
+interface SearchIndexState {
+  entries: FileSystemEntry[];
+  isReady: boolean;
+  indexedAt: number;
+}
+
 // File System Access API wrapper - supports per-pane roots for source and dest
 class FileSystemService {
   private sourceRegistry = new HandleRegistry();
   private destRegistry = new HandleRegistry();
+  private searchIndexByPane: Record<PaneType, SearchIndexState> = {
+    source: { entries: [], isReady: false, indexedAt: 0 },
+    dest: { entries: [], isReady: false, indexedAt: 0 },
+  };
+  private indexBuildPromiseByPane: Record<PaneType, Promise<void> | null> = {
+    source: null,
+    dest: null,
+  };
+  private reindexTimerByPane: Record<PaneType, ReturnType<typeof setTimeout> | null> = {
+    source: null,
+    dest: null,
+  };
+  private pendingReindexPathsByPane: Record<PaneType, Set<string>> = {
+    source: new Set(),
+    dest: new Set(),
+  };
 
   private getRegistry(paneType: PaneType): HandleRegistry {
     return paneType === "source" ? this.sourceRegistry : this.destRegistry;
@@ -259,6 +281,151 @@ class FileSystemService {
     const parts = normalized.split("/").filter(Boolean);
     parts.pop();
     return parts.length ? `/${parts.join("/")}` : "/";
+  }
+
+  private normalizeVirtualPath(path?: string): string {
+    if (!path) return "/";
+    const normalized = path
+      .trim()
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+      .join("/");
+    return normalized ? `/${normalized}` : "/";
+  }
+
+  private getTopLevelSubtreePath(virtualPath: string): string {
+    const normalized = this.normalizeVirtualPath(virtualPath);
+    if (normalized === "/") return "/";
+    const parts = normalized.split("/").filter(Boolean);
+    return parts.length > 0 ? `/${parts[0]}` : "/";
+  }
+
+  private isPathWithinScope(path: string, scopePath: string): boolean {
+    if (scopePath === "/") return true;
+    return path === scopePath || path.startsWith(`${scopePath}/`);
+  }
+
+  private resetSearchIndex(paneType: PaneType): void {
+    this.searchIndexByPane[paneType] = { entries: [], isReady: false, indexedAt: 0 };
+    this.pendingReindexPathsByPane[paneType].clear();
+    const pendingTimer = this.reindexTimerByPane[paneType];
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      this.reindexTimerByPane[paneType] = null;
+    }
+  }
+
+  private async walkDirectoryEntries(
+    virtualPath: string,
+    paneType: PaneType,
+    collector: FileSystemEntry[],
+  ): Promise<void> {
+    const result = await this.readDirectory(virtualPath, paneType);
+    if (!result.success || !result.data) return;
+
+    for (const entry of result.data) {
+      collector.push(entry);
+      if (entry.isDirectory) {
+        await this.walkDirectoryEntries(entry.path, paneType, collector);
+      }
+    }
+  }
+
+  private async buildSearchIndexForPane(paneType: PaneType): Promise<void> {
+    if (this.indexBuildPromiseByPane[paneType]) {
+      await this.indexBuildPromiseByPane[paneType];
+      return;
+    }
+
+    const buildPromise = (async () => {
+      if (!this.getRegistry(paneType).hasRoot()) {
+        this.resetSearchIndex(paneType);
+        return;
+      }
+
+      const entries: FileSystemEntry[] = [];
+      await this.walkDirectoryEntries("/", paneType, entries);
+      this.searchIndexByPane[paneType] = {
+        entries,
+        isReady: true,
+        indexedAt: Date.now(),
+      };
+    })().finally(() => {
+      this.indexBuildPromiseByPane[paneType] = null;
+    });
+
+    this.indexBuildPromiseByPane[paneType] = buildPromise;
+    await buildPromise;
+  }
+
+  private async reindexSubtreeNow(virtualPath: string, paneType: PaneType): Promise<void> {
+    const normalizedPath = this.normalizeVirtualPath(virtualPath);
+
+    if (!this.searchIndexByPane[paneType].isReady || normalizedPath === "/") {
+      await this.buildSearchIndexForPane(paneType);
+      return;
+    }
+
+    const existingEntries = this.searchIndexByPane[paneType].entries;
+    const retainedEntries = existingEntries.filter((entry) => !this.isPathWithinScope(entry.path, normalizedPath));
+    const subtreeEntries: FileSystemEntry[] = [];
+    await this.walkDirectoryEntries(normalizedPath, paneType, subtreeEntries);
+
+    const folderName = normalizedPath.split("/").filter(Boolean).pop();
+    if (folderName) {
+      const stats = await this.getFileStats(normalizedPath, paneType);
+      if (stats.success && stats.data?.isDirectory) {
+        subtreeEntries.unshift({
+          name: folderName,
+          path: normalizedPath,
+          type: "folder",
+          size: 0,
+          isDirectory: true,
+        });
+      }
+    }
+
+    this.searchIndexByPane[paneType] = {
+      entries: [...retainedEntries, ...subtreeEntries],
+      isReady: true,
+      indexedAt: Date.now(),
+    };
+  }
+
+  private schedulePartialReindex(paneType: PaneType, virtualPath: string): void {
+    const subtreePath = this.getTopLevelSubtreePath(virtualPath);
+    this.pendingReindexPathsByPane[paneType].add(subtreePath);
+    if (this.reindexTimerByPane[paneType]) {
+      return;
+    }
+
+    this.reindexTimerByPane[paneType] = setTimeout(() => {
+      void this.flushPendingReindex(paneType);
+    }, 120);
+  }
+
+  private async flushPendingReindex(paneType: PaneType): Promise<void> {
+    const timer = this.reindexTimerByPane[paneType];
+    if (timer) {
+      clearTimeout(timer);
+      this.reindexTimerByPane[paneType] = null;
+    }
+
+    const pendingPaths = Array.from(this.pendingReindexPathsByPane[paneType]);
+    this.pendingReindexPathsByPane[paneType].clear();
+    if (pendingPaths.length === 0) {
+      return;
+    }
+
+    if (pendingPaths.includes("/")) {
+      await this.buildSearchIndexForPane(paneType);
+      return;
+    }
+
+    for (const pendingPath of pendingPaths) {
+      await this.reindexSubtreeNow(pendingPath, paneType);
+    }
   }
 
   private async pickDirectoryHandle(
@@ -298,6 +465,9 @@ class FileSystemService {
       const handle = await this.pickDirectoryHandle("root");
       await this.sourceRegistry.setRoot(handle);
       await this.destRegistry.setRoot(handle);
+      this.resetSearchIndex("source");
+      this.resetSearchIndex("dest");
+      await Promise.all([this.buildSearchIndexForPane("source"), this.buildSearchIndexForPane("dest")]);
       return {
         success: true,
         data: handle,
@@ -347,6 +517,7 @@ class FileSystemService {
       const virtualPath = await registry.resolvePathFromRoot(handle);
 
       if (virtualPath) {
+        await this.buildSearchIndexForPane(paneType);
         return {
           success: true,
           data: {
@@ -358,6 +529,8 @@ class FileSystemService {
       }
 
       await registry.setRoot(handle);
+      this.resetSearchIndex(paneType);
+      await this.buildSearchIndexForPane(paneType);
       return {
         success: true,
         data: {
@@ -555,6 +728,8 @@ class FileSystemService {
     try {
       const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
       await dirHandle.getDirectoryHandle(folderName, { create: true });
+      const createdPath = virtualPath === "/" ? `/${folderName}` : `${virtualPath}/${folderName}`;
+      this.schedulePartialReindex(paneType, createdPath);
       return { success: true };
     } catch (error) {
       return {
@@ -572,6 +747,7 @@ class FileSystemService {
       const dirHandle = await registry.getDirectoryHandle(dirPath);
       const fileName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
       await dirHandle.removeEntry(fileName);
+      this.schedulePartialReindex(paneType, dirPath);
       return { success: true };
     } catch (error) {
       return {
@@ -589,6 +765,7 @@ class FileSystemService {
       const parentHandle = await registry.getDirectoryHandle(parentPath);
       const folderName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
       await parentHandle.removeEntry(folderName, { recursive: true });
+      this.schedulePartialReindex(paneType, parentPath);
       return { success: true };
     } catch (error) {
       return {
@@ -625,6 +802,7 @@ class FileSystemService {
       await writable.write(sourceFile);
       await writable.close();
 
+      this.schedulePartialReindex(destPane, destVirtualPath);
       return { success: true };
     } catch (error) {
       return {
@@ -651,6 +829,7 @@ class FileSystemService {
       // Recursively copy all entries
       await this.copyFolderRecursive(sourceDirHandle, newFolderHandle);
 
+      this.schedulePartialReindex(destPane, destVirtualPath);
       return { success: true };
     } catch (error) {
       return {
@@ -875,6 +1054,7 @@ class FileSystemService {
         };
       }
 
+      this.schedulePartialReindex(destPane, destVirtualPath);
       return { success: true };
     } catch (error) {
       if (signal?.aborted) {
@@ -900,12 +1080,32 @@ class FileSystemService {
     searchPath?: string,
     paneType: PaneType = "source",
   ): Promise<FileSystemResult<FileSystemEntry[]>> {
-    // Simple recursive search implementation
     try {
-      const startPath = searchPath || "/";
-      const results: FileSystemEntry[] = [];
+      const normalizedQuery = query.trim().toLowerCase();
+      if (!normalizedQuery) {
+        return { success: true, data: [] };
+      }
 
-      await this.searchRecursive(startPath, query, results, paneType);
+      const startPath = this.normalizeVirtualPath(searchPath);
+      await this.flushPendingReindex(paneType);
+      await this.buildSearchIndexForPane(paneType);
+
+      const indexState = this.searchIndexByPane[paneType];
+      if (!indexState.isReady) {
+        const fallbackResults: FileSystemEntry[] = [];
+        await this.searchRecursive(startPath, query, fallbackResults, paneType);
+        return { success: true, data: fallbackResults };
+      }
+
+      const results = indexState.entries
+        .filter((entry) => this.isPathWithinScope(entry.path, startPath))
+        .filter((entry) => entry.name.toLowerCase().includes(normalizedQuery))
+        .sort((a, b) => {
+          if (a.isDirectory !== b.isDirectory) {
+            return a.isDirectory ? -1 : 1;
+          }
+          return a.name.localeCompare(b.name);
+        });
 
       return {
         success: true,
@@ -1014,6 +1214,7 @@ class FileSystemService {
       await writable.close();
 
       const newPath = destVirtualPath === "/" ? `/${file.name}` : `${destVirtualPath}/${file.name}`;
+      this.schedulePartialReindex(paneType, destVirtualPath);
 
       return {
         success: true,
