@@ -2,7 +2,7 @@
 name: Vibe-coded Feature
 about: Suggest a feature and have it implemented automatically
 title: ''
-labels: ''
+labels: ai:fix
 assignees: ''
 
 ---
