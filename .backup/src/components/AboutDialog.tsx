@@ -22,18 +22,17 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
           <DialogDescription className="pt-4 space-y-4">
             <div>
               <div className="font-semibold text-foreground mb-1">Version 1.0.0</div>
-              <div className="text-sm">Sample manager and organizer for Elektron Octatrack</div>
+              <div className="text-sm">Sample manager and organizer for many devices</div>
             </div>
 
             <div className="space-y-2 text-sm">
               <div className="font-semibold text-foreground">Features:</div>
               <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                 <li>Import and organize audio samples</li>
-                <li>Auto-convert to Octatrack format (16-bit, 44.1kHz)</li>
+                <li>Auto-convert to device-friendly format</li>
                 <li>Waveform preview and playback</li>
                 <li>Drag-and-drop sample management</li>
-                <li>Sample chain generation</li>
-                <li>Export to CF card with proper structure</li>
+                <li>Device presets for sample formats</li>
               </ul>
             </div>
 
