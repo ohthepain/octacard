@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 export async function assertSp404PresetSanitizesFilename(page) {
-  await page.getByRole("button", { name: "Format" }).click();
+  await page.getByTestId("format-settings-button").click();
   await page.getByTestId("format-preset-select").selectOption("sp-404sx");
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("dialog", { name: "Format Settings" }).waitFor({ state: "hidden" });

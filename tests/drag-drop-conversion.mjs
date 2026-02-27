@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 export async function assertDragDropConvertsWithFormat(page) {
-  const formatButton = page.getByRole("button", { name: "Format" });
+  const formatButton = page.getByTestId("format-settings-button");
 
   await formatButton.click();
   await page.getByLabel("16-bit").first().click();

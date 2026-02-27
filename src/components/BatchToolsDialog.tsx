@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { analyzeFilenameForNote, calculateBpmRatio } from "@/lib/batch-math";
+import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
 import { toast } from "sonner";
 import { Loader2, Music, Clock, FolderOpen } from "lucide-react";
 
@@ -69,13 +70,16 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
 
   const processFiles = async (mode: "NOTE" | "BPM") => {
     try {
-      if (typeof window.showDirectoryPicker !== "function") {
+      if (!hasDirectoryPickerSupport()) {
         toast.error(
-          "Folder picker not supported. Use Chrome or another Chromium-based browser (including ChatGPT Atlas)."
+          "Folder picker not supported. Use Brave, Chrome, or another Chromium-based browser (including ChatGPT Atlas)."
         );
         return;
       }
-      const dirHandle = await window.showDirectoryPicker();
+      const dirHandle =
+        typeof window.showDirectoryPicker === "function"
+          ? await window.showDirectoryPicker()
+          : await (window as any).chooseFileSystemEntries({ type: "open-directory" });
 
       setProcessing(true);
       setLogs([]);
