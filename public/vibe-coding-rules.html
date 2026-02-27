@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>OctaCard – Vibe-coding Rules</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --bg-card: #1e293b;
+        --text: #f1f5f9;
+        --text-muted: #94a3b8;
+        --accent: #3b82f6;
+        --accent-hover: #60a5fa;
+        --border: #334155;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 2rem 1rem;
+        color: var(--text);
+        background: var(--bg);
+        min-height: 100vh;
+      }
+      main {
+        max-width: 50rem;
+        margin: 0 auto;
+        line-height: 1.6;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .header img {
+        width: 40px;
+        height: 40px;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      h1,
+      h2 {
+        line-height: 1.25;
+      }
+      h2 {
+        color: var(--text);
+        margin-top: 2rem;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        color: var(--accent-hover);
+        text-decoration: underline;
+      }
+      code {
+        background: var(--bg-card);
+        padding: 0.125rem 0.375rem;
+        border-radius: 0.25rem;
+        font-size: 0.875em;
+      }
+      .footer-links {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 1.5rem;
+        font-size: 0.875rem;
+        color: var(--text-muted);
+      }
+      .footer-links a {
+        color: var(--text-muted);
+      }
+      .footer-links a:hover {
+        color: var(--accent-hover);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="header">
+        <img src="/logo_white.png" alt="OctaCard" width="40" height="40" />
+        <h1>OctaCard Vibe-coding Rules</h1>
+      </header>
+      <p style="color: var(--text-muted)">How to contribute to OctaCard via vibe-coding</p>
+
+      <h2>How does it work?</h2>
+      <p>
+        Describe what you want in a GitHub issue. AI coding tools pick up these issues and write the code automatically.
+      </p>
+
+      <h2>How to create an issue</h2>
+      <ol>
+        <li>
+          Go to
+          <a href="https://github.com/ohthepain/octacard/issues" target="_blank" rel="noopener noreferrer"
+            >OctaCard Issues</a
+          >.
+        </li>
+        <li>
+          Click <strong>New issue</strong> and choose the <strong>Vibe-coded Feature</strong> template (or
+          <strong>Bug report</strong> for fixes).
+        </li>
+        <li>
+          Fill out the template as clearly as you can:
+          <ul>
+            <li><strong>Feature name</strong> – A short, clear title</li>
+            <li><strong>Describe the solution you'd like</strong> – What should the feature do?</li>
+            <li><strong>The problem</strong> – What are you trying to do? What blocks or annoys you?</li>
+            <li><strong>Navigation</strong> – Step-by-step: how would a user find and use this feature?</li>
+          </ul>
+        </li>
+        <li>Submit the issue. The <code>ai:fix</code> label is added automatically.</li>
+      </ol>
+
+      <h2>What happens next?</h2>
+      <p>
+        AI tools process new issues roughly every 30 minutes. When your issue is picked up, an implementation will be
+        proposed (usually as a pull request). The maintainer will review it and merge if it looks good, or discuss
+        further with you in the issue.
+      </p>
+
+      <h2>Tips for better results</h2>
+      <ul>
+        <li>Be specific about the problem and the desired behavior.</li>
+        <li>Include step-by-step navigation so the AI understands the user flow.</li>
+        <li>For bug reports, include what you expected vs. what actually happened.</li>
+      </ul>
+
+      <nav class="footer-links">
+        <a href="/terms-of-service.html">Terms of Service</a>
+        <a href="/privacy-policy.html">Privacy Policy</a>
+      </nav>
+    </main>
+  </body>
+</html>
