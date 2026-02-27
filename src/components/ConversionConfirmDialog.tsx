@@ -131,6 +131,7 @@ export const ConversionConfirmDialog = ({
     settings.sampleRate,
     settings.sampleDepth,
     settings.fileFormat,
+    settings.pitch,
     settings.sanitizeFilename,
     settings.mono,
     settings.normalize,
