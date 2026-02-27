@@ -968,7 +968,7 @@ class FileSystemService {
     sampleDepth?: string,
     fileFormat?: string,
     pitch?: string,
-    sanitizeTargetFileName?: boolean,
+    sanitizeFilename?: boolean,
     mono?: boolean,
     normalize?: boolean,
     trimStart?: boolean,
