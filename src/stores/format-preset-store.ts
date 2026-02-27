@@ -30,6 +30,8 @@ export const DEFAULT_FORMAT_SETTINGS: FormatSettings = {
   tempo: "dont-change",
 };
 
+export const USER_SETTINGS_PRESET_LABEL = "User Settings";
+
 export const DEVICE_PRESETS: FormatPreset[] = [
   {
     id: "octatrack",
@@ -279,7 +281,7 @@ interface FormatPresetStoreState {
 export const useFormatPresetStore = create<FormatPresetStoreState>((set, get) => ({
   currentPreset: {
     id: "current",
-    name: "User",
+    name: USER_SETTINGS_PRESET_LABEL,
     settings: DEFAULT_FORMAT_SETTINGS,
   },
   selectedPresetId: "current",
