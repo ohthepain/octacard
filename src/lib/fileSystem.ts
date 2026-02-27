@@ -1,6 +1,7 @@
 // Web-based file system API wrapper
 // Uses File System Access API (showDirectoryPicker) for folder selection in the browser
 import { sanitizeFilename } from "./filename";
+import { hasDirectoryPickerSupport } from "./browserSupport";
 
 // Expose the real sanitizeFilename for the integration test harness so the harness
 // never needs to re-implement (and potentially drift from) the production logic.
@@ -527,7 +528,15 @@ class FileSystemService {
     if (startIn) {
       options.startIn = startIn;
     }
-    return await (window as any).showDirectoryPicker(options);
+    const showDirectoryPicker = (window as any).showDirectoryPicker;
+    if (typeof showDirectoryPicker === "function") {
+      return await showDirectoryPicker(options);
+    }
+    const chooseFileSystemEntries = (window as any).chooseFileSystemEntries;
+    if (typeof chooseFileSystemEntries === "function") {
+      return await chooseFileSystemEntries({ type: "open-directory" });
+    }
+    throw new Error("File System Access API not supported in this browser");
   }
 
   private getTestHooks(): OctacardTestHooks | null {
@@ -538,7 +547,7 @@ class FileSystemService {
   /** Request root directory - sets BOTH source and dest to the same folder (for initial setup) */
   async requestRootDirectory(): Promise<FileSystemResult<FileSystemDirectoryHandle>> {
     console.log("requestRootDirectory");
-    if (!("showDirectoryPicker" in window) && typeof (window as any).__octacardPickDirectory !== "function") {
+    if (!hasDirectoryPickerSupport()) {
       return {
         success: false,
         error: "File System Access API not supported in this browser",
@@ -575,7 +584,7 @@ class FileSystemService {
     paneType: PaneType,
     startInPath?: string,
   ): Promise<FileSystemResult<PaneDirectorySelection>> {
-    if (!("showDirectoryPicker" in window) && typeof (window as any).__octacardPickDirectory !== "function") {
+    if (!hasDirectoryPickerSupport()) {
       return {
         success: false,
         error: "File System Access API not supported in this browser",

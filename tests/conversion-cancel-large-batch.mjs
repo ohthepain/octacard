@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 export async function assertLargeBatchConversionCanBeCancelledQuickly(page) {
-  const formatButton = page.getByRole("button", { name: "Format" });
+  const formatButton = page.getByTestId("format-settings-button");
   await formatButton.click();
   await page.locator('label[for="sample-depth-dont-change"]').click();
   await page.getByRole("button", { name: "Done" }).click();
