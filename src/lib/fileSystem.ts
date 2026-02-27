@@ -18,6 +18,7 @@ export interface FileSystemResult<T = any> {
   data?: T;
   error?: string;
   cancelled?: boolean;
+  warning?: string;
 }
 
 interface SearchIndexEntry extends FileSystemEntry {
@@ -546,6 +547,7 @@ class FileSystemService {
       return {
         success: true,
         data: handle,
+        warning: "Source and destination are set to the same folder. Consider selecting a different destination for copy operations.",
       };
     } catch (error: any) {
       if (error.name === "AbortError") {
@@ -593,6 +595,10 @@ class FileSystemService {
 
       if (virtualPath) {
         void this.ensureSearchIndex(paneType);
+        const sameFolderWarning =
+          paneType === "dest" && (await this.areSourceAndDestSame())
+            ? "Source and destination are set to the same folder. Consider selecting a different destination for copy operations."
+            : undefined;
         return {
           success: true,
           data: {
@@ -600,11 +606,16 @@ class FileSystemService {
             virtualPath,
             reusedExistingRoot: true,
           },
+          warning: sameFolderWarning,
         };
       }
 
       await registry.setRoot(handle);
       void this.ensureSearchIndex(paneType);
+      const sameFolderWarning =
+        paneType === "dest" && (await this.areSourceAndDestSame())
+          ? "Source and destination are set to the same folder. Consider selecting a different destination for copy operations."
+          : undefined;
       return {
         success: true,
         data: {
@@ -612,6 +623,7 @@ class FileSystemService {
           virtualPath: "/",
           reusedExistingRoot: false,
         },
+        warning: sameFolderWarning,
       };
     } catch (error: any) {
       if (error.name === "AbortError") {
@@ -633,6 +645,14 @@ class FileSystemService {
 
   hasRootForPane(paneType: PaneType): boolean {
     return this.getRegistry(paneType).hasRoot();
+  }
+
+  /** Returns true if source and dest roots refer to the same folder. */
+  async areSourceAndDestSame(): Promise<boolean> {
+    const sourceRoot = this.sourceRegistry.getRoot();
+    const destRoot = this.destRegistry.getRoot();
+    if (!sourceRoot || !destRoot) return false;
+    return await sourceRoot.isSameEntry(destRoot);
   }
 
   /** Returns true if Reveal in Finder is available (e.g. when running in Electron). */
@@ -968,7 +988,7 @@ class FileSystemService {
     sampleDepth?: string,
     fileFormat?: string,
     pitch?: string,
-    sanitizeFilename?: boolean,
+    sanitizeTargetFileName?: boolean,
     mono?: boolean,
     normalize?: boolean,
     trimStart?: boolean,
