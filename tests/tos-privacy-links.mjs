@@ -27,6 +27,6 @@ export async function assertTermsAndPrivacyLinks(page, { baseUrl }) {
   assert.match(privacyBody, /<h1>Privacy Policy<\/h1>/, "Privacy page should include heading.");
   assert.match(privacyBody, /do not store your personal files or account data/, "Privacy page should state no storage.");
 
-  await aboutDialog.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
   await aboutDialog.waitFor({ state: "hidden" });
 }
