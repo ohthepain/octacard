@@ -143,6 +143,7 @@ interface FilePaneProps {
   sampleDepth?: string;
   fileFormat?: string;
   pitch?: string;
+  sanitizeFilename?: boolean;
   mono?: boolean;
   normalize?: boolean;
   trimStart?: boolean;
@@ -178,6 +179,7 @@ export const FilePane = ({
   sampleDepth = "dont-change",
   fileFormat = "dont-change",
   pitch = "dont-change",
+  sanitizeFilename = false,
   mono = false,
   normalize = false,
   trimStart = false,
@@ -1704,6 +1706,7 @@ export const FilePane = ({
                   sampleRate !== "dont-change" ||
                   sampleDepth === "16-bit" ||
                   pitch !== "dont-change" ||
+                  sanitizeFilename ||
                   mono ||
                   normalize ||
                   trimStart);
@@ -1719,6 +1722,7 @@ export const FilePane = ({
                   sampleDepth,
                   fileFormat,
                   pitch,
+                  sanitizeFilename,
                   mono,
                   normalize,
                   trimStart,
@@ -1786,6 +1790,7 @@ export const FilePane = ({
               sampleRate !== "dont-change" ||
               sampleDepth === "16-bit" ||
               pitch !== "dont-change" ||
+              sanitizeFilename ||
               mono ||
               normalize ||
               trimStart);
@@ -1801,6 +1806,7 @@ export const FilePane = ({
               sampleDepth,
               fileFormat,
               pitch,
+              sanitizeFilename,
               mono,
               normalize,
               trimStart,
@@ -1879,6 +1885,7 @@ export const FilePane = ({
       onFileTransfer,
       paneType,
       pitch,
+      sanitizeFilename,
       sampleDepth,
       sampleRate,
       trimStart,
@@ -1967,6 +1974,7 @@ export const FilePane = ({
               sampleRate !== "dont-change" ||
               sampleDepth === "16-bit" ||
               pitch !== "dont-change" ||
+              sanitizeFilename ||
               mono ||
               normalize ||
               trimStart);
@@ -1984,6 +1992,7 @@ export const FilePane = ({
                 sampleDepth,
                 fileFormat,
                 pitch,
+                sanitizeFilename,
                 mono,
                 normalize,
                 trimStart,
@@ -2036,7 +2045,19 @@ export const FilePane = ({
         convert_files: true,
       });
     },
-    [paneType, pitch, fileFormat, sampleRate, sampleDepth, mono, normalize, trimStart, loadDirectory, onFileTransfer],
+    [
+      paneType,
+      pitch,
+      sanitizeFilename,
+      fileFormat,
+      sampleRate,
+      sampleDepth,
+      mono,
+      normalize,
+      trimStart,
+      loadDirectory,
+      onFileTransfer,
+    ],
   );
 
   const handleDrop = async (e: React.DragEvent, destinationNode?: FileNode) => {
