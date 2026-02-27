@@ -308,6 +308,7 @@ const Index = () => {
           formatSettings.sampleDepth === "dont-change" ? undefined : formatSettings.sampleDepth,
           formatSettings.fileFormat === "dont-change" ? undefined : formatSettings.fileFormat,
           formatSettings.pitch === "dont-change" ? undefined : formatSettings.pitch,
+          formatSettings.sanitizeFilename,
           formatSettings.mono,
           formatSettings.normalize,
           formatSettings.trim,
@@ -361,6 +362,7 @@ const Index = () => {
         formatSettings.sampleDepth !== "dont-change" ||
         formatSettings.fileFormat !== "dont-change" ||
         formatSettings.pitch !== "dont-change" ||
+        formatSettings.sanitizeFilename ||
         formatSettings.mono ||
         formatSettings.normalize ||
         formatSettings.trim ||
@@ -375,6 +377,7 @@ const Index = () => {
           sampleDepth: formatSettings.sampleDepth,
           fileFormat: formatSettings.fileFormat,
           pitch: formatSettings.pitch,
+          sanitizeFilename: formatSettings.sanitizeFilename,
           mono: formatSettings.mono,
           normalize: formatSettings.normalize,
           trimStart: formatSettings.trim,
@@ -399,6 +402,7 @@ const Index = () => {
         formatSettings.sampleDepth !== "dont-change" ||
         formatSettings.fileFormat !== "dont-change" ||
         formatSettings.mono ||
+        formatSettings.sanitizeFilename ||
         formatSettings.normalize ||
         formatSettings.trim ||
         formatSettings.tempo !== "dont-change";
@@ -410,6 +414,7 @@ const Index = () => {
           sampleRate: formatSettings.sampleRate,
           sampleDepth: formatSettings.sampleDepth,
           fileFormat: formatSettings.fileFormat,
+          sanitizeFilename: formatSettings.sanitizeFilename,
           mono: formatSettings.mono,
           normalize: formatSettings.normalize,
           trimStart: formatSettings.trim,
@@ -628,6 +633,7 @@ const Index = () => {
                 sampleDepth={formatSettings.sampleDepth}
                 fileFormat={formatSettings.fileFormat}
                 pitch={formatSettings.pitch}
+                sanitizeFilename={formatSettings.sanitizeFilename}
                 mono={formatSettings.mono}
                 normalize={formatSettings.normalize}
                 trimStart={formatSettings.trim}
@@ -664,6 +670,7 @@ const Index = () => {
                 sampleDepth={formatSettings.sampleDepth}
                 fileFormat={formatSettings.fileFormat}
                 pitch={formatSettings.pitch}
+                sanitizeFilename={formatSettings.sanitizeFilename}
                 mono={formatSettings.mono}
                 normalize={formatSettings.normalize}
                 trimStart={formatSettings.trim}
@@ -721,6 +728,7 @@ const Index = () => {
             sampleDepth: formatSettings.sampleDepth,
             fileFormat: formatSettings.fileFormat,
             pitch: formatSettings.pitch,
+            sanitizeFilename: formatSettings.sanitizeFilename,
             mono: formatSettings.mono,
             normalize: formatSettings.normalize,
             trimStart: formatSettings.trim,
