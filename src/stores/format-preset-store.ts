@@ -73,6 +73,9 @@ export const DEVICE_PRESETS: FormatPreset[] = [
     name: "Multigrain",
     settings: {
       ...DEFAULT_FORMAT_SETTINGS,
+      fileFormat: "WAV",
+      sampleRate: "48000",
+      sampleDepth: "16-bit",
     },
   },
   {
@@ -126,7 +129,7 @@ export const DEVICE_PRESETS: FormatPreset[] = [
     name: "SP-404MKII",
     settings: {
       ...DEFAULT_FORMAT_SETTINGS,
-      sampleRate: "44100",
+      sampleRate: "48000",
     },
   },
   {
@@ -157,6 +160,7 @@ export const DEVICE_PRESETS: FormatPreset[] = [
     settings: {
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
+      sampleRate: "44100",
       sampleDepth: "16-bit",
       mono: true,
     },
@@ -167,7 +171,6 @@ export const DEVICE_PRESETS: FormatPreset[] = [
     settings: {
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
-      sampleDepth: "16-bit",
       sampleRate: "48000",
     },
   },
@@ -178,7 +181,7 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleDepth: "16-bit",
-      sampleRate: "44100",
+      sampleRate: "48000",
     },
   },
   {
@@ -241,6 +244,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleRate: "44100",
+      sampleDepth: "16-bit",
+      mono: true,
     },
   },
   {
@@ -250,6 +255,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleRate: "44100",
+      sampleDepth: "16-bit",
+      mono: true,
     },
   },
 ];
