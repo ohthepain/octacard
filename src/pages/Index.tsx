@@ -5,6 +5,7 @@ import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
 import { Link } from "@tanstack/react-router";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
+import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +52,17 @@ function isUnsupportedBrowser(): boolean {
   return typeof window.showDirectoryPicker !== "function";
 }
 
+function joinPath(...parts: string[]): string {
+  if (parts.length === 0) return "";
+  const normalized = parts.filter(Boolean).map((p) => p.replace(/\\/g, "/"));
+  let result = normalized[0];
+  for (let i = 1; i < normalized.length; i++) {
+    if (!result.endsWith("/")) result += "/";
+    result += normalized[i].replace(/^\//, "");
+  }
+  return result.replace(/\/+/g, "/");
+}
+
 async function yieldToUi(): Promise<void> {
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
@@ -92,8 +104,24 @@ const Index = () => {
     destinationBasePath: string;
   } | null>(null);
   const [cancelConversionPromptOpen, setCancelConversionPromptOpen] = useState(false);
+  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
   const conversionCancelRequestedRef = useRef(false);
   const conversionAbortControllerRef = useRef<AbortController | null>(null);
+  const overwriteChoiceResolverRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
+
+  const promptOverwriteChoice = useCallback((): Promise<OverwriteChoice> => {
+    setOverwriteConfirmOpen(true);
+    return new Promise<OverwriteChoice>((resolve) => {
+      overwriteChoiceResolverRef.current = resolve;
+    });
+  }, []);
+
+  const handleOverwriteChoice = useCallback((choice: OverwriteChoice) => {
+    setOverwriteConfirmOpen(false);
+    const resolver = overwriteChoiceResolverRef.current;
+    overwriteChoiceResolverRef.current = null;
+    resolver?.(choice);
+  }, []);
 
   useEffect(() => {
     if (isUnsupportedBrowser()) {
@@ -239,6 +267,30 @@ const Index = () => {
     });
 
     const errors: Array<{ name: string; error: string }> = [];
+    let overwritePolicy: "ask" | "skip" | "continue" = "ask";
+    let overwriteAborted = false;
+
+    const resolveOverwriteAction = async (targetPath: string): Promise<"overwrite" | "skip" | "abort"> => {
+      const statsResult = await fileSystemService.getFileStats(targetPath, "dest");
+      const willOverwrite = statsResult.success && statsResult.data?.isFile;
+      if (!willOverwrite) return "overwrite";
+
+      if (overwritePolicy === "continue") return "overwrite";
+      if (overwritePolicy === "skip") return "skip";
+
+      const choice = await promptOverwriteChoice();
+      if (choice === "continue") {
+        overwritePolicy = "continue";
+        return "overwrite";
+      }
+      if (choice === "skip-all") {
+        overwritePolicy = "skip";
+        return "skip";
+      }
+      overwriteAborted = true;
+      return "abort";
+    };
+
     try {
       for (let i = 0; i < files.length; i++) {
         if (conversionCancelRequestedRef.current) {
@@ -306,6 +358,15 @@ const Index = () => {
           }
         }
 
+        const targetPath = joinPath(destDir, fileName);
+        const overwriteAction = await resolveOverwriteAction(targetPath);
+        if (overwriteAction === "abort") {
+          break;
+        }
+        if (overwriteAction === "skip") {
+          continue;
+        }
+
         const result = await fileSystemService.convertAndCopyFile(
           entry.path,
           destDir,
@@ -337,6 +398,15 @@ const Index = () => {
         setPendingConversionRequest(null);
         toast("Conversion Cancelled", {
           description: "Stopped converting files.",
+        });
+        return;
+      }
+
+      if (overwriteAborted) {
+        setConversionProgress(null);
+        setPendingConversionRequest(null);
+        toast("Conversion Cancelled", {
+          description: "Operation aborted before overwriting existing files.",
         });
         return;
       }
@@ -826,6 +896,8 @@ const Index = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <OverwriteConfirmDialog open={overwriteConfirmOpen} onChoice={handleOverwriteChoice} />
     </div>
   );
 };

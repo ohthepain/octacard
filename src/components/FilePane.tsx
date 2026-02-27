@@ -39,6 +39,7 @@ import { useNavigationState } from "@/hooks/use-navigation-state";
 import { useFavorites } from "@/hooks/use-favorites";
 import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
+import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
 import { capture } from "@/lib/analytics";
 import { toast } from "sonner";
@@ -249,6 +250,22 @@ export const FilePane = ({
   const [sortBy, setSortBy] = useState<"name" | "dateAdded" | "dateCreated" | "dateModified" | "dateLastOpened">(
     "name",
   );
+  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
+  const overwriteChoiceResolverRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
+
+  const promptOverwriteChoice = useCallback((): Promise<OverwriteChoice> => {
+    setOverwriteConfirmOpen(true);
+    return new Promise<OverwriteChoice>((resolve) => {
+      overwriteChoiceResolverRef.current = resolve;
+    });
+  }, []);
+
+  const handleOverwriteChoice = useCallback((choice: OverwriteChoice) => {
+    setOverwriteConfirmOpen(false);
+    const resolver = overwriteChoiceResolverRef.current;
+    overwriteChoiceResolverRef.current = null;
+    resolver?.(choice);
+  }, []);
 
   // Helper function to recursively count files in a folder
   const countFilesRecursively = useCallback(
@@ -1672,6 +1689,30 @@ export const FilePane = ({
       let convertedFileCount = 0;
       let copiedFileCount = 0;
       const errors: Array<{ name: string; error: string }> = [];
+      const OVERWRITE_ABORT_ERROR = "__overwrite_abort__";
+      let overwritePolicy: "ask" | "skip" | "continue" = "ask";
+      let overwriteAborted = false;
+
+      const resolveOverwriteAction = async (targetPath: string): Promise<"overwrite" | "skip" | "abort"> => {
+        const statsResult = await fileSystemService.getFileStats(targetPath, paneType);
+        const willOverwrite = statsResult.success && statsResult.data?.isFile;
+        if (!willOverwrite) return "overwrite";
+
+        if (overwritePolicy === "continue") return "overwrite";
+        if (overwritePolicy === "skip") return "skip";
+
+        const choice = await promptOverwriteChoice();
+        if (choice === "continue") {
+          overwritePolicy = "continue";
+          return "overwrite";
+        }
+        if (choice === "skip-all") {
+          overwritePolicy = "skip";
+          return "skip";
+        }
+        overwriteAborted = true;
+        return "abort";
+      };
 
       // Helper to copy folder recursively with progress tracking
       const copyFolderWithProgress = async (sourceFolder: string, destFolder: string): Promise<void> => {
@@ -1719,6 +1760,13 @@ export const FilePane = ({
 
               let copyResult;
               if (needsConversion) {
+                const overwriteAction = await resolveOverwriteAction(finalDestPath);
+                if (overwriteAction === "abort") {
+                  throw new Error(OVERWRITE_ABORT_ERROR);
+                }
+                if (overwriteAction === "skip") {
+                  continue;
+                }
                 convertedFileCount++;
                 copyResult = await fileSystemService.convertAndCopyFile(
                   entry.path,
@@ -1738,6 +1786,13 @@ export const FilePane = ({
                   paneType,
                 );
               } else {
+                const overwriteAction = await resolveOverwriteAction(entryDestPath);
+                if (overwriteAction === "abort") {
+                  throw new Error(OVERWRITE_ABORT_ERROR);
+                }
+                if (overwriteAction === "skip") {
+                  continue;
+                }
                 copiedFileCount++;
                 copyResult = await fileSystemService.copyFile(
                   entry.path,
@@ -1755,9 +1810,15 @@ export const FilePane = ({
               }
             } else if (entry.type === "folder") {
               await copyFolderWithProgress(entry.path, entryDestPath);
+              if (overwriteAborted) {
+                throw new Error(OVERWRITE_ABORT_ERROR);
+              }
             }
           }
         } catch (error) {
+          if (String(error).includes(OVERWRITE_ABORT_ERROR)) {
+            throw error;
+          }
           errors.push({ name: basename(sourceFolder), error: String(error) });
         }
       };
@@ -1803,6 +1864,14 @@ export const FilePane = ({
 
           let result;
           if (needsConversion) {
+            const overwriteAction = await resolveOverwriteAction(finalDestFilePath);
+            if (overwriteAction === "abort") {
+              overwriteAborted = true;
+              break;
+            }
+            if (overwriteAction === "skip") {
+              continue;
+            }
             convertedFileCount++;
             result = await fileSystemService.convertAndCopyFile(
               item.path,
@@ -1822,6 +1891,14 @@ export const FilePane = ({
               paneType,
             );
           } else {
+            const overwriteAction = await resolveOverwriteAction(destFilePath);
+            if (overwriteAction === "abort") {
+              overwriteAborted = true;
+              break;
+            }
+            if (overwriteAction === "skip") {
+              continue;
+            }
             copiedFileCount++;
             result = await fileSystemService.copyFile(
               item.path,
@@ -1839,7 +1916,19 @@ export const FilePane = ({
           }
         } else if (item.type === "folder") {
           // Copy folder recursively with progress tracking
-          await copyFolderWithProgress(item.path, destFilePath);
+          try {
+            await copyFolderWithProgress(item.path, destFilePath);
+          } catch (error) {
+            if (String(error).includes(OVERWRITE_ABORT_ERROR)) {
+              overwriteAborted = true;
+              break;
+            }
+            errors.push({ name: item.name, error: String(error) });
+          }
+        }
+
+        if (overwriteAborted) {
+          break;
         }
       }
 
@@ -1858,6 +1947,10 @@ export const FilePane = ({
           .map((e) => `- ${e.name}: ${e.error}`)
           .join("\n")}`;
         toast.error(errorMessage);
+      } else if (overwriteAborted) {
+        toast("Copy Cancelled", {
+          description: "Operation aborted before overwriting existing files.",
+        });
       } else if (convertedFileCount > 0 || copiedFileCount > 0) {
         const convertedPart =
           convertedFileCount > 0 ? `Converted ${convertedFileCount} file${convertedFileCount === 1 ? "" : "s"}` : "";
@@ -1938,6 +2031,29 @@ export const FilePane = ({
       }
 
       const errors: Array<{ name: string; error: string }> = [];
+      let overwritePolicy: "ask" | "skip" | "continue" = "ask";
+      let overwriteAborted = false;
+
+      const resolveOverwriteAction = async (targetPath: string): Promise<"overwrite" | "skip" | "abort"> => {
+        const statsResult = await fileSystemService.getFileStats(targetPath, paneType);
+        const willOverwrite = statsResult.success && statsResult.data?.isFile;
+        if (!willOverwrite) return "overwrite";
+
+        if (overwritePolicy === "continue") return "overwrite";
+        if (overwritePolicy === "skip") return "skip";
+
+        const choice = await promptOverwriteChoice();
+        if (choice === "continue") {
+          overwritePolicy = "continue";
+          return "overwrite";
+        }
+        if (choice === "skip-all") {
+          overwritePolicy = "skip";
+          return "skip";
+        }
+        overwriteAborted = true;
+        return "abort";
+      };
 
       for (const item of itemsToProcess) {
         if (item.type === "file") {
@@ -1984,6 +2100,18 @@ export const FilePane = ({
               mono ||
               normalize ||
               trimStart);
+
+          const targetPath = needsConversion
+            ? joinPath(item.targetDir, finalDestFileName)
+            : joinPath(item.targetDir, item.name);
+          const overwriteAction = await resolveOverwriteAction(targetPath);
+          if (overwriteAction === "abort") {
+            overwriteAborted = true;
+            break;
+          }
+          if (overwriteAction === "skip") {
+            continue;
+          }
 
           let result;
           if (needsConversion) {
@@ -2036,6 +2164,10 @@ export const FilePane = ({
           .map((e) => `- ${e.name}: ${e.error}`)
           .join("\n")}`;
         toast.error(errorMessage);
+      } else if (overwriteAborted) {
+        toast("Copy Cancelled", {
+          description: "Operation aborted before overwriting existing files.",
+        });
       }
 
       capture("octacard_copy_completed", {
@@ -3579,6 +3711,8 @@ export const FilePane = ({
           </DialogContent>
         </Dialog>
       )}
+
+      <OverwriteConfirmDialog open={overwriteConfirmOpen} onChoice={handleOverwriteChoice} />
     </div>
   );
 };
