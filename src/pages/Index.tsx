@@ -518,9 +518,8 @@ const Index = () => {
       <header className="h-14 border-b border-border bg-card grid grid-cols-[1fr_auto_1fr] items-center px-4 shrink-0 gap-3">
         <div className="flex items-center gap-4 min-w-0">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">O</span>
-            </div>
+            <img src="/favicon.png" alt="" className="w-8 h-8 dark:hidden" aria-hidden />
+            <img src="/logo_white.png" alt="" className="w-8 h-8 hidden dark:block" aria-hidden />
             <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
           </div>
           <Button

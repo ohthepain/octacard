@@ -13,6 +13,7 @@ interface AboutDialogProps {
 export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
   const termsUrl = "/terms-of-service.html";
   const privacyUrl = "/privacy-policy.html";
+  const vibeCodingUrl = "/vibe-coding-rules.html";
 
   useEffect(() => {
     if (!open) return;
@@ -32,9 +33,8 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">O</span>
-            </div>
+            <img src="/favicon.png" alt="" className="w-8 h-8 dark:hidden" aria-hidden />
+            <img src="/logo_white.png" alt="" className="w-8 h-8 hidden dark:block" aria-hidden />
             OctaCard
           </DialogTitle>
         </DialogHeader>
@@ -73,6 +73,12 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
               <Button variant="outline" className="w-full" asChild>
                 <a href={privacyUrl} target="_blank" rel="noopener noreferrer">
                   Privacy Policy
+                </a>
+              </Button>
+              <Button variant="outline" className="w-full col-span-2 gap-2" asChild>
+                <a href={vibeCodingUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="w-4 h-4" />
+                  Vibe-coding rules
                 </a>
               </Button>
             </div>
