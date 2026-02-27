@@ -5,6 +5,7 @@ export interface FormatSettings {
   sampleRate: "dont-change" | "31250" | "44100" | "48000";
   sampleDepth: "dont-change" | "16-bit";
   pitch: "dont-change" | "C";
+  sanitizeFilename: boolean;
   mono: boolean;
   normalize: boolean;
   trim: boolean;
@@ -22,6 +23,7 @@ export const DEFAULT_FORMAT_SETTINGS: FormatSettings = {
   sampleRate: "dont-change",
   sampleDepth: "dont-change",
   pitch: "dont-change",
+  sanitizeFilename: false,
   mono: false,
   normalize: false,
   trim: false,
@@ -113,6 +115,7 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       sampleRate: "44100",
       sampleDepth: "16-bit",
+      sanitizeFilename: true,
     },
   },
   {
@@ -122,6 +125,7 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       sampleRate: "44100",
       sampleDepth: "16-bit",
+      sanitizeFilename: true,
     },
   },
   {
@@ -131,7 +135,11 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleRate: "48000",
+<<<<<<< fix/ai-72
+      sanitizeFilename: true,
+=======
       sampleDepth: "16-bit",
+>>>>>>> main
     },
   },
   {

@@ -1,5 +1,6 @@
 // Web-based file system API wrapper
 // Uses File System Access API (showDirectoryPicker) for folder selection in the browser
+import { sanitizeFilename } from "./filename";
 
 export interface FileSystemEntry {
   name: string;
@@ -50,6 +51,7 @@ interface OctacardTestHooks {
     sampleDepth?: string;
     fileFormat?: string;
     pitch?: string;
+    sanitizeFilename?: boolean;
     mono?: boolean;
     normalize?: boolean;
     trimStart?: boolean;
@@ -966,6 +968,7 @@ class FileSystemService {
     sampleDepth?: string,
     fileFormat?: string,
     pitch?: string,
+    sanitizeFilename?: boolean,
     mono?: boolean,
     normalize?: boolean,
     trimStart?: boolean,
@@ -993,6 +996,7 @@ class FileSystemService {
         sampleDepth,
         fileFormat,
         pitch,
+        sanitizeFilename: sanitizeTargetFileName,
         mono,
         normalize,
         trimStart,
@@ -1086,6 +1090,10 @@ class FileSystemService {
         }
 
         finalFile = convertedBlob;
+      }
+
+      if (sanitizeTargetFileName) {
+        finalFileName = sanitizeFilename(finalFileName);
       }
 
       if (signal?.aborted) {
