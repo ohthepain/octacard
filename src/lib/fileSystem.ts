@@ -2,6 +2,12 @@
 // Uses File System Access API (showDirectoryPicker) for folder selection in the browser
 import { sanitizeFilename } from "./filename";
 
+// Expose the real sanitizeFilename for the integration test harness so the harness
+// never needs to re-implement (and potentially drift from) the production logic.
+if (typeof window !== "undefined") {
+  (window as any).__octacardSanitizeFilename = sanitizeFilename;
+}
+
 export interface FileSystemEntry {
   name: string;
   path: string;
@@ -968,7 +974,7 @@ class FileSystemService {
     sampleDepth?: string,
     fileFormat?: string,
     pitch?: string,
-    sanitizeFilename?: boolean,
+    sanitizeTargetFilename?: boolean,
     mono?: boolean,
     normalize?: boolean,
     trimStart?: boolean,
@@ -996,7 +1002,7 @@ class FileSystemService {
         sampleDepth,
         fileFormat,
         pitch,
-        sanitizeFilename: sanitizeTargetFileName,
+        sanitizeFilename: sanitizeTargetFilename,
         mono,
         normalize,
         trimStart,
@@ -1092,7 +1098,7 @@ class FileSystemService {
         finalFile = convertedBlob;
       }
 
-      if (sanitizeTargetFileName) {
+      if (sanitizeTargetFilename) {
         finalFileName = sanitizeFilename(finalFileName);
       }
 
