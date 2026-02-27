@@ -129,7 +129,9 @@ export const DEVICE_PRESETS: FormatPreset[] = [
     name: "SP-404MKII",
     settings: {
       ...DEFAULT_FORMAT_SETTINGS,
+      fileFormat: "WAV",
       sampleRate: "48000",
+      sampleDepth: "16-bit",
     },
   },
   {
