@@ -165,7 +165,7 @@ export function FormatDropdown() {
                   applyDevicePreset(value);
                 }}
               >
-                <option value="current">Current</option>
+                <option value="current">User</option>
                 {devicePresets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
