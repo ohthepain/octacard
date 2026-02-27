@@ -10,6 +10,7 @@ import { assertRevealInFinderDoesNotOpenPickerFallback } from "../../tests/revea
 import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
 import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
+import { assertSp404Mk2PresetDefaults } from "../../tests/sp404mkii-preset.mjs";
 import { assertFormatMenuCategories } from "../../tests/format-menu-categories.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-select-directory.mjs";
@@ -291,6 +292,7 @@ try {
   await assertFormatMenuCategories(page);
   await assertTermsAndPrivacyLinks(page, { baseUrl });
   await assertSampleRateOptions(page);
+  await assertSp404Mk2PresetDefaults(page);
   const convertBox = await convertButton.boundingBox();
   const formatBox = await formatButton.boundingBox();
   assert.ok(convertBox, "Expected convert button to have a visible bounding box.");
