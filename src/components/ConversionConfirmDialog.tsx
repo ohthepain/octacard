@@ -20,6 +20,7 @@ interface ConversionConfirmDialogProps {
     sampleDepth: string;
     fileFormat: string;
     pitch: string;
+    sanitizeFilename?: boolean;
     mono: boolean;
     normalize: boolean;
     trimStart: boolean;
@@ -40,6 +41,7 @@ export const ConversionConfirmDialog = ({
     settings.sampleDepth !== "dont-change" ||
     settings.fileFormat !== "dont-change" ||
     settings.pitch !== "dont-change" ||
+    !!settings.sanitizeFilename ||
     settings.mono ||
     settings.normalize ||
     settings.trimStart ||
@@ -82,6 +84,9 @@ export const ConversionConfirmDialog = ({
     if (settings.pitch !== "dont-change") {
       parts.push(`Pitch: ${settings.pitch}`);
     }
+    if (settings.sanitizeFilename) {
+      parts.push("Sanitize Filename");
+    }
     if (settings.mono) {
       parts.push("Mono");
     }
@@ -111,6 +116,7 @@ export const ConversionConfirmDialog = ({
           sampleDepth: settings.sampleDepth,
           fileFormat: settings.fileFormat,
           pitch: settings.pitch,
+          sanitizeFilename: settings.sanitizeFilename,
           mono: settings.mono,
           normalize: settings.normalize,
           trimStart: settings.trimStart,
@@ -118,7 +124,19 @@ export const ConversionConfirmDialog = ({
         },
       });
     }
-  }, [open, fileCount, hasConversion, settings.sampleRate, settings.sampleDepth, settings.fileFormat, settings.mono, settings.normalize, settings.trimStart, settings.tempo]);
+  }, [
+    open,
+    fileCount,
+    hasConversion,
+    settings.sampleRate,
+    settings.sampleDepth,
+    settings.fileFormat,
+    settings.sanitizeFilename,
+    settings.mono,
+    settings.normalize,
+    settings.trimStart,
+    settings.tempo,
+  ]);
 
   return (
     <Dialog
@@ -168,6 +186,7 @@ export const ConversionConfirmDialog = ({
                   sampleRate: settings.sampleRate,
                   sampleDepth: settings.sampleDepth,
                   fileFormat: settings.fileFormat,
+                  sanitizeFilename: settings.sanitizeFilename,
                   mono: settings.mono,
                   normalize: settings.normalize,
                   trimStart: settings.trimStart,

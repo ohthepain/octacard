@@ -23,6 +23,7 @@ import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/dra
 import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReindex } from "../../tests/search-indexing.mjs";
 import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
 import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
+import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -137,6 +138,7 @@ try {
     const bulk = root.addDirectory(new MockDirectoryHandle("Bulk"));
     const huge = root.addDirectory(new MockDirectoryHandle("Huge"));
     alpha.addFile("inside-alpha.wav", 128);
+    alpha.addFile("Melô.wav", 128);
     guitars.addFile("clean_gtr_center.wav", 128);
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
@@ -168,6 +170,11 @@ try {
       const dir = ensureDirectoryByPath(virtualPath);
       dir.addFile(fileName, size);
     };
+    const sanitizeFilename = (filename) =>
+      filename
+        .normalize("NFKD")
+        .replace(/\p{M}+/gu, "")
+        .replace(/[^a-zA-Z0-9_!&()+,\-.=@[\]{} ]/g, "_");
 
     const pickerQueue = [root, alpha, beta, alpha];
     window.__pickerCalls = [];
@@ -249,7 +256,8 @@ try {
             await new Promise((resolve) => setTimeout(resolve, 25));
           }
         }
-        addFileToPath(args.destVirtualPath, args.fileName);
+        const outputName = args.sanitizeFilename ? sanitizeFilename(args.fileName) : args.fileName;
+        addFileToPath(args.destVirtualPath, outputName);
         if (args.fileName.length > 40) {
           await new Promise((resolve) => setTimeout(resolve, 300));
         }
@@ -534,6 +542,7 @@ try {
   await assertDragDropConvertsWithFormat(page);
   await assertSearchQueryPersistsWhenNavigatingSearchResult(page);
   await assertLargeBatchConversionCanBeCancelledQuickly(page);
+  await assertSp404PresetSanitizesFilename(page);
 
   assert.equal(domNestingWarnings.length, 0, "No DOM nesting warnings should be emitted during conversion flow.");
 

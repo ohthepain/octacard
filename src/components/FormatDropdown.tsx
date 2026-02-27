@@ -308,6 +308,16 @@ export function FormatDropdown() {
               </div>
 
               <div className="grid gap-2 rounded-md border p-3">
+                <Label className="font-semibold">Filename</Label>
+                <BinaryRadioGroup
+                  id="sanitize-filename"
+                  value={settings.sanitizeFilename}
+                  onValueChange={(sanitizeFilename) => updateCurrentPreset({ sanitizeFilename })}
+                  trueLabel="Sanitize filename"
+                />
+              </div>
+
+              <div className="grid gap-2 rounded-md border p-3">
                 <div className="flex items-center justify-between">
                   <Label className="font-semibold">Tempo</Label>
                   <span className="text-sm text-muted-foreground" data-testid="format-tempo-value">
