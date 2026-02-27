@@ -89,10 +89,10 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
               <strong>Browser Compatibility:</strong> This app uses the File System Access API for folder browsing.
             </div>
             <div className="pt-1">
-              ✅ <strong>Supported:</strong> Chrome, Edge, Opera, and other Chromium-based browsers
+              ✅ <strong>Supported:</strong> Chrome and Chromium-based browsers (including ChatGPT Atlas)
             </div>
             <div className="text-amber-600 dark:text-amber-500">
-              ❌ <strong>Not Supported:</strong> Safari (does not support the File System Access API)
+              ❌ <strong>Not Supported:</strong> Safari, Firefox, and other non-Chromium browsers
             </div>
           </div>
 

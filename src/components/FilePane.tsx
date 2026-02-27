@@ -2129,7 +2129,15 @@ export const FilePane = ({
         const filtered = itemsToCopy.filter(
           (item) => !isNoOpDrop(item.path, item.type, destinationPath)
         );
-        if (filtered.length === 0) return;
+        if (filtered.length === 0) {
+          if (itemsToCopy.length > 0 && sourcePane === "source") {
+            toast.warning("Same Folder", {
+              description: "Source and destination are the same folder. Nothing to copy.",
+              duration: 5000,
+            });
+          }
+          return;
+        }
 
         await copyMultipleItems(filtered, destinationPath, destinationNode, false, sourcePane);
         return;

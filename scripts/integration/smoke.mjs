@@ -603,7 +603,7 @@ try {
     await safariPage.goto(baseUrl, { waitUntil: "networkidle" });
     await safariPage.waitForTimeout(500);
     const safariFallbackVisible = await safariPage
-      .getByRole("heading", { name: "Safari Not Supported" })
+      .getByRole("heading", { name: "Browser Not Supported" })
       .isVisible()
       .catch(() => false);
     const appHeadingVisible = await safariPage

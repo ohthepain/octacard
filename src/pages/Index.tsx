@@ -46,10 +46,9 @@ function isAudioFile(fileName: string): boolean {
   return /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i.test(fileName);
 }
 
-function isSafari(): boolean {
+function isUnsupportedBrowser(): boolean {
   if (typeof window === "undefined") return false;
-  const ua = window.navigator.userAgent.toLowerCase();
-  return ua.includes("safari") && !ua.includes("chrome") && !ua.includes("chromium");
+  return typeof window.showDirectoryPicker !== "function";
 }
 
 async function yieldToUi(): Promise<void> {
@@ -97,7 +96,7 @@ const Index = () => {
   const conversionAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (isSafari()) {
+    if (isUnsupportedBrowser()) {
       setUnsupportedBrowserDialogOpen(true);
     }
   }, []);
@@ -135,9 +134,10 @@ const Index = () => {
       }
       return true;
     }
-    if (isSafari()) {
-      toast.error("Safari Not Supported", {
-        description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
+    if (isUnsupportedBrowser()) {
+      toast.error("Browser Not Supported", {
+        description:
+          "OctaCard only supports Chrome and Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
         duration: 8000,
       });
     } else if (result.error !== "User cancelled directory selection") {
@@ -473,9 +473,10 @@ const Index = () => {
         });
       }
     } else if (!result.success) {
-      if (isSafari()) {
-        toast.error("Safari Not Supported", {
-          description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
+      if (isUnsupportedBrowser()) {
+        toast.error("Browser Not Supported", {
+          description:
+            "OctaCard only supports Chrome and Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
           duration: 8000,
         });
       } else if (result.error !== "User cancelled directory selection") {
@@ -522,9 +523,10 @@ const Index = () => {
         });
       }
     } else if (!result.success) {
-      if (isSafari()) {
-        toast.error("Safari Not Supported", {
-          description: "Safari doesn't support folder browsing. Please use Chrome, Edge, or another Chromium-based browser.",
+      if (isUnsupportedBrowser()) {
+        toast.error("Browser Not Supported", {
+          description:
+            "OctaCard only supports Chrome and Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
           duration: 8000,
         });
       } else if (result.error !== "User cancelled directory selection") {
@@ -723,10 +725,10 @@ const Index = () => {
       <Dialog open={unsupportedBrowserDialogOpen} onOpenChange={setUnsupportedBrowserDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Safari Not Supported</DialogTitle>
+            <DialogTitle>Browser Not Supported</DialogTitle>
             <DialogDescription>
-              OctaCard requires the File System Access API, which Safari does not support. Please use Chrome, Edge,
-              or another Chromium-based browser.
+              OctaCard requires the File System Access API and currently supports Chrome and Chromium-based browsers
+              (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.
             </DialogDescription>
           </DialogHeader>
         </DialogContent>
