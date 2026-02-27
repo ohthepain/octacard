@@ -171,12 +171,6 @@ try {
       const dir = ensureDirectoryByPath(virtualPath);
       dir.addFile(fileName, size);
     };
-    const sanitizeFilename = (filename) =>
-      filename
-        .normalize("NFKD")
-        .replace(/\p{M}+/gu, "")
-        .replace(/[^a-zA-Z0-9_!&()+,\-.=@[\]{} ]/g, "_");
-
     const pickerQueue = [root, alpha, beta, alpha];
     window.__pickerCalls = [];
     window.__octacardPickDirectory = async (startIn, options) => {
@@ -257,7 +251,7 @@ try {
             await new Promise((resolve) => setTimeout(resolve, 25));
           }
         }
-        const outputName = args.sanitizeFilename ? sanitizeFilename(args.fileName) : args.fileName;
+        const outputName = args.sanitizeFilename ? window.__octacardSanitizeFilename(args.fileName) : args.fileName;
         addFileToPath(args.destVirtualPath, outputName);
         if (args.fileName.length > 40) {
           await new Promise((resolve) => setTimeout(resolve, 4000));
