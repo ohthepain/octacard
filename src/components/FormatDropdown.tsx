@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { capture } from "@/lib/analytics";
-import { useFormatPresetStore } from "@/stores/format-preset-store";
+import { USER_SETTINGS_PRESET_LABEL, useFormatPresetStore } from "@/stores/format-preset-store";
 
 const BPM_MIN = 50;
 const BPM_MAX = 240;
@@ -132,13 +132,17 @@ export function FormatDropdown() {
   const devicePresets = useFormatPresetStore((s) => s.devicePresets);
   const updateCurrentPreset = useFormatPresetStore((s) => s.updateCurrentPreset);
   const applyDevicePreset = useFormatPresetStore((s) => s.applyDevicePreset);
+  const selectedPresetLabel =
+    selectedPresetId === "current"
+      ? USER_SETTINGS_PRESET_LABEL
+      : devicePresets.find((preset) => preset.id === selectedPresetId)?.name ?? USER_SETTINGS_PRESET_LABEL;
 
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-            Format
+            {selectedPresetLabel}
           </Button>
         </DialogTrigger>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -165,7 +169,7 @@ export function FormatDropdown() {
                   applyDevicePreset(value);
                 }}
               >
-                <option value="current">User</option>
+                <option value="current">{USER_SETTINGS_PRESET_LABEL}</option>
                 {devicePresets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
