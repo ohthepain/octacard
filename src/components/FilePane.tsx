@@ -382,6 +382,12 @@ export const FilePane = ({
       await refreshAvailableVolumes();
       void fileSystemService.ensureSearchIndex(paneType);
       await loadDirectory("/", "root");
+      if (result.warning) {
+        toast.warning("Same Folder Selected", {
+          description: result.warning,
+          duration: 6000,
+        });
+      }
     }
   }, []);
 

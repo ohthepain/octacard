@@ -127,6 +127,12 @@ const Index = () => {
     if (result.success) {
       setSourceRootVersion((v) => v + 1);
       setDestRootVersion((v) => v + 1);
+      if (result.warning) {
+        toast.warning("Same Folder Selected", {
+          description: result.warning,
+          duration: 6000,
+        });
+      }
       return true;
     }
     if (isSafari()) {
@@ -460,6 +466,12 @@ const Index = () => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, currentPath);
     if (result.success && result.data) {
       applyBrowseSelection(paneType, result.data);
+      if (result.warning) {
+        toast.warning("Same Folder Selected", {
+          description: result.warning,
+          duration: 6000,
+        });
+      }
     } else if (!result.success) {
       if (isSafari()) {
         toast.error("Safari Not Supported", {
@@ -503,6 +515,12 @@ const Index = () => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
     if (result.success && result.data) {
       applyBrowseSelection(paneType, result.data);
+      if (result.warning) {
+        toast.warning("Same Folder Selected", {
+          description: result.warning,
+          duration: 6000,
+        });
+      }
     } else if (!result.success) {
       if (isSafari()) {
         toast.error("Safari Not Supported", {
