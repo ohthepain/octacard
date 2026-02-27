@@ -70,7 +70,9 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
   const processFiles = async (mode: "NOTE" | "BPM") => {
     try {
       if (typeof window.showDirectoryPicker !== "function") {
-        toast.error("Folder picker not supported. Use Chrome, Edge, or Opera.");
+        toast.error(
+          "Folder picker not supported. Use Chrome or another Chromium-based browser (including ChatGPT Atlas)."
+        );
         return;
       }
       const dirHandle = await window.showDirectoryPicker();
