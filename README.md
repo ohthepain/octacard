@@ -3,7 +3,7 @@
 ## Project description
 
 OctaCard is a browser-based sample manager. It focuses on fast folder navigation, preview, and bulk copy/conversion into device-friendly formats. It was originally designed for Elektron Octatrack but also works perfectly for
-many other devices, including Elektron Digitakt and Intellijel Multigrain
+many other devices
 
 ## Why use this project
 
@@ -12,6 +12,7 @@ many other devices, including Elektron Digitakt and Intellijel Multigrain
 - It runs locally in Chromium browsers using the File System Access API - no cloud processing.
 - It combines file management, preview, favorites, and batch conversion in one UI.
 - It can convert/copy whole folder trees while preserving structure.
+- Device presets for sample formats
 
 ## Features (current)
 
