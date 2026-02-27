@@ -10,12 +10,16 @@ export async function assertSp404PresetSanitizesFilename(page) {
     window.__convertCalls = [];
   });
 
-  await page.getByTestId("favorite-open-source-_Alpha").click();
+  const sourcePanel = page.getByTestId("panel-source");
+  await sourcePanel.locator('button[title="Root"]').click();
+  await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
+  await page.getByTestId("tree-node-source-_Alpha").click();
   const sourceFile = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await sourceFile.waitFor({ state: "visible" });
   await sourceFile.click();
 
-  await page.getByTestId("favorite-open-dest-_Beta").click();
+  const destPanel = page.getByTestId("panel-dest");
+  await destPanel.locator('button[title="Root"]').click();
   await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
 
   await page.getByRole("button", { name: "Convert" }).click();

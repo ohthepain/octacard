@@ -135,11 +135,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleRate: "48000",
-<<<<<<< fix/ai-72
       sanitizeFilename: true,
-=======
       sampleDepth: "16-bit",
->>>>>>> main
     },
   },
   {

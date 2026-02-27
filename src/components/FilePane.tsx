@@ -2074,10 +2074,15 @@ export const FilePane = ({
     // Internal drag-and-drop between panes should convert/copy immediately without confirmation.
     // This matches the Convert button flow while skipping the modal prompt.
     if (paneType === "dest") {
-      const sourcePath = e.dataTransfer.getData("sourcePath");
-      const sourceType = e.dataTransfer.getData("sourceType") as "file" | "folder" | "";
+      const testDrop = (window as any).__octacardTestDropData;
+      const sourcePath =
+        e.dataTransfer.getData("sourcePath") || (typeof testDrop === "object" ? testDrop?.sourcePath : "");
+      const sourceType =
+        (e.dataTransfer.getData("sourceType") as "file" | "folder" | "") ||
+        (typeof testDrop === "object" ? testDrop?.sourceType : "");
       const multipleItemsData = e.dataTransfer.getData("multipleItems");
-      const sourcePaneData = e.dataTransfer.getData("sourcePane");
+      const sourcePaneData =
+        e.dataTransfer.getData("sourcePane") || (typeof testDrop === "object" ? testDrop?.sourcePane : "");
       const sourcePane = sourcePaneData === "dest" ? "dest" : "source";
 
       const itemsToCopy: Array<{ path: string; name: string; type: "file" | "folder" }> = [];
