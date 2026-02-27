@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
 import { useEffect } from "react";
 import { capture } from "@/lib/analytics";
+import packageJson from "../../package.json";
 
 interface AboutDialogProps {
   open: boolean;
@@ -40,7 +41,7 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
         <DialogDescription className="pt-2">Sample manager and organizer for Elektron Octatrack.</DialogDescription>
         <div className="pt-2 space-y-4">
           <div>
-            <div className="font-semibold text-foreground mb-1">Version 1.0.0</div>
+            <div className="font-semibold text-foreground mb-1">Version {packageJson.version}</div>
             <div className="text-sm text-muted-foreground">Sample manager and organizer for Elektron Octatrack</div>
           </div>
 
@@ -87,6 +88,20 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
             <div className="text-amber-600 dark:text-amber-500">
               ❌ <strong>Not Supported:</strong> Safari (does not support the File System Access API)
             </div>
+          </div>
+
+          <div className="pt-4 border-t border-border space-y-2">
+            <div className="font-semibold text-foreground">Other projects from the community!</div>
+            <Button variant="outline" className="w-full gap-2" asChild>
+              <a
+                href="https://github.com/davidferlay/octatrack-manager/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Octatrack Manager
+              </a>
+            </Button>
           </div>
         </div>
       </DialogContent>
