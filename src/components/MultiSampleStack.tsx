@@ -1,8 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { Play, Pause, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { MultiSampleBlock } from "@/components/MultiSampleBlock";
 import { fileSystemService } from "@/lib/fileSystem";
@@ -84,7 +82,6 @@ interface MultiSampleStackProps {
 export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
   const stack = useMultiSampleStore((s) => s.stack);
   const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
-  const setGlobalTempoBpm = useMultiSampleStore((s) => s.setGlobalTempoBpm);
   const removeFromStack = useMultiSampleStore((s) => s.removeFromStack);
   const addToStack = useMultiSampleStore((s) => s.addToStack);
   const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
@@ -289,25 +286,6 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
             >
               <Square className="w-4 h-4" />
             </Button>
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Label htmlFor="global-tempo" className="text-xs shrink-0">
-                BPM
-              </Label>
-              <Input
-                id="global-tempo"
-                type="number"
-                min={50}
-                max={240}
-                value={globalTempoBpm}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!Number.isNaN(v) && v >= 50 && v <= 240) {
-                    setGlobalTempoBpm(v);
-                  }
-                }}
-                className="h-7 w-16 text-sm"
-              />
-            </div>
           </div>
         </div>
 

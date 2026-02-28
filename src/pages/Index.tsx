@@ -80,6 +80,8 @@ const Index = () => {
   const previewMode = useMultiSampleStore((s) => s.previewMode);
   const setPreviewMode = useMultiSampleStore((s) => s.setPreviewMode);
   const addToStack = useMultiSampleStore((s) => s.addToStack);
+  const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
+  const setGlobalTempoBpm = useMultiSampleStore((s) => s.setGlobalTempoBpm);
   const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -93,6 +95,7 @@ const Index = () => {
   const [selectedDestItem, setSelectedDestItem] = useState<{ path: string; type: "file" | "folder"; name: string } | null>(null);
   const [sourceRootVersion, setSourceRootVersion] = useState(0);
   const [destRootVersion, setDestRootVersion] = useState(0);
+  const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const waveformEditor = useWaveformEditorStore(
@@ -662,6 +665,25 @@ const Index = () => {
             <Activity className="w-4 h-4 mr-1" />
             Waveform
           </Button>
+          <div className="flex items-center gap-2">
+            <label htmlFor="header-tempo" className="text-xs text-muted-foreground shrink-0">
+              BPM
+            </label>
+            <input
+              id="header-tempo"
+              type="number"
+              min={50}
+              max={240}
+              value={globalTempoBpm}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                if (!Number.isNaN(v) && v >= 50 && v <= 240) {
+                  setGlobalTempoBpm(v);
+                }
+              }}
+              className="h-7 w-14 rounded-md border border-input bg-background px-2 text-sm"
+            />
+          </div>
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
@@ -768,6 +790,7 @@ const Index = () => {
                 showEjectButton={false}
                 showNewFolderButton={false}
                 onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
+                refreshToken={sourceRefreshToken}
               />
             </div>
           </ResizablePanel>
@@ -833,6 +856,10 @@ const Index = () => {
             paneType={waveformEditor.paneType}
             isEmptyState={waveformEditor.isEmptyState}
             onClose={waveformEditor.close}
+            onFileSaved={(pane) => {
+              if (pane === "source") setSourceRefreshToken((t) => t + 1);
+              else setDestRefreshToken((t) => t + 1);
+            }}
           />
         )}
         {previewMode === "multi" && <MultiSampleStack className="shrink-0" />}
