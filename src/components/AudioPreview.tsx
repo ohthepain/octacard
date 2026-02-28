@@ -12,6 +12,7 @@ import {
   Map,
   ChevronDown,
   ChevronUp,
+  Layers,
   Mic,
   Square,
   Download,
@@ -21,13 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline";
@@ -35,7 +30,7 @@ import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
 import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
-import { exportAudioWithEdits } from "@/lib/exportAudio";
+import { exportAudioWithEdits, mixOverdub, replaceSegment } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
 import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
 import {
@@ -109,6 +104,11 @@ export const AudioPreview = ({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordPaused, setIsRecordPaused] = useState(false);
+  const [isRecordArmed, setIsRecordArmed] = useState(false);
+  const [recordArmedMode, setRecordArmedMode] = useState<"replace" | "overdub">("replace");
+  const recordArmedModeRef = useRef<"replace" | "overdub">("replace");
+  const recordingModeRef = useRef<"replace" | "overdub">("replace");
+  const recordStartTimeRef = useRef<number>(0);
   const [exportOverwriteOpen, setExportOverwriteOpen] = useState(false);
   const exportOverwriteResolverRef = useRef<((choice: "abort" | "overwrite") => void) | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -121,11 +121,15 @@ export const AudioPreview = ({
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [zoom, setZoom] = useState(50);
+  const zoomRef = useRef(50);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [normalize, setNormalize] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [waveformHeight, setWaveformHeight] = useState(200);
   const [debouncedWaveformHeight, setDebouncedWaveformHeight] = useState(200);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
   useEffect(() => {
     const t = setTimeout(() => setDebouncedWaveformHeight(waveformHeight), 150);
     return () => clearTimeout(t);
@@ -152,20 +156,37 @@ export const AudioPreview = ({
     startZoom: number;
     startScroll: number;
     isMinimapDrag: boolean;
+    isOverlayDrag: boolean;
     hasMoved: boolean;
+    shouldSeekOnMouseUp: boolean;
+    debugMoveSamples: number;
+    debugScrollSamples: number;
   } | null>(null);
 
   // Handle mouse down on minimap: click=seek, drag=zoom (vertical) + scroll (horizontal)
+  // Dragging the visible area overlay scrolls only (navigate) when overlay is narrower than minimap.
   const handleMinimapMouseDown = useCallback(
     (e: MouseEvent) => {
       if (!wavesurferRef.current || !minimapContainerRef.current || isLoading) return;
-      const rect = minimapContainerRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const width = rect.width;
+      const minimapRect = minimapContainerRef.current.getBoundingClientRect();
+      const overlayEl = minimapContainerRef.current.querySelector('[part="minimap-overlay"]') as HTMLElement | null;
+      const overlayRect = overlayEl?.getBoundingClientRect();
+      const isWithinOverlay =
+        !!overlayRect &&
+        e.clientX >= overlayRect.left &&
+        e.clientX <= overlayRect.right &&
+        e.clientY >= overlayRect.top &&
+        e.clientY <= overlayRect.bottom;
+      // If overlay takes a large share of the minimap, treat drag as background drag
+      // so users can still access vertical zoom-out without pixel-hunting outside the overlay.
+      const overlayCoverage =
+        overlayRect && minimapRect.width > 0 ? overlayRect.width / minimapRect.width : 0;
+      const overlayFillsMinimap = overlayCoverage >= 0.5;
+      const isOverlay = isWithinOverlay && !overlayFillsMinimap;
+
       const currentDuration = wavesurferRef.current.getDuration();
       if (!currentDuration) return;
 
-      const clickTime = (x / width) * currentDuration;
       let startScroll = 0;
       try {
         startScroll = wavesurferRef.current.getScroll();
@@ -177,22 +198,89 @@ export const AudioPreview = ({
         isDragging: false,
         startY: e.clientY,
         startX: e.clientX,
-        startZoom: zoom,
+        startZoom: zoomRef.current,
         startScroll,
         isMinimapDrag: true,
+        isOverlayDrag: !!isOverlay,
         hasMoved: false,
+        shouldSeekOnMouseUp: !isOverlay,
+        debugMoveSamples: 0,
+        debugScrollSamples: 0,
       };
-
-      // Click: seek to position
-      wavesurferRef.current.seekTo(clickTime / currentDuration);
+      // #region agent log
+      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+        body: JSON.stringify({
+          sessionId: "f12403",
+          runId: "minimap-drag-v1",
+          hypothesisId: "H1",
+          location: "AudioPreview.tsx:handleMinimapMouseDown",
+          message: "minimap mousedown captured",
+          data: {
+            isOverlay,
+            startZoom: zoomRef.current,
+            startScroll,
+            minimapWidth: minimapRect.width,
+            overlayCoverage,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       e.preventDefault();
     },
-    [zoom, isLoading],
+    [isLoading],
   );
 
-  // Handle mouse down on waveform (for zoom)
+  // Handle mouse down on waveform (for click-to-seek; zoom only via minimap)
   const handleWaveformMouseDown = (e: React.MouseEvent) => {
     if (!wavesurferRef.current || isLoading) return;
+    const minimapRect = minimapContainerRef.current?.getBoundingClientRect();
+    const isInsideMinimap =
+      !!minimapRect &&
+      e.clientX >= minimapRect.left &&
+      e.clientX <= minimapRect.right &&
+      e.clientY >= minimapRect.top &&
+      e.clientY <= minimapRect.bottom;
+    // #region agent log
+    fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+      body: JSON.stringify({
+        sessionId: "f12403",
+        runId: "minimap-drag-v4",
+        hypothesisId: "H8",
+        location: "AudioPreview.tsx:handleWaveformMouseDown",
+        message: "waveform mousedown fired",
+        data: {
+          isInsideMinimap,
+          priorDragStateIsMinimap: !!dragStateRef.current?.isMinimapDrag,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    if (isInsideMinimap) {
+      // #region agent log
+      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+        body: JSON.stringify({
+          sessionId: "f12403",
+          runId: "minimap-drag-postfix1",
+          hypothesisId: "H9",
+          location: "AudioPreview.tsx:handleWaveformMouseDown",
+          message: "ignored waveform mousedown inside minimap",
+          data: {
+            preservedMinimapDragState: !!dragStateRef.current?.isMinimapDrag,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      return;
+    }
     dragStateRef.current = {
       isDragging: false,
       startY: e.clientY,
@@ -200,7 +288,11 @@ export const AudioPreview = ({
       startZoom: zoom,
       startScroll: 0,
       isMinimapDrag: false,
+      isOverlayDrag: false,
       hasMoved: false,
+      shouldSeekOnMouseUp: false,
+      debugMoveSamples: 0,
+      debugScrollSamples: 0,
     };
   };
 
@@ -293,13 +385,13 @@ export const AudioPreview = ({
   // Initialize WaveSurfer
   useEffect(() => {
     if (!waveformRef.current || !audioUrl) return;
-    
+
     // Prevent multiple simultaneous initializations
     if (isInitializingRef.current) {
       console.log("WaveSurfer initialization already in progress, skipping...");
       return;
     }
-    
+
     // Prevent re-initializing with the same audioUrl
     if (currentAudioUrlRef.current === audioUrl && wavesurferRef.current) {
       console.log("WaveSurfer already initialized with this audioUrl, skipping...");
@@ -316,13 +408,13 @@ export const AudioPreview = ({
         try {
           const prevInstance = wavesurferRef.current;
           wavesurferRef.current = null; // Clear ref immediately to prevent race conditions
-          
+
           try {
             prevInstance.pause();
           } catch (e) {
             // Ignore pause errors
           }
-          
+
           try {
             // Destroy and wait a bit for cleanup
             prevInstance.destroy();
@@ -345,7 +437,7 @@ export const AudioPreview = ({
 
     const initializeWaveSurfer = async () => {
       await cleanupPrevious();
-      
+
       if (cancelled) return;
 
       setIsLoading(true);
@@ -402,8 +494,69 @@ export const AudioPreview = ({
         if (cancelled) return;
         setIsRecording(false);
         setIsRecordPaused(false);
+        setIsRecordArmed(false);
         lastRecordedBlobRef.current = blob;
-        if (filePath && paneType) {
+        const mode = recordingModeRef.current;
+        if (filePath && paneType && mode === "overdub") {
+          try {
+            const existingResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
+            if (!existingResult.success || !existingResult.data) {
+              toast.error("Could not load existing audio for overdub");
+              return;
+            }
+            const existingBlob = await fetch(existingResult.data).then((r) => r.blob());
+            const mixed = await mixOverdub(existingBlob, blob, recordStartTimeRef.current);
+            if (mixed) {
+              const result = await fileSystemService.writeBlobToPath(filePath, mixed, paneType);
+              if (result.success) {
+                toast.success("Overdub saved");
+                onFileSavedRef.current?.(paneType);
+                if (wavesurferRef.current && !cancelled) {
+                  const url = URL.createObjectURL(mixed);
+                  wavesurferRef.current.load(url);
+                }
+              } else {
+                toast.error(result.error || "Overdub save failed");
+              }
+            }
+          } catch (err) {
+            toast.error(String(err));
+          }
+        } else if (filePath && paneType && mode === "replace") {
+          try {
+            const existingResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
+            if (existingResult.success && existingResult.data) {
+              const existingBlob = await fetch(existingResult.data).then((r) => r.blob());
+              const replaced = await replaceSegment(existingBlob, blob, recordStartTimeRef.current);
+              const result = await fileSystemService.writeBlobToPath(filePath, replaced, paneType);
+              if (result.success) {
+                toast.success("Recording saved");
+                onFileSavedRef.current?.(paneType);
+                if (wavesurferRef.current && !cancelled) {
+                  const url = URL.createObjectURL(replaced);
+                  wavesurferRef.current.load(url);
+                }
+              } else {
+                toast.error(result.error || "Failed to save recording");
+              }
+            } else {
+              const dirPath = filePath.substring(0, filePath.lastIndexOf("/")) || "/";
+              const baseName = filePath.substring(filePath.lastIndexOf("/") + 1);
+              const nameWithoutExt = baseName.replace(/\.[^.]+$/, "");
+              const newName = `${nameWithoutExt}_recorded_${Date.now()}.wav`;
+              const file = new File([blob], newName, { type: "audio/wav" });
+              const result = await fileSystemService.addFileFromDrop(file, dirPath, paneType);
+              if (result.success) {
+                toast.success(`Recorded and saved: ${newName}`);
+                onFileSavedRef.current?.(paneType);
+              } else {
+                toast.error(result.error || "Failed to save recording");
+              }
+            }
+          } catch (err) {
+            toast.error(String(err));
+          }
+        } else if (filePath && paneType) {
           try {
             const dirPath = filePath.substring(0, filePath.lastIndexOf("/")) || "/";
             const baseName = filePath.substring(filePath.lastIndexOf("/") + 1);
@@ -446,6 +599,8 @@ export const AudioPreview = ({
         insertPosition: "afterend",
         waveColor: "#9E9E9E",
         progressColor: "#9E9E9E",
+        interact: false,
+        dragToSeek: false,
       });
       minimapRef.current = minimap;
       wavesurfer.registerPlugin(minimap);
@@ -619,14 +774,58 @@ export const AudioPreview = ({
   useEffect(() => {
     if (isLoading || !duration) return;
 
-    // Find the minimap element (inserted after waveform by WaveSurfer with part="minimap")
+    // Find the minimap element (inserted by WaveSurfer with part="minimap")
     const findMinimap = () => {
       if (waveformRef.current) {
-        // Try next sibling first (insertPosition: afterend)
-        let minimapElement =
-          (waveformRef.current.nextElementSibling as HTMLElement) ||
-          (waveformRef.current.parentElement?.querySelector('[part="minimap"]') as HTMLElement);
+        const wrapper = wavesurferRef.current?.getWrapper?.() as HTMLElement | undefined;
+        const wrapperRoot = wrapper?.getRootNode?.() as ShadowRoot | Document | undefined;
+        const minimapInParent = waveformRef.current.parentElement?.querySelector(
+          '[part="minimap"]',
+        ) as HTMLDivElement | null;
+        const minimapInWrapperRoot = (wrapperRoot as ParentNode | undefined)?.querySelector?.(
+          '[part="minimap"]',
+        ) as HTMLDivElement | null;
+        const minimapElement = minimapInParent || minimapInWrapperRoot;
+        // #region agent log
+        fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+          body: JSON.stringify({
+            sessionId: "f12403",
+            runId: "minimap-drag-v3",
+            hypothesisId: "H7",
+            location: "AudioPreview.tsx:findMinimap",
+            message: "minimap lookup paths",
+            data: {
+              hasWrapper: !!wrapper,
+              wrapperRootType: wrapperRoot ? (wrapperRoot as unknown as { nodeName?: string }).nodeName ?? "unknown" : null,
+              foundInParent: !!minimapInParent,
+              foundInWrapperRoot: !!minimapInWrapperRoot,
+              finalFound: !!minimapElement,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         if (minimapElement) {
+          // #region agent log
+          fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+            body: JSON.stringify({
+              sessionId: "f12403",
+              runId: "minimap-drag-v2",
+              hypothesisId: "H5",
+              location: "AudioPreview.tsx:findMinimap",
+              message: "minimap element found",
+              data: {
+                tagName: minimapElement.tagName,
+                part: minimapElement.getAttribute("part"),
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
           if (minimapContainerRef.current !== minimapElement) {
             if (minimapContainerRef.current) {
               minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
@@ -634,6 +833,21 @@ export const AudioPreview = ({
             minimapContainerRef.current = minimapElement;
             minimapElement.style.cursor = "crosshair";
             minimapElement.addEventListener("mousedown", handleMinimapMouseDown);
+            // #region agent log
+            fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+              body: JSON.stringify({
+                sessionId: "f12403",
+                runId: "minimap-drag-v2",
+                hypothesisId: "H5",
+                location: "AudioPreview.tsx:findMinimap",
+                message: "attached mousedown listener",
+                data: {},
+                timestamp: Date.now(),
+              }),
+            }).catch(() => {});
+            // #endregion
           }
           return true;
         }
@@ -662,9 +876,54 @@ export const AudioPreview = ({
     };
   }, [isLoading, duration, handleMinimapMouseDown]);
 
+  useEffect(() => {
+    const handlePointerDownCapture = (e: PointerEvent) => {
+      if (!minimapContainerRef.current) return;
+      const rect = minimapContainerRef.current.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inside) return;
+      // #region agent log
+      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+        body: JSON.stringify({
+          sessionId: "f12403",
+          runId: "minimap-drag-v2",
+          hypothesisId: "H6",
+          location: "AudioPreview.tsx:pointerdownCapture",
+          message: "pointerdown inside minimap bounds",
+          data: {
+            targetTag: (e.target as HTMLElement | null)?.tagName ?? null,
+            targetPart: (e.target as HTMLElement | null)?.getAttribute?.("part") ?? null,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+    };
+    window.addEventListener("pointerdown", handlePointerDownCapture, true);
+    return () => window.removeEventListener("pointerdown", handlePointerDownCapture, true);
+  }, []);
+
   // Update zoom
   useEffect(() => {
     if (wavesurferRef.current) {
+      // #region agent log
+      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+        body: JSON.stringify({
+          sessionId: "f12403",
+          runId: "minimap-drag-v1",
+          hypothesisId: "H4",
+          location: "AudioPreview.tsx:zoomEffect",
+          message: "zoom effect invoked",
+          data: { zoom },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       wavesurferRef.current.zoom(zoom);
     }
   }, [zoom]);
@@ -703,20 +962,86 @@ export const AudioPreview = ({
     }
   }, [envelopeEnabled, isLoading]);
 
+  const startRecordingFromHere = useCallback(
+    async (mode: "replace" | "overdub") => {
+      const plugin = recordPluginRef.current;
+      if (!plugin || !wavesurferRef.current || isLoading) return;
+      if (isPlaying) {
+        wavesurferRef.current.pause();
+      }
+      recordingModeRef.current = mode;
+      recordStartTimeRef.current = wavesurferRef.current.getCurrentTime();
+      try {
+        const opts = selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : undefined;
+        await plugin.startRecording(opts);
+        setIsRecording(true);
+        setIsRecordPaused(false);
+        setIsRecordArmed(false);
+      } catch (err) {
+        toast.error(String(err));
+      }
+    },
+    [isLoading, selectedDeviceId],
+  );
+
   const handleStopOrPlay = useCallback(() => {
     if (!wavesurferRef.current || isLoading) return;
+    if (isRecording) {
+      recordPluginRef.current?.stopRecording();
+      return;
+    }
     if (isPlaying) {
       wavesurferRef.current.pause();
       if (duration > 0) {
         wavesurferRef.current.seekTo(playStartTimeRef.current / duration);
       }
+    } else if (isRecordArmed) {
+      startRecordingFromHere(recordArmedModeRef.current);
     } else {
       playStartTimeRef.current = wavesurferRef.current.getCurrentTime();
       wavesurferRef.current.play();
     }
-  }, [isPlaying, isLoading, duration]);
+  }, [isPlaying, isRecording, isRecordArmed, isLoading, duration, startRecordingFromHere]);
 
-  // Spacebar to start/stop playback (stop resets to position when play was pressed)
+  const handleRecordClick = useCallback(() => {
+    if (isRecording) {
+      recordPluginRef.current?.stopRecording();
+      setIsRecordArmed(false);
+      return;
+    }
+    if (isPlaying) {
+      startRecordingFromHere("replace");
+      return;
+    }
+    if (isRecordArmed && recordArmedModeRef.current === "replace") {
+      setIsRecordArmed(false);
+      return;
+    }
+    recordArmedModeRef.current = "replace";
+    setRecordArmedMode("replace");
+    setIsRecordArmed(true);
+  }, [isRecording, isPlaying, isRecordArmed, startRecordingFromHere]);
+
+  const handleOverdubClick = useCallback(() => {
+    if (isRecording) {
+      recordPluginRef.current?.stopRecording();
+      setIsRecordArmed(false);
+      return;
+    }
+    if (isPlaying) {
+      startRecordingFromHere("overdub");
+      return;
+    }
+    if (isRecordArmed && recordArmedModeRef.current === "overdub") {
+      setIsRecordArmed(false);
+      return;
+    }
+    recordArmedModeRef.current = "overdub";
+    setRecordArmedMode("overdub");
+    setIsRecordArmed(true);
+  }, [isRecording, isPlaying, isRecordArmed, startRecordingFromHere]);
+
+  // Spacebar to start/stop playback or recording
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat) return;
@@ -843,7 +1168,7 @@ export const AudioPreview = ({
       const result = await fileSystemService.addFileFromDrop(
         new File([blob], safeName, { type: "audio/wav" }),
         "/",
-        paneType || "source"
+        paneType || "source",
       );
       if (result.success) {
         toast.success(`Exported ${safeName}`);
@@ -879,11 +1204,7 @@ export const AudioPreview = ({
 
     setIsExporting(true);
     try {
-      const exported = await exportAudioWithEdits(
-        blob,
-        { regionStart, regionEnd, envelopePoints },
-        duration
-      );
+      const exported = await exportAudioWithEdits(blob, { regionStart, regionEnd, envelopePoints }, duration);
       const result = await fileSystemService.writeBlobToPath(filePath, exported, paneType);
       if (result.success) {
         toast.success(`Exported ${fileName}`);
@@ -916,40 +1237,6 @@ export const AudioPreview = ({
     }
   };
 
-  const handleStartRecord = async () => {
-    const plugin = recordPluginRef.current;
-    if (!plugin || !wavesurferRef.current) return;
-    try {
-      const opts = selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : undefined;
-      await plugin.startRecording(opts);
-      setIsRecording(true);
-      setIsRecordPaused(false);
-    } catch (err) {
-      toast.error(String(err));
-    }
-  };
-
-  const handleStopRecord = async () => {
-    const plugin = recordPluginRef.current;
-    if (!plugin) return;
-    plugin.stopRecording();
-  };
-
-  const handlePauseRecord = () => {
-    const plugin = recordPluginRef.current;
-    if (!plugin) return;
-    plugin.pauseRecording();
-    setIsRecordPaused(true);
-  };
-
-  const handleResumeRecord = () => {
-    const plugin = recordPluginRef.current;
-    if (!plugin) return;
-    plugin.resumeRecording();
-    setIsRecordPaused(false);
-  };
-
-
   // Handle mouse move for drag operations
   useEffect(() => {
     const DRAG_THRESHOLD = 5; // Pixels of movement before considering it a drag
@@ -967,6 +1254,27 @@ export const AudioPreview = ({
       if (hasMovedEnough && !dragStateRef.current.isDragging) {
         dragStateRef.current.isDragging = true;
         dragStateRef.current.hasMoved = true;
+        // #region agent log
+        fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+          body: JSON.stringify({
+            sessionId: "f12403",
+            runId: "minimap-drag-v1",
+            hypothesisId: "H3",
+            location: "AudioPreview.tsx:handleMouseMove",
+            message: "drag threshold crossed",
+            data: {
+              isMinimapDrag: dragStateRef.current.isMinimapDrag,
+              isOverlayDrag: dragStateRef.current.isOverlayDrag,
+              deltaX,
+              deltaY,
+              threshold: DRAG_THRESHOLD,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         // Prevent default behavior once drag is detected
         e.preventDefault();
       }
@@ -974,40 +1282,125 @@ export const AudioPreview = ({
       // Only perform drag operations if threshold is met
       if (!dragStateRef.current.isDragging) return;
 
-      const currentDuration = wavesurferRef.current.getDuration();
-
       if (dragStateRef.current.isMinimapDrag) {
-        // Minimap: vertical = zoom (up=in, down=out), horizontal = scroll visible area
-        const actualDeltaY = e.clientY - dragStateRef.current.startY;
         const actualDeltaX = e.clientX - dragStateRef.current.startX;
-        // Vertical: zoom - drag up = zoom in, drag down = zoom out
-        const zoomDelta = -actualDeltaY * 0.5;
-        const newZoom = Math.max(0, Math.min(500, dragStateRef.current.startZoom + zoomDelta));
-        setZoom(newZoom);
+        const actualDeltaY = e.clientY - dragStateRef.current.startY;
         // Horizontal: scroll visible area - drag right = scroll right, drag left = scroll left
         try {
           const ws = wavesurferRef.current;
           if (typeof ws.getScroll === "function" && typeof ws.setScroll === "function") {
-            const newScroll = Math.max(0, dragStateRef.current.startScroll + actualDeltaX);
+            const overlayEl = minimapContainerRef.current?.querySelector('[part="minimap-overlay"]') as HTMLElement | null;
+            const minimapRect = minimapContainerRef.current?.getBoundingClientRect();
+            const waveformRect = waveformRef.current?.getBoundingClientRect();
+            const overlayLeftBefore =
+              overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
+            const scrollBefore = ws.getScroll();
+            // Axis lock: ignore tiny/secondary horizontal jitter during mostly vertical drags.
+            const shouldApplyHorizontal = Math.abs(actualDeltaX) >= Math.abs(actualDeltaY) && Math.abs(actualDeltaX) >= 2;
+            // Map mouse pixels to minimap overlay pixels (~1:1 feel): one mouse px moves overlay by one px.
+            // dScroll = dOverlay * (visibleWindowPx / overlayWidthPx)
+            const overlayWidth = overlayEl?.getBoundingClientRect().width ?? 0;
+            const visibleWindow = waveformRect?.width ?? 0;
+            const minimapPixelToScroll =
+              overlayWidth > 0 && visibleWindow > 0 ? visibleWindow / overlayWidth : 1;
+            const mappedDeltaX = shouldApplyHorizontal ? actualDeltaX * minimapPixelToScroll : 0;
+            const newScroll = Math.max(0, dragStateRef.current.startScroll + mappedDeltaX);
             ws.setScroll(newScroll);
+            const overlayLeftAfter =
+              overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
+            if (dragStateRef.current.debugScrollSamples < 6) {
+              dragStateRef.current.debugScrollSamples += 1;
+              // #region agent log
+              fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+                body: JSON.stringify({
+                  sessionId: "f12403",
+                  runId: "minimap-drag-v5",
+                  hypothesisId: "H11",
+                  location: "AudioPreview.tsx:handleMouseMove",
+                  message: "minimap horizontal coupling sample",
+                  data: {
+                    actualDeltaX,
+                    actualDeltaY,
+                    verticalDominant: Math.abs(actualDeltaY) > Math.abs(actualDeltaX),
+                    shouldApplyHorizontal,
+                    minimapPixelToScroll,
+                    mappedDeltaX,
+                    scrollBefore,
+                    newScroll,
+                    overlayLeftBefore,
+                    overlayLeftAfter,
+                    overlayDelta:
+                      overlayLeftBefore != null && overlayLeftAfter != null
+                        ? overlayLeftAfter - overlayLeftBefore
+                        : null,
+                  },
+                  timestamp: Date.now(),
+                }),
+              }).catch(() => {});
+              // #endregion
+            }
           }
         } catch {
           /* scroll API may not exist */
         }
-      } else {
-        // Vertical drag on main waveform - zoom in/out
-        // Dragging up (negative deltaY) = zoom in
-        // Dragging down (positive deltaY) = zoom out
-        const actualDeltaY = e.clientY - dragStateRef.current.startY;
-        const zoomDelta = -actualDeltaY * 0.5; // Scale factor for zoom sensitivity
+        // Vertical zoom on minimap drag (including overlay) so zoom-out is always reachable.
+        // Keep zoom response linear/predictable in both directions.
+        const zoomPerPixel = 0.8;
+        const zoomDelta = -actualDeltaY * zoomPerPixel;
         const newZoom = Math.max(0, Math.min(500, dragStateRef.current.startZoom + zoomDelta));
+        if (dragStateRef.current.debugMoveSamples < 3) {
+          dragStateRef.current.debugMoveSamples += 1;
+          // #region agent log
+          fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
+            body: JSON.stringify({
+              sessionId: "f12403",
+              runId: "minimap-drag-postfix2",
+              hypothesisId: "H10",
+              location: "AudioPreview.tsx:handleMouseMove",
+              message: "minimap drag computed zoom (overlay and background)",
+              data: {
+                isOverlayDrag: dragStateRef.current.isOverlayDrag,
+                actualDeltaY,
+                zoomDelta,
+                startZoom: dragStateRef.current.startZoom,
+                newZoom,
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+        }
         setZoom(newZoom);
       }
+      // Main waveform: no zoom on drag (zoom only via minimap)
     };
 
     const handleMouseUp = (e: MouseEvent) => {
       const state = dragStateRef.current;
       dragStateRef.current = null;
+      // Minimap click (no drag): seek to position.
+      if (
+        state &&
+        state.isMinimapDrag &&
+        state.shouldSeekOnMouseUp &&
+        !state.hasMoved &&
+        minimapContainerRef.current &&
+        wavesurferRef.current &&
+        !isLoading
+      ) {
+        const rect = minimapContainerRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const width = rect.width;
+        if (width > 0) {
+          const relativeX = Math.max(0, Math.min(1, x / width));
+          wavesurferRef.current.seekTo(relativeX);
+        }
+        return;
+      }
       // If it was a click (no drag) on the main waveform, seek to that position
       if (
         state &&
@@ -1110,10 +1503,7 @@ export const AudioPreview = ({
       )}
 
       {/* Waveform - resizable height (overflow-hidden to contain minimap) */}
-      <div
-        className="relative overflow-hidden"
-        style={{ minHeight: debouncedWaveformHeight + 60 }}
-      >
+      <div className="relative overflow-hidden" style={{ minHeight: debouncedWaveformHeight + 60 }}>
         <div
           ref={waveformRef}
           className="w-full cursor-pointer"
@@ -1133,9 +1523,10 @@ export const AudioPreview = ({
         {/* Playhead overlay with dragger handle - only when we have audio */}
         {!isEmptyState && duration > 0 && (
           <div
-            className="absolute top-0 bottom-8 left-0 w-0.5 pointer-events-none z-10"
+            className="absolute top-0 left-0 w-0.5 pointer-events-none z-10"
             style={{
               left: `${(currentTime / duration) * 100}%`,
+              height: debouncedWaveformHeight,
               backgroundColor: "#FF764D",
             }}
           >
@@ -1180,6 +1571,22 @@ export const AudioPreview = ({
           </Button>
           <Button
             size="sm"
+            variant={isRecordArmed && recordArmedMode === "replace" ? "default" : "outline"}
+            className="h-8 gap-1 shrink-0"
+            onClick={handleRecordClick}
+            disabled={isLoading}
+            title={
+              isRecording
+                ? "Disarm (stop recording, keep audio)"
+                : isRecordArmed
+                  ? "Armed: Play to start recording"
+                  : "Arm record (Play to start) or tap while playing to record"
+            }
+          >
+            <Mic className="w-4 h-4" />
+          </Button>
+          <Button
+            size="sm"
             variant="secondary"
             className="h-8 w-8 p-0 shrink-0"
             onClick={handleStopOrPlay}
@@ -1196,6 +1603,23 @@ export const AudioPreview = ({
           </Button>
           <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0" onClick={skipForward} disabled={isLoading}>
             <SkipForward className="w-4 h-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant={isRecordArmed && recordArmedMode === "overdub" ? "default" : "outline"}
+            className="h-8 gap-1 shrink-0"
+            onClick={handleOverdubClick}
+            disabled={isLoading}
+            title={
+              isRecording
+                ? "Disarm (stop recording, keep audio)"
+                : isRecordArmed
+                  ? "Armed: Play to start overdub"
+                  : "Arm overdub (record on top without replacing)"
+            }
+          >
+            <Layers className="w-4 h-4" />
+            Overdub
           </Button>
         </div>
 
@@ -1288,7 +1712,7 @@ export const AudioPreview = ({
           <CollapsibleContent className="pt-2 w-full basis-full">
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-4 flex-wrap">
-                        {/* Playback Rate */}
+                {/* Playback Rate */}
                 <div className="flex items-center gap-2">
                   <Gauge className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   <Slider
@@ -1300,7 +1724,9 @@ export const AudioPreview = ({
                     disabled={isLoading}
                     className="cursor-pointer w-24"
                   />
-                  <span className="text-xs text-muted-foreground font-mono min-w-[40px]">{playbackRate.toFixed(2)}x</span>
+                  <span className="text-xs text-muted-foreground font-mono min-w-[40px]">
+                    {playbackRate.toFixed(2)}x
+                  </span>
                 </div>
                 {/* Normalize Toggle */}
                 <Button
@@ -1319,7 +1745,13 @@ export const AudioPreview = ({
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addRegion} disabled={isLoading}>
                     Add Region
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearRegions} disabled={isLoading}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={clearRegions}
+                    disabled={isLoading}
+                  >
                     Clear Regions
                   </Button>
                 </div>
@@ -1336,25 +1768,23 @@ export const AudioPreview = ({
                     <Map className="w-3 h-3" />
                     Add Marker
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearMarkers} disabled={isLoading}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={clearMarkers}
+                    disabled={isLoading}
+                  >
                     Clear Markers
                   </Button>
                 </div>
               </div>
 
-              {/* Record Section */}
+              {/* Microphone device selection */}
               <div className="flex flex-col gap-2 pt-2 border-t border-border">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                  <Mic className="w-3.5 h-3.5" />
-                  Record
-                </div>
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Microphone</div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={refreshAudioDevices}
-                  >
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={refreshAudioDevices}>
                     Refresh devices
                   </Button>
                   {audioDevices.length > 0 && (
@@ -1370,28 +1800,6 @@ export const AudioPreview = ({
                         ))}
                       </SelectContent>
                     </Select>
-                  )}
-                  {!isRecording ? (
-                    <Button size="sm" variant="default" className="h-7 gap-1" onClick={handleStartRecord}>
-                      <Mic className="w-3 h-3" />
-                      Record
-                    </Button>
-                  ) : (
-                    <>
-                      <Button size="sm" variant="secondary" className="h-7 gap-1" onClick={handleStopRecord}>
-                        <Square className="w-3 h-3" />
-                        Stop
-                      </Button>
-                      {isRecordPaused ? (
-                        <Button size="sm" variant="outline" className="h-7 gap-1" onClick={handleResumeRecord}>
-                          Record
-                        </Button>
-                      ) : (
-                        <Button size="sm" variant="outline" className="h-7 gap-1" onClick={handlePauseRecord}>
-                          Pause
-                        </Button>
-                      )}
-                    </>
                   )}
                 </div>
               </div>

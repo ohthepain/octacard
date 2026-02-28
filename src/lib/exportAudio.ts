@@ -151,3 +151,89 @@ export async function exportAudioWithEdits(
   const rendered = await offlineCtx.startRendering();
   return encodeWav(rendered);
 }
+
+/**
+ * Replace a segment of existing audio with recorded audio, starting at startTimeSeconds.
+ */
+export async function replaceSegment(
+  existingBlob: Blob,
+  recordedBlob: Blob,
+  startTimeSeconds: number
+): Promise<Blob> {
+  const ctx = new AudioContext();
+  const [existing, recorded] = await Promise.all([
+    ctx.decodeAudioData(await existingBlob.arrayBuffer()),
+    ctx.decodeAudioData(await recordedBlob.arrayBuffer()),
+  ]);
+
+  const sampleRate = existing.sampleRate;
+  const channels = existing.numberOfChannels;
+  const startSample = Math.floor(startTimeSeconds * sampleRate);
+  const recordedLength = recorded.length;
+  const existingLength = existing.length;
+  const replaceLength = Math.min(recordedLength, Math.max(0, existingLength - startSample));
+  if (replaceLength <= 0 || startSample < 0) {
+    await ctx.close();
+    return encodeWav(existing);
+  }
+
+  const outputLength = Math.max(existingLength, startSample + recordedLength);
+  const output = ctx.createBuffer(channels, outputLength, sampleRate);
+  await ctx.close();
+
+  for (let c = 0; c < channels; c++) {
+    const outCh = output.getChannelData(c);
+    const existCh = existing.getChannelData(c);
+    const recCh = recorded.getChannelData(Math.min(c, recorded.numberOfChannels - 1));
+    outCh.set(existCh);
+    for (let i = 0; i < replaceLength; i++) {
+      outCh[startSample + i] = recCh[i];
+    }
+    if (recordedLength > existingLength - startSample) {
+      for (let i = existingLength - startSample; i < recordedLength; i++) {
+        outCh[startSample + i] = recCh[i];
+      }
+    }
+  }
+  return encodeWav(output);
+}
+
+/**
+ * Mix overdub recording into existing audio at startTime.
+ * Returns a new Blob with existing + overdub mixed (additive).
+ */
+export async function mixOverdub(
+  existingBlob: Blob,
+  overdubBlob: Blob,
+  startTimeSeconds: number
+): Promise<Blob> {
+  const ctx = new AudioContext();
+  const [existing, overdub] = await Promise.all([
+    ctx.decodeAudioData(await existingBlob.arrayBuffer()),
+    ctx.decodeAudioData(await overdubBlob.arrayBuffer()),
+  ]);
+
+  const sampleRate = existing.sampleRate;
+  const channels = existing.numberOfChannels;
+  const startSample = Math.floor(startTimeSeconds * sampleRate);
+  const overdubLength = overdub.length;
+  const existingLength = existing.length;
+  const endSample = Math.max(existingLength, startSample + overdubLength);
+  const outputLength = endSample;
+
+  const offlineCtx = new OfflineAudioContext(channels, outputLength, sampleRate);
+
+  const existingSource = offlineCtx.createBufferSource();
+  existingSource.buffer = existing;
+  existingSource.start(0);
+  existingSource.connect(offlineCtx.destination);
+
+  const overdubSource = offlineCtx.createBufferSource();
+  overdubSource.buffer = overdub;
+  overdubSource.start(startSample / sampleRate);
+  overdubSource.connect(offlineCtx.destination);
+
+  const rendered = await offlineCtx.startRendering();
+  await ctx.close();
+  return encodeWav(rendered);
+}

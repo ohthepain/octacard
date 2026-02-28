@@ -78,10 +78,16 @@
     "autoprefixer": "^10.4.27",
     "concurrently": "^9.2.1",
     "esbuild": "^0.25.12",
+    "patch-package": "^8.0.1",
     "playwright": "^1.58.2",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "wait-on": "^9.0.4"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "wavesurfer.js": "patches/wavesurfer.js.patch"
+    }
   }
 }
