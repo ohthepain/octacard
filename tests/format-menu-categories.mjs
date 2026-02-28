@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 export async function assertFormatMenuCategories(page) {
-  const formatButton = page.getByRole("button", { name: "Format" });
+  const formatButton = page.getByTestId("format-settings-button");
   await formatButton.click();
 
   const categoryNames = ["Format", "Sample Rate", "Sample Depth", "Pitch", "Mono", "Normalize", "Trim", "Tempo"];

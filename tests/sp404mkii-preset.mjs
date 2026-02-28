@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 export async function assertSp404Mk2PresetDefaults(page) {
-  const formatButton = page.getByRole("button", { name: "Format" });
+  const formatButton = page.getByTestId("format-settings-button");
   await formatButton.click();
 
   await page.getByTestId("format-preset-select").selectOption("sp-404mkii");
