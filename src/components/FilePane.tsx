@@ -41,6 +41,7 @@ import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
 import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
+import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
 import { toast } from "sonner";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
@@ -129,6 +130,11 @@ interface VolumeOption {
   isHome: boolean;
 }
 
+interface ShortenedFilenamePreviewRow {
+  original: string;
+  shortened: string;
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -145,6 +151,8 @@ interface FilePaneProps {
   fileFormat?: string;
   pitch?: string;
   sanitizeFilename?: boolean;
+  shortenFilename?: boolean;
+  shortenFilenameMaxLength?: number;
   mono?: boolean;
   normalize?: boolean;
   trimStart?: boolean;
@@ -181,6 +189,8 @@ export const FilePane = ({
   fileFormat = "dont-change",
   pitch = "dont-change",
   sanitizeFilename = false,
+  shortenFilename = false,
+  shortenFilenameMaxLength = 32,
   mono = false,
   normalize = false,
   trimStart = false,
@@ -252,6 +262,9 @@ export const FilePane = ({
   );
   const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
   const overwriteChoiceResolverRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
+  const [shortenedFilenamesDialogOpen, setShortenedFilenamesDialogOpen] = useState(false);
+  const [shortenedFilenamesDialogFolderPath, setShortenedFilenamesDialogFolderPath] = useState("");
+  const [shortenedFilenamesDialogRows, setShortenedFilenamesDialogRows] = useState<ShortenedFilenamePreviewRow[]>([]);
 
   const promptOverwriteChoice = useCallback((): Promise<OverwriteChoice> => {
     setOverwriteConfirmOpen(true);
@@ -1610,6 +1623,15 @@ export const FilePane = ({
     setIsDraggingOverRoot(true);
   };
 
+  const handlePaneDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (e.target instanceof Element && e.target.closest('[data-testid^="tree-node-"]')) {
+      return;
+    }
+    setIsDraggingOverRoot(true);
+  };
+
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1754,6 +1776,7 @@ export const FilePane = ({
                   sampleDepth === "16-bit" ||
                   pitch !== "dont-change" ||
                   sanitizeFilename ||
+                  shortenFilename ||
                   mono ||
                   normalize ||
                   trimStart);
@@ -1784,6 +1807,9 @@ export const FilePane = ({
                   undefined,
                   sourcePane,
                   paneType,
+                  undefined,
+                  shortenFilename,
+                  shortenFilenameMaxLength,
                 );
               } else {
                 const overwriteAction = await resolveOverwriteAction(entryDestPath);
@@ -1858,6 +1884,7 @@ export const FilePane = ({
               sampleDepth === "16-bit" ||
               pitch !== "dont-change" ||
               sanitizeFilename ||
+              shortenFilename ||
               mono ||
               normalize ||
               trimStart);
@@ -1889,6 +1916,9 @@ export const FilePane = ({
               undefined,
               sourcePane,
               paneType,
+              undefined,
+              shortenFilename,
+              shortenFilenameMaxLength,
             );
           } else {
             const overwriteAction = await resolveOverwriteAction(destFilePath);
@@ -1985,6 +2015,8 @@ export const FilePane = ({
       paneType,
       pitch,
       sanitizeFilename,
+      shortenFilename,
+      shortenFilenameMaxLength,
       sampleDepth,
       sampleRate,
       trimStart,
@@ -2097,6 +2129,7 @@ export const FilePane = ({
               sampleDepth === "16-bit" ||
               pitch !== "dont-change" ||
               sanitizeFilename ||
+              shortenFilename ||
               mono ||
               normalize ||
               trimStart);
@@ -2134,6 +2167,9 @@ export const FilePane = ({
                 undefined,
                 paneType,
                 paneType,
+                undefined,
+                shortenFilename,
+                shortenFilenameMaxLength,
               );
             } else {
               result = addResult;
@@ -2187,6 +2223,8 @@ export const FilePane = ({
       paneType,
       pitch,
       sanitizeFilename,
+      shortenFilename,
+      shortenFilenameMaxLength,
       fileFormat,
       sampleRate,
       sampleDepth,
@@ -2863,6 +2901,44 @@ export const FilePane = ({
         }
       };
 
+      const handleShowShortenedFilenames = async (e?: Event) => {
+        e?.stopPropagation();
+        if (isParentLink) return;
+
+        const folderPath = node.type === "folder" ? node.path : dirname(node.path);
+        const readResult = await fileSystemService.readDirectory(folderPath, paneType);
+        if (!readResult.success || !readResult.data) {
+          toast.error(readResult.error || "Unable to load folder files");
+          return;
+        }
+
+        const fileNames = readResult.data
+          .filter((entry) => entry.type === "file")
+          .map((entry) => entry.name)
+          .sort((a, b) => a.localeCompare(b));
+
+        if (fileNames.length === 0) {
+          toast("No files found in folder.");
+          return;
+        }
+
+        const maxLength = Math.max(8, shortenFilenameMaxLength);
+        const folderName = basename(folderPath);
+        const shortenedMap = shortenFilenames({
+          folderName,
+          filenames: fileNames,
+          maxLength,
+        });
+        const rows = fileNames.map((fileName) => ({
+          original: fileName,
+          shortened: shortenedMap[fileName] ?? fileName,
+        }));
+
+        setShortenedFilenamesDialogFolderPath(folderPath);
+        setShortenedFilenamesDialogRows(rows);
+        setShortenedFilenamesDialogOpen(true);
+      };
+
       return (
         <div key={node.id}>
           <ContextMenu>
@@ -3032,6 +3108,7 @@ export const FilePane = ({
                 <ContextMenuItem onSelect={handleRevealInFinder}>Reveal in Finder</ContextMenuItem>
                 <ContextMenuItem onSelect={handleCopyPath}>Copy path</ContextMenuItem>
                 <ContextMenuItem onSelect={handleCopyFilename}>Copy filename</ContextMenuItem>
+                <ContextMenuItem onSelect={handleShowShortenedFilenames}>Show shortened filenames</ContextMenuItem>
                 {node.type === "folder" && (
                   <ContextMenuItem
                     onClick={(e) => {
@@ -3233,6 +3310,7 @@ export const FilePane = ({
     <div
       ref={paneContainerRef}
       className="flex h-full w-full min-w-0 bg-background overflow-hidden"
+      onDragOver={handlePaneDragOver}
       onDragLeave={handlePaneDragLeave}
     >
       {/* Left Sidebar - Finder style (hidden when showSidebar=false) */}
@@ -3613,6 +3691,9 @@ export const FilePane = ({
             ) : (
               renderFileTree(filteredTreeNodes)
             )}
+            {isDraggingOverRoot && !dragOverPath && !isDraggingOverBreadcrumb && activeTreeNodes.length > 0 && (
+              <div className="mt-3 h-20 rounded-lg border border-dashed border-primary/40 bg-primary/5 pointer-events-none" />
+            )}
           </div>
         </ScrollArea>
 
@@ -3681,6 +3762,37 @@ export const FilePane = ({
             </Button>
             <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
               Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Shortened Filenames Dialog */}
+      <Dialog open={shortenedFilenamesDialogOpen} onOpenChange={setShortenedFilenamesDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Shortened Filenames</DialogTitle>
+          </DialogHeader>
+          <DialogDescription>
+            Folder: {shortenedFilenamesDialogFolderPath || "/"} (max length: {Math.max(8, shortenFilenameMaxLength)})
+          </DialogDescription>
+          <ScrollArea className="max-h-[50vh] rounded border">
+            <div className="divide-y">
+              {shortenedFilenamesDialogRows.map((row) => (
+                <div key={row.original} className="grid grid-cols-2 gap-3 px-3 py-2 text-sm">
+                  <span className="truncate text-muted-foreground" title={row.original}>
+                    {row.original}
+                  </span>
+                  <span className="truncate font-medium" title={row.shortened}>
+                    {row.shortened}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShortenedFilenamesDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

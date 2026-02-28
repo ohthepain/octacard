@@ -384,6 +384,8 @@ const Index = () => {
           "source",
           "dest",
           conversionAbortControllerRef.current.signal,
+          formatSettings.shortenFilename,
+          formatSettings.shortenFilenameMaxLength,
         );
         if (!result.success) {
           if (result.cancelled || conversionCancelRequestedRef.current) {
@@ -439,6 +441,7 @@ const Index = () => {
         formatSettings.fileFormat !== "dont-change" ||
         formatSettings.pitch !== "dont-change" ||
         formatSettings.sanitizeFilename ||
+        formatSettings.shortenFilename ||
         formatSettings.mono ||
         formatSettings.normalize ||
         formatSettings.trim ||
@@ -454,6 +457,8 @@ const Index = () => {
           fileFormat: formatSettings.fileFormat,
           pitch: formatSettings.pitch,
           sanitizeFilename: formatSettings.sanitizeFilename,
+          shortenFilename: formatSettings.shortenFilename,
+          shortenFilenameMaxLength: formatSettings.shortenFilenameMaxLength,
           mono: formatSettings.mono,
           normalize: formatSettings.normalize,
           trimStart: formatSettings.trim,
@@ -479,6 +484,7 @@ const Index = () => {
         formatSettings.fileFormat !== "dont-change" ||
         formatSettings.mono ||
         formatSettings.sanitizeFilename ||
+        formatSettings.shortenFilename ||
         formatSettings.normalize ||
         formatSettings.trim ||
         formatSettings.tempo !== "dont-change";
@@ -491,6 +497,8 @@ const Index = () => {
           sampleDepth: formatSettings.sampleDepth,
           fileFormat: formatSettings.fileFormat,
           sanitizeFilename: formatSettings.sanitizeFilename,
+          shortenFilename: formatSettings.shortenFilename,
+          shortenFilenameMaxLength: formatSettings.shortenFilenameMaxLength,
           mono: formatSettings.mono,
           normalize: formatSettings.normalize,
           trimStart: formatSettings.trim,
@@ -724,6 +732,8 @@ const Index = () => {
                 fileFormat={formatSettings.fileFormat}
                 pitch={formatSettings.pitch}
                 sanitizeFilename={formatSettings.sanitizeFilename}
+                shortenFilename={formatSettings.shortenFilename}
+                shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
                 mono={formatSettings.mono}
                 normalize={formatSettings.normalize}
                 trimStart={formatSettings.trim}
@@ -761,6 +771,8 @@ const Index = () => {
                 fileFormat={formatSettings.fileFormat}
                 pitch={formatSettings.pitch}
                 sanitizeFilename={formatSettings.sanitizeFilename}
+                shortenFilename={formatSettings.shortenFilename}
+                shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
                 mono={formatSettings.mono}
                 normalize={formatSettings.normalize}
                 trimStart={formatSettings.trim}
@@ -819,6 +831,8 @@ const Index = () => {
             fileFormat: formatSettings.fileFormat,
             pitch: formatSettings.pitch,
             sanitizeFilename: formatSettings.sanitizeFilename,
+            shortenFilename: formatSettings.shortenFilename,
+            shortenFilenameMaxLength: formatSettings.shortenFilenameMaxLength,
             mono: formatSettings.mono,
             normalize: formatSettings.normalize,
             trimStart: formatSettings.trim,
