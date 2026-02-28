@@ -1,11 +1,14 @@
 // Web-based file system API wrapper
 // Uses File System Access API (showDirectoryPicker) for folder selection in the browser
 import { sanitizeFilename } from "./filename";
+import { shortenFilename, shortenFilenames } from "./filename-shortener";
 
 // Expose the real sanitizeFilename for the integration test harness so the harness
 // never needs to re-implement (and potentially drift from) the production logic.
 if (typeof window !== "undefined") {
   (window as any).__octacardSanitizeFilename = sanitizeFilename;
+  (window as any).__octacardShortenFilename = shortenFilename;
+  (window as any).__octacardShortenFilenames = shortenFilenames;
 }
 
 export interface FileSystemEntry {
@@ -67,6 +70,8 @@ interface OctacardTestHooks {
     sourcePane: PaneType;
     destPane: PaneType;
     signal?: AbortSignal;
+    shortenFilename?: boolean;
+    shortenFilenameMaxLength?: number;
   }) => Promise<FileSystemResult> | FileSystemResult;
   revealInFinder?: (args: {
     virtualPath: string;
@@ -1003,6 +1008,8 @@ class FileSystemService {
     sourcePane: PaneType = "source",
     destPane: PaneType = "dest",
     signal?: AbortSignal,
+    shortenTargetFilename?: boolean,
+    shortenTargetFilenameMaxLength?: number,
   ): Promise<FileSystemResult> {
     if (signal?.aborted) {
       return {
@@ -1031,6 +1038,8 @@ class FileSystemService {
         sourcePane,
         destPane,
         signal,
+        shortenFilename: shortenTargetFilename,
+        shortenFilenameMaxLength: shortenTargetFilenameMaxLength,
       });
     }
 
@@ -1116,6 +1125,16 @@ class FileSystemService {
         }
 
         finalFile = convertedBlob;
+      }
+
+      if (shortenTargetFilename && typeof shortenTargetFilenameMaxLength === "number") {
+        const sourceParts = sourceVirtualPath.split("/").filter(Boolean);
+        const folderName = sourceParts.length >= 2 ? sourceParts[sourceParts.length - 2] : "";
+        finalFileName = shortenFilename({
+          folderName,
+          filename: finalFileName,
+          maxLength: shortenTargetFilenameMaxLength,
+        });
       }
 
       if (sanitizeTargetFilename) {

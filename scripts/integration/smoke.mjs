@@ -25,6 +25,7 @@ import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReinde
 import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
 import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
 import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
+import { assertFilenameShortener } from "../../tests/filename-shortener.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -140,6 +141,7 @@ try {
     const huge = root.addDirectory(new MockDirectoryHandle("Huge"));
     alpha.addFile("inside-alpha.wav", 128);
     alpha.addFile("Melô.wav", 128);
+    alpha.addFile("Long Mélô Instrumental Version.wav", 128);
     guitars.addFile("clean_gtr_center.wav", 128);
     beta.addFile("inside-beta.wav", 128);
     root.addFile("top-level.txt", 32);
@@ -182,6 +184,7 @@ try {
     };
     window.__listCalls = [];
     window.__convertCalls = [];
+    window.__convertedOutputNames = [];
     window.__revealCalls = [];
     window.__readDirectoryCalls = 0;
     window.__octacardTestHooks = {
@@ -251,7 +254,22 @@ try {
             await new Promise((resolve) => setTimeout(resolve, 25));
           }
         }
-        const outputName = args.sanitizeFilename ? window.__octacardSanitizeFilename(args.fileName) : args.fileName;
+        let outputName = args.fileName;
+        if (args.shortenFilename && Number.isFinite(args.shortenFilenameMaxLength)) {
+          const sourceParts = String(args.sourceVirtualPath || "")
+            .split("/")
+            .filter(Boolean);
+          const folderName = sourceParts.length >= 2 ? sourceParts[sourceParts.length - 2] : "";
+          outputName = window.__octacardShortenFilename({
+            folderName,
+            filename: outputName,
+            maxLength: args.shortenFilenameMaxLength,
+          });
+        }
+        if (args.sanitizeFilename) {
+          outputName = window.__octacardSanitizeFilename(outputName);
+        }
+        window.__convertedOutputNames.push(outputName);
         addFileToPath(args.destVirtualPath, outputName);
         if (args.fileName.length > 40) {
           await new Promise((resolve) => setTimeout(resolve, 4000));
@@ -321,6 +339,7 @@ try {
   await assertTermsAndPrivacyLinks(page, { baseUrl });
   await assertSampleRateOptions(page);
   await assertSp404Mk2PresetDefaults(page);
+  await assertFilenameShortener(page);
   const convertBox = await convertButton.boundingBox();
   const formatBox = await formatButton.boundingBox();
   assert.ok(convertBox, "Expected convert button to have a visible bounding box.");

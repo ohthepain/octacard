@@ -6,6 +6,8 @@ export interface FormatSettings {
   sampleDepth: "dont-change" | "16-bit";
   pitch: "dont-change" | "C";
   sanitizeFilename: boolean;
+  shortenFilename: boolean;
+  shortenFilenameMaxLength: number;
   mono: boolean;
   normalize: boolean;
   trim: boolean;
@@ -24,6 +26,8 @@ export const DEFAULT_FORMAT_SETTINGS: FormatSettings = {
   sampleDepth: "dont-change",
   pitch: "dont-change",
   sanitizeFilename: false,
+  shortenFilename: false,
+  shortenFilenameMaxLength: 32,
   mono: false,
   normalize: false,
   trim: false,
@@ -41,6 +45,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       fileFormat: "WAV",
       sampleRate: "44100",
       sampleDepth: "16-bit",
+      shortenFilename: true,
+      shortenFilenameMaxLength: 32,
     },
   },
   {
@@ -50,6 +56,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleRate: "48000",
+      shortenFilename: true,
+      shortenFilenameMaxLength: 32,
     },
   },
   {
@@ -60,6 +68,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       fileFormat: "WAV",
       sampleRate: "48000",
       sampleDepth: "16-bit",
+      shortenFilename: true,
+      shortenFilenameMaxLength: 32,
       mono: true,
     },
   },
@@ -70,6 +80,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleRate: "48000",
+      shortenFilename: true,
+      shortenFilenameMaxLength: 32,
     },
   },
   {
@@ -149,6 +161,8 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       fileFormat: "WAV",
       sampleRate: "31250",
       sampleDepth: "16-bit",
+      shortenFilename: true,
+      shortenFilenameMaxLength: 32,
       mono: true,
     },
   },

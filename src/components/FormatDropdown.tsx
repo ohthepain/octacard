@@ -141,7 +141,12 @@ export function FormatDropdown() {
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Format"
+          >
             {selectedPresetLabel}
           </Button>
         </DialogTrigger>
@@ -319,6 +324,33 @@ export function FormatDropdown() {
                   onValueChange={(sanitizeFilename) => updateCurrentPreset({ sanitizeFilename })}
                   trueLabel="Sanitize filename"
                 />
+                <BinaryRadioGroup
+                  id="shorten-filename"
+                  value={settings.shortenFilename}
+                  onValueChange={(shortenFilename) => updateCurrentPreset({ shortenFilename })}
+                  trueLabel="Shorten filename"
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor="shorten-filename-max-length" className="font-normal text-xs text-muted-foreground">
+                    Max length
+                  </Label>
+                  <Input
+                    id="shorten-filename-max-length"
+                    type="number"
+                    min={8}
+                    max={255}
+                    value={settings.shortenFilenameMaxLength}
+                    disabled={!settings.shortenFilename}
+                    onChange={(e) => {
+                      const numeric = Number.parseInt(e.target.value, 10);
+                      if (Number.isFinite(numeric)) {
+                        updateCurrentPreset({
+                          shortenFilenameMaxLength: Math.min(255, Math.max(8, numeric)),
+                        });
+                      }
+                    }}
+                  />
+                </div>
               </div>
 
               <div className="grid gap-2 rounded-md border p-3">

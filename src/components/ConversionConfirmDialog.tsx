@@ -21,6 +21,8 @@ interface ConversionConfirmDialogProps {
     fileFormat: string;
     pitch: string;
     sanitizeFilename?: boolean;
+    shortenFilename?: boolean;
+    shortenFilenameMaxLength?: number;
     mono: boolean;
     normalize: boolean;
     trimStart: boolean;
@@ -42,6 +44,7 @@ export const ConversionConfirmDialog = ({
     settings.fileFormat !== "dont-change" ||
     settings.pitch !== "dont-change" ||
     !!settings.sanitizeFilename ||
+    !!settings.shortenFilename ||
     settings.mono ||
     settings.normalize ||
     settings.trimStart ||
@@ -87,6 +90,12 @@ export const ConversionConfirmDialog = ({
     if (settings.sanitizeFilename) {
       parts.push("Sanitize Filename");
     }
+    if (settings.shortenFilename) {
+      const maxLength = Number.isFinite(settings.shortenFilenameMaxLength)
+        ? settings.shortenFilenameMaxLength
+        : 32;
+      parts.push(`Shorten Filename (${maxLength})`);
+    }
     if (settings.mono) {
       parts.push("Mono");
     }
@@ -117,6 +126,8 @@ export const ConversionConfirmDialog = ({
           fileFormat: settings.fileFormat,
           pitch: settings.pitch,
           sanitizeFilename: settings.sanitizeFilename,
+          shortenFilename: settings.shortenFilename,
+          shortenFilenameMaxLength: settings.shortenFilenameMaxLength,
           mono: settings.mono,
           normalize: settings.normalize,
           trimStart: settings.trimStart,
@@ -133,6 +144,8 @@ export const ConversionConfirmDialog = ({
     settings.fileFormat,
     settings.pitch,
     settings.sanitizeFilename,
+    settings.shortenFilename,
+    settings.shortenFilenameMaxLength,
     settings.mono,
     settings.normalize,
     settings.trimStart,
@@ -188,6 +201,8 @@ export const ConversionConfirmDialog = ({
                   sampleDepth: settings.sampleDepth,
                   fileFormat: settings.fileFormat,
                   sanitizeFilename: settings.sanitizeFilename,
+                  shortenFilename: settings.shortenFilename,
+                  shortenFilenameMaxLength: settings.shortenFilenameMaxLength,
                   mono: settings.mono,
                   normalize: settings.normalize,
                   trimStart: settings.trimStart,
