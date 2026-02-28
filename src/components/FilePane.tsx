@@ -3033,6 +3033,7 @@ export const FilePane = ({
                     ? `tree-node-${paneName}-parent`
                     : `tree-node-${paneName}-${node.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`
                 }
+                data-node-id={node.id}
                 data-selected={isSelected && !isParentLink ? "true" : "false"}
                 data-expanded={node.type === "folder" && isExpanded ? "true" : "false"}
                 draggable={!isParentLink && (node.type === "file" || node.type === "folder")}
@@ -3367,6 +3368,54 @@ export const FilePane = ({
   const searchTreeNodes =
     treeViewMode === "folders" ? searchResultsAsNodes.filter((n) => n.type === "folder") : searchResultsAsNodes;
   const activeTreeNodes = searchQuery ? searchTreeNodes : filteredTreeNodes;
+
+  // Scroll selected item into view when selection changes (e.g. keyboard navigation)
+  useEffect(() => {
+    if (selectedItems.size === 0) return;
+    const pane = paneContainerRef.current;
+    if (!pane) return;
+
+    const showParentLink = currentRootPath && currentRootPath !== rootPath;
+    const itemsToRender = showParentLink
+      ? [
+          {
+            id: "parent-link",
+            name: "..",
+            type: "folder" as const,
+            path: (() => {
+              const parts = (currentRootPath || "").split("/").filter(Boolean);
+              return (currentRootPath || "").startsWith("/")
+                ? "/" + parts.slice(0, -1).join("/")
+                : parts.slice(0, -1).join("/") || "/";
+            })(),
+            loaded: false,
+          },
+          ...activeTreeNodes,
+        ]
+      : activeTreeNodes;
+    const flatNodes = getFlatNodeList(itemsToRender.filter((n) => n.id !== "parent-link"));
+    if (flatNodes.length === 0) return;
+
+    let targetId: string;
+    if (lastSelectedIndex >= 0 && lastSelectedIndex < flatNodes.length) {
+      targetId = flatNodes[lastSelectedIndex].id;
+    } else {
+      const firstSelectedId = Array.from(selectedItems)[0];
+      targetId = firstSelectedId ?? flatNodes[0].id;
+    }
+
+    const el = pane.querySelector(`[data-node-id="${CSS.escape(targetId)}"]`);
+    if (el) {
+      (el as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [
+    selectedItems,
+    lastSelectedIndex,
+    activeTreeNodes,
+    currentRootPath,
+    rootPath,
+    getFlatNodeList,
+  ]);
 
   // Keep selections independent per pane so source and destination can both remain selected.
   const handlePaneClick = () => {
