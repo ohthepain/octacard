@@ -19,6 +19,7 @@ import {
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
 import { Play, HelpCircle, Activity } from "lucide-react";
+import { Toggle } from "@/components/ui/toggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
@@ -70,7 +71,29 @@ function joinPath(...parts: string[]): string {
 const BPM_MIN = 50;
 const BPM_MAX = 240;
 
-function BpmInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function getBpmFromPath(name: string, path: string): number | null {
+  const fromName = parseBpmFromString(name);
+  if (fromName) return fromName.bpm;
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length >= 2) {
+    const parentFolder = parts[parts.length - 2];
+    const fromFolder = parentFolder ? parseBpmFromString(parentFolder) : null;
+    if (fromFolder) return fromFolder.bpm;
+  }
+  return null;
+}
+
+function BpmInput({
+  value,
+  onChange,
+  bpmAuto,
+  onBpmAutoChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  bpmAuto: boolean;
+  onBpmAutoChange: (enabled: boolean) => void;
+}) {
   const [editingValue, setEditingValue] = useState<string | null>(null);
   const displayValue = editingValue ?? String(value);
   return (
@@ -91,6 +114,7 @@ function BpmInput({ value, onChange }: { value: number; onChange: (v: number) =>
           const n = parseInt(editingValue ?? "", 10);
           if (Number.isFinite(n) && n >= BPM_MIN && n <= BPM_MAX) {
             onChange(n);
+            onBpmAutoChange(false);
           }
           setEditingValue(null);
         }}
@@ -101,6 +125,17 @@ function BpmInput({ value, onChange }: { value: number; onChange: (v: number) =>
         }}
         className="h-7 w-14 rounded-md border border-input bg-background px-2 text-sm"
       />
+      <Toggle
+        size="sm"
+        variant="outline"
+        pressed={bpmAuto}
+        onPressedChange={onBpmAutoChange}
+        aria-label="Auto-detect BPM from filename"
+        data-testid="bpm-auto-toggle"
+        className="h-7 px-2 text-xs"
+      >
+        Auto
+      </Toggle>
     </div>
   );
 }
@@ -120,6 +155,8 @@ const Index = () => {
   const addToStack = useMultiSampleStore((s) => s.addToStack);
   const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
   const setGlobalTempoBpm = useMultiSampleStore((s) => s.setGlobalTempoBpm);
+  const bpmAuto = useMultiSampleStore((s) => s.bpmAuto);
+  const setBpmAuto = useMultiSampleStore((s) => s.setBpmAuto);
   const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -188,6 +225,21 @@ const Index = () => {
     if (!unsupportedBrowserDialogOpen) return;
     capture("octacard_dialog_opened", { dialog_name: "unsupported_browser" });
   }, [unsupportedBrowserDialogOpen]);
+
+  useEffect(() => {
+    if (
+      !bpmAuto ||
+      !selectedSourceItem ||
+      selectedSourceItem.type !== "file" ||
+      !isAudioFile(selectedSourceItem.name)
+    ) {
+      return;
+    }
+    const bpm = getBpmFromPath(selectedSourceItem.name, selectedSourceItem.path);
+    if (bpm != null) {
+      setGlobalTempoBpm(bpm);
+    }
+  }, [bpmAuto, selectedSourceItem, setGlobalTempoBpm]);
 
   const handleSourcePathChange = useCallback((path: string, volumeId: string) => {
     setSourcePath(path);
@@ -703,7 +755,12 @@ const Index = () => {
             <Activity className="w-4 h-4 mr-1" />
             Waveform
           </Button>
-          <BpmInput value={globalTempoBpm} onChange={setGlobalTempoBpm} />
+          <BpmInput
+            value={globalTempoBpm}
+            onChange={setGlobalTempoBpm}
+            bpmAuto={bpmAuto}
+            onBpmAutoChange={setBpmAuto}
+          />
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />

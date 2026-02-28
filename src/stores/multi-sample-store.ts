@@ -19,7 +19,9 @@ export interface MultiSampleState {
   previewMode: PreviewMode;
   stack: StackSample[];
   globalTempoBpm: number;
+  bpmAuto: boolean;
   setPreviewMode: (mode: PreviewMode) => void;
+  setBpmAuto: (enabled: boolean) => void;
   addToStack: (sample: { path: string; name: string; paneType: PaneType }) => void;
   addSamplesToStack: (samples: Array<{ path: string; name: string; paneType: PaneType }>, maxCount?: number) => void;
   replaceSampleAt: (index: number, sample: { path: string; name: string; paneType: PaneType }) => void;
@@ -46,8 +48,11 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
   previewMode: "single",
   stack: [],
   globalTempoBpm: DEFAULT_BPM,
+  bpmAuto: true,
 
   setPreviewMode: (mode) => set({ previewMode: mode }),
+
+  setBpmAuto: (enabled) => set({ bpmAuto: enabled }),
 
   addToStack: (sample) =>
     set((state) => {
@@ -59,7 +64,9 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
       };
       const newStack = [newSample, ...state.stack];
       const newTempo =
-        state.stack.length === 0 ? bpm : state.globalTempoBpm;
+        state.bpmAuto && state.stack.length === 0
+          ? bpm
+          : state.globalTempoBpm;
       return {
         stack: newStack,
         globalTempoBpm: newTempo,
@@ -75,7 +82,7 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
       }));
       const newStack = [...toAdd, ...state.stack];
       const newTempo =
-        state.stack.length === 0 && toAdd.length > 0
+        state.bpmAuto && state.stack.length === 0 && toAdd.length > 0
           ? toAdd[0].bpm
           : state.globalTempoBpm;
       return {
