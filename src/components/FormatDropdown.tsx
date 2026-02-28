@@ -146,6 +146,7 @@ export function FormatDropdown() {
             size="sm"
             className="text-muted-foreground hover:text-foreground"
             aria-label="Format"
+            data-testid="format-settings-button"
           >
             {selectedPresetLabel}
           </Button>

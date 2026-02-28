@@ -6,7 +6,7 @@ export async function assertConvertDialogEllipsis(page) {
     window.__convertCalls = [];
   });
 
-  const formatButton = page.getByRole("button", { name: "Format" });
+  const formatButton = page.getByTestId("format-settings-button");
   await formatButton.click();
   await page.locator('label[for="file-format-wav"]').click();
   await page.locator('label[for="sample-depth-16-bit"]').click();
