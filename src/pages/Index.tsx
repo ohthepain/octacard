@@ -29,6 +29,7 @@ import { useAppOptionsStore } from "@/stores/app-options-store";
 import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { capture } from "@/lib/analytics";
 import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
+import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -48,8 +49,7 @@ function isAudioFile(fileName: string): boolean {
 }
 
 function isUnsupportedBrowser(): boolean {
-  if (typeof window === "undefined") return false;
-  return typeof window.showDirectoryPicker !== "function";
+  return !hasDirectoryPickerSupport();
 }
 
 function joinPath(...parts: string[]): string {
@@ -165,7 +165,7 @@ const Index = () => {
     if (isUnsupportedBrowser()) {
       toast.error("Browser Not Supported", {
         description:
-          "OctaCard only supports Chrome and Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
+          "OctaCard supports Brave, Chrome, and other Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
         duration: 8000,
       });
     } else if (result.error !== "User cancelled directory selection") {
@@ -546,7 +546,7 @@ const Index = () => {
       if (isUnsupportedBrowser()) {
         toast.error("Browser Not Supported", {
           description:
-            "OctaCard only supports Chrome and Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
+            "OctaCard supports Brave, Chrome, and other Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
           duration: 8000,
         });
       } else if (result.error !== "User cancelled directory selection") {
@@ -596,7 +596,7 @@ const Index = () => {
       if (isUnsupportedBrowser()) {
         toast.error("Browser Not Supported", {
           description:
-            "OctaCard only supports Chrome and Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
+            "OctaCard supports Brave, Chrome, and other Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
           duration: 8000,
         });
       } else if (result.error !== "User cancelled directory selection") {
@@ -797,8 +797,8 @@ const Index = () => {
           <DialogHeader>
             <DialogTitle>Browser Not Supported</DialogTitle>
             <DialogDescription>
-              OctaCard requires the File System Access API and currently supports Chrome and Chromium-based browsers
-              (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.
+              OctaCard requires the File System Access API and currently supports Brave, Chrome, and other Chromium-based
+              browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.
             </DialogDescription>
           </DialogHeader>
         </DialogContent>

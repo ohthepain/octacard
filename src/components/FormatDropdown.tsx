@@ -141,7 +141,12 @@ export function FormatDropdown() {
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            data-testid="format-settings-button"
+          >
             {selectedPresetLabel}
           </Button>
         </DialogTrigger>
