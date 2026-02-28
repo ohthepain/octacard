@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 export async function assertSampleRateOptions(page) {
-  const formatButton = page.getByRole("button", { name: "Format" });
+  const formatButton = page.getByTestId("format-settings-button");
   await formatButton.click();
 
   const dontChange = page.getByLabel("Don't change").first();

@@ -26,6 +26,7 @@ import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests
 import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
 import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
 import { assertFilenameShortener } from "../../tests/filename-shortener.mjs";
+import { assertBraveBrowserSupport } from "../../tests/brave-browser-support.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -329,7 +330,7 @@ try {
   await assertHeaderDoesNotShowSelectDirectory(page);
   const convertButton = page.getByRole("button", { name: "Convert" });
   const devModeButton = page.getByTestId("dev-mode-button");
-  const formatButton = page.getByRole("button", { name: "Format" });
+  const formatButton = page.getByTestId("format-settings-button");
   await convertButton.waitFor({ state: "visible" });
   await devModeButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
@@ -611,6 +612,8 @@ try {
 
   const title = await page.title();
   assert.ok(title.includes("OctaCard"), "Expected the page title to include OctaCard.");
+
+  await assertBraveBrowserSupport(browser, { baseUrl });
 
   const safariContext = await browser.newContext({
     userAgent:
