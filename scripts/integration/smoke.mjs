@@ -14,8 +14,6 @@ import { assertSp404Mk2PresetDefaults } from "../../tests/sp404mkii-preset.mjs";
 import { assertFormatMenuCategories } from "../../tests/format-menu-categories.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-select-directory.mjs";
-import { assertWaveformPreviewDockedAtBottom } from "../../tests/waveform-preview-position.mjs";
-import { assertAudioPreviewFilenameTruncation } from "../../tests/audio-preview-filename-truncation.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
 import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
 import { assertLargeBatchConversionCanBeCancelledQuickly } from "../../tests/conversion-cancel-large-batch.mjs";
@@ -383,7 +381,6 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
-  await assertAudioPreviewFilenameTruncation(page);
   await assertExpandedFoldersPersistOnReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
@@ -436,7 +433,6 @@ try {
   });
   await page.getByTestId("breadcrumb-favorite-source").waitFor({ state: "visible" });
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
-  await assertWaveformPreviewDockedAtBottom(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(

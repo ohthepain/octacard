@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  wavesurfer.js:
+    hash: sqsbq5b6btklpv35vnneopl5w4
+    path: patches/wavesurfer.js.patch
+
 importers:
 
   .:
@@ -76,10 +81,10 @@ importers:
         version: 1.163.2(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
       '@tanstack/start':
         specifier: ^1.120.20
-        version: 1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
+        version: 1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))(yaml@2.8.2)
       '@tanstack/start-plugin':
         specifier: ^1.111.2
-        version: 1.111.2(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
+        version: 1.111.2(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -118,7 +123,7 @@ importers:
         version: 1.0.7(tailwindcss@4.2.1)
       wavesurfer.js:
         specifier: ^7.12.1
-        version: 7.12.1
+        version: 7.12.1(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
       zustand:
         specifier: ^5.0.11
         version: 5.0.11(@types/react@18.3.28)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
@@ -150,6 +155,9 @@ importers:
       esbuild:
         specifier: ^0.25.12
         version: 0.25.12
+      patch-package:
+        specifier: ^8.0.1
+        version: 8.0.1
       playwright:
         specifier: ^1.58.2
         version: 1.58.2
@@ -2508,6 +2516,9 @@ packages:
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
 
+  '@yarnpkg/lockfile@1.1.0':
+    resolution: {integrity: sha512-GpSwvyXOcOOlV70vbnzjj4fW5xW/FdUF6nQEt1ENy7m4ZCczi1+/buVUPAqmGfqznsORNFzUMjctTIp8a9tuCQ==}
+
   abbrev@3.0.1:
     resolution: {integrity: sha512-AO2ac6pjRB3SJmGJo+v5/aK6Omggp6fsLrs6wN9bd35ulu4cCwaAU9+7ZhXjeqHVkaHThLuzH0nZr0YpCDhygg==}
     engines: {node: ^18.17.0 || >=20.5.0}
@@ -2685,6 +2696,14 @@ packages:
     resolution: {integrity: sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==}
     engines: {node: '>= 0.4'}
 
+  call-bind@1.0.8:
+    resolution: {integrity: sha512-oKlSFMcMwpUg2ednkhQ454wfWiU/ul3CkJe/PEHcTKuiX6RpbehUiFMXu13HalGZxfUwCQzZG747YXBn1im9ww==}
+    engines: {node: '>= 0.4'}
+
+  call-bound@1.0.4:
+    resolution: {integrity: sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==}
+    engines: {node: '>= 0.4'}
+
   camelcase@7.0.1:
     resolution: {integrity: sha512-xlx1yCK2Oc1APsPXDL2LdlNP6+uu8OCDdhOBSVT279M/S+y75O30C2VuD8T2ogdePBBl7PfPF4504tnLgX3zfw==}
     engines: {node: '>=14.16'}
@@ -2721,6 +2740,10 @@ packages:
   chownr@3.0.0:
     resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
     engines: {node: '>=18'}
+
+  ci-info@3.9.0:
+    resolution: {integrity: sha512-NIxF55hv4nSqQswkAeiOi1r83xy8JldOFDTWiug55KBu9Jnblncd2U6ViHmYgHf01TPZS77NJBhBMKdWj9HQMQ==}
+    engines: {node: '>=8'}
 
   citty@0.1.6:
     resolution: {integrity: sha512-tskPPKEs8D2KPafUypv2gxwJP8h/OaJmC82QQGGDQcHvXX43xF2VDACcJVmZ0EuSxkpO9Kc4MlrA3q0+FG58AQ==}
@@ -2886,6 +2909,10 @@ packages:
   deepmerge@4.3.1:
     resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
     engines: {node: '>=0.10.0'}
+
+  define-data-property@1.1.4:
+    resolution: {integrity: sha512-rBMvIzlpA8v6E+SJZoo++HAYqsLrkg7MSfIinMPFhmkorw7X+dOXVJQs+QT69zGkzMyfDnIMN2Wid1+NbL3T+A==}
+    engines: {node: '>= 0.4'}
 
   define-lazy-prop@2.0.0:
     resolution: {integrity: sha512-Ds09qNh8yw3khSjiJjiUInaGX9xlqZDY7JVryGxdxV7NPeuqQfplOpQ66yJFZut3jLa5zOwkXw1g9EI2uKh4Og==}
@@ -3124,6 +3151,9 @@ packages:
     resolution: {integrity: sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==}
     engines: {node: '>=8'}
 
+  find-yarn-workspace-root@2.0.0:
+    resolution: {integrity: sha512-1IMnbjt4KzsQfnhnzNd8wUEgXZ44IzZaZmnLYx7D5FZlaHt2gW20Cri8Q+E/t5tIj4+epTBub+2Zxu/vNILzqQ==}
+
   follow-redirects@1.15.11:
     resolution: {integrity: sha512-deG2P0JfjrTxl50XGCDyfI97ZGVCxIpfKYmfyrQ54n5FO/0gfIES8C/Psl6kWVDolizcaaxZJnTS0QSMxvnsBQ==}
     engines: {node: '>=4.0'}
@@ -3151,6 +3181,10 @@ packages:
   fresh@2.0.0:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
     engines: {node: '>= 0.8'}
+
+  fs-extra@10.1.0:
+    resolution: {integrity: sha512-oRXApq54ETRj4eMiFzGnHWGy+zo5raudjuxN0b8H7s/RU2oW0Wvsx9O0ACRN/kRq9E8Vu/ReskGB5o3ji+FzHQ==}
+    engines: {node: '>=12'}
 
   fsevents@2.3.2:
     resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
@@ -3246,6 +3280,9 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
+
+  has-property-descriptors@1.0.2:
+    resolution: {integrity: sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg==}
 
   has-symbols@1.1.0:
     resolution: {integrity: sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==}
@@ -3391,6 +3428,9 @@ packages:
   isarray@1.0.0:
     resolution: {integrity: sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==}
 
+  isarray@2.0.5:
+    resolution: {integrity: sha512-xHjhDr3cNBK0BzdUJSPXZntQUx/mwMS5Rw4A7lPJ90XGAO6ISP/ePDNuo0vhqOZU+UD5JoodwCAAoZQd3FeAKw==}
+
   isbot@5.1.35:
     resolution: {integrity: sha512-waFfC72ZNfwLLuJ2iLaoVaqcNo+CAaLR7xCpAn0Y5WfGzkNHv7ZN39Vbi1y+kb+Zs46XHOX3tZNExroFUPX+Kg==}
     engines: {node: '>=18'}
@@ -3432,10 +3472,23 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
+  json-stable-stringify@1.3.0:
+    resolution: {integrity: sha512-qtYiSSFlwot9XHtF9bD9c7rwKjr+RecWT//ZnPvSmEjpV5mmPOCN4j8UjY5hbjNkOwZ/jQv3J6R1/pL7RwgMsg==}
+    engines: {node: '>= 0.4'}
+
   json5@2.2.3:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  jsonfile@6.2.0:
+    resolution: {integrity: sha512-FGuPw30AdOIUTRMC2OMRtQV+jkVj2cfPqSeWXv1NEAJ1qZ5zb1X6z1mFhbfOB/iy3ssJCD+3KuZ8r8C3uVFlAg==}
+
+  jsonify@0.0.1:
+    resolution: {integrity: sha512-2/Ki0GcmuqSrgFyelQq9M05y7PS0mEwuIzrf3f1fPqkVDVRvZrPZtVSMHxdgo8Aq0sxAOb/cr2aqqA3LeWHVPg==}
+
+  klaw-sync@6.0.0:
+    resolution: {integrity: sha512-nIeuVSzdCCs6TDPTqI8w1Yre34sSq7AkZ4B3sfOBbI2CgVSB4Du4aLQijFU2+lhAFCwt9+42Hel6lQNIv6AntQ==}
 
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
@@ -3720,6 +3773,10 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  object-keys@1.1.1:
+    resolution: {integrity: sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA==}
+    engines: {node: '>= 0.4'}
+
   ofetch@1.5.1:
     resolution: {integrity: sha512-2W4oUZlVaqAPAil6FUg/difl6YhqhUR7x2eZY4bQCko22UXg3hptq9KLQdqFClV+Wu85UX7hNtdGTngi/1BxcA==}
 
@@ -3736,6 +3793,10 @@ packages:
   onetime@6.0.0:
     resolution: {integrity: sha512-1FlR+gjXK7X+AsAHso35MnyN5KqGwJRi/31ft6x0M194ht7S+rWAvd7PHss9xSKMzE0asv1pyIHaJYq+BbacAQ==}
     engines: {node: '>=12'}
+
+  open@7.4.2:
+    resolution: {integrity: sha512-MVHddDVweXZF3awtlAS+6pgKLlm/JgxZ90+/NBurBoQctVOOB/zDdVjcyPzQ+0laDGbsWgrRkflI65sQeOgT9Q==}
+    engines: {node: '>=8'}
 
   open@8.4.2:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
@@ -3759,6 +3820,11 @@ packages:
   parseurl@1.3.3:
     resolution: {integrity: sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==}
     engines: {node: '>= 0.8'}
+
+  patch-package@8.0.1:
+    resolution: {integrity: sha512-VsKRIA8f5uqHQ7NGhwIna6Bx6D9s/1iXlA1hthBVBEbkq+t4kXD0HHt+rJhf/Z+Ci0F/HCB2hvn0qLdLG+Qxlw==}
+    engines: {node: '>=14', npm: '>5'}
+    hasBin: true
 
   path-key@3.1.1:
     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
@@ -4069,6 +4135,10 @@ packages:
     resolution: {integrity: sha512-xRXBn0pPqQTVQiC8wyQrKs2MOlX24zQ0POGaj0kultvoOCstBQM5yvOhAVSUwOMjQtTvsPWoNCHfPGwaaQJhTw==}
     engines: {node: '>= 18'}
 
+  set-function-length@1.2.2:
+    resolution: {integrity: sha512-pgRc4hJ4/sNjWCSS9AmnS40x3bNMDTknHgL5UaMBTMyJnU90EgWh1Rz+MC9eFu4BuN/UwZjKQuY/1v3rM7HMfg==}
+    engines: {node: '>= 0.4'}
+
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
 
@@ -4087,6 +4157,10 @@ packages:
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
+
+  slash@2.0.0:
+    resolution: {integrity: sha512-ZYKh3Wh2z1PpEXWr0MpSBZ0V6mZHAQfYevttO11c51CaWjGTaadiKZ+wVt1PbMlDV5qhMFslpZCemhwOK7C89A==}
+    engines: {node: '>=6'}
 
   slash@5.1.0:
     resolution: {integrity: sha512-ZA6oR3T/pEyuqwMgAKT0/hAv8oAXckzbkmR0UkUosQ+Mc4RxGoJkRmwHgHufaenlyAgE1Mxgpdcrf75y6XcnDg==}
@@ -4235,6 +4309,10 @@ packages:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
 
+  tmp@0.2.5:
+    resolution: {integrity: sha512-voyz6MApa1rQGUxT3E+BK7/ROe8itEx7vD8/HEvt4xwXucvQ5G5oeEiHkmHZJuBO21RpOf+YYm9MOivj709jow==}
+    engines: {node: '>=14.14'}
+
   to-regex-range@5.0.1:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
@@ -4309,6 +4387,10 @@ packages:
   unimport@5.6.0:
     resolution: {integrity: sha512-8rqAmtJV8o60x46kBAJKtHpJDJWkA2xcBqWKPI14MgUb05o1pnpnCnXSxedUXyeq7p8fR5g3pTo2BaswZ9lD9A==}
     engines: {node: '>=18.12.0'}
+
+  universalify@2.0.1:
+    resolution: {integrity: sha512-gptHNQghINnc/vTGIk0SOFGFNXw7JVrlRUtConJRlvaw6DuX0wO5Jeko9sWrMBhh+PsYAZ7oXAiOnf/UKogyiw==}
+    engines: {node: '>= 10.0.0'}
 
   unplugin-utils@0.3.1:
     resolution: {integrity: sha512-5lWVjgi6vuHhJ526bI4nlCOmkCIF3nnfXkCMDeMJrtdvxTs6ZFCM8oNufGTsDbKv/tJ/xj8RpvXjRuPBZJuJog==}
@@ -4616,6 +4698,11 @@ packages:
   yallist@5.0.0:
     resolution: {integrity: sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==}
     engines: {node: '>=18'}
+
+  yaml@2.8.2:
+    resolution: {integrity: sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
@@ -6398,11 +6485,11 @@ snapshots:
       - webpack
       - xml2js
 
-  '@tanstack/react-start-router-manifest@1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)':
+  '@tanstack/react-start-router-manifest@1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)':
     dependencies:
       '@tanstack/router-core': 1.163.2
       tiny-invariant: 1.3.3
-      vinxi: 0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
+      vinxi: 0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'
@@ -6637,11 +6724,11 @@ snapshots:
       - supports-color
       - vite
 
-  '@tanstack/start-api-routes@1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)':
+  '@tanstack/start-api-routes@1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)':
     dependencies:
       '@tanstack/router-core': 1.163.2
       '@tanstack/start-server-core': 1.163.2
-      vinxi: 0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
+      vinxi: 0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'
@@ -6705,7 +6792,7 @@ snapshots:
       tiny-invariant: 1.3.3
       tiny-warning: 1.0.3
 
-  '@tanstack/start-config@1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
+  '@tanstack/start-config@1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))(yaml@2.8.2)':
     dependencies:
       '@tanstack/react-router': 1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tanstack/react-start-plugin': 1.131.50(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0)))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
@@ -6719,7 +6806,7 @@ snapshots:
       ofetch: 1.5.1
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      vinxi: 0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
+      vinxi: 0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       vite: 5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0)
       zod: 3.25.76
     transitivePeerDependencies:
@@ -6831,7 +6918,7 @@ snapshots:
       - webpack
       - xml2js
 
-  '@tanstack/start-plugin@1.111.2(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)':
+  '@tanstack/start-plugin@1.111.2(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)':
     dependencies:
       '@babel/code-frame': 7.26.2
       '@babel/core': 7.29.0
@@ -6843,7 +6930,7 @@ snapshots:
       '@tanstack/router-utils': 1.161.4
       babel-dead-code-elimination: 1.0.12
       tiny-invariant: 1.3.3
-      vite: 6.1.0(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
+      vite: 6.1.0(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -6932,13 +7019,13 @@ snapshots:
     dependencies:
       '@tanstack/router-core': 1.163.2
 
-  '@tanstack/start@1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
+  '@tanstack/start@1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))(yaml@2.8.2)':
     dependencies:
       '@tanstack/react-start-client': 1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@tanstack/react-start-router-manifest': 1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
+      '@tanstack/react-start-router-manifest': 1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       '@tanstack/react-start-server': 1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@tanstack/start-api-routes': 1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
-      '@tanstack/start-config': 1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
+      '@tanstack/start-api-routes': 1.120.19(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      '@tanstack/start-config': 1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))(yaml@2.8.2)
       '@tanstack/start-server-functions-client': 1.131.50(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
       '@tanstack/start-server-functions-handler': 1.120.19
       '@tanstack/start-server-functions-server': 1.131.2(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
@@ -7112,6 +7199,8 @@ snapshots:
       vite: 5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0)
     transitivePeerDependencies:
       - supports-color
+
+  '@yarnpkg/lockfile@1.1.0': {}
 
   abbrev@3.0.1: {}
 
@@ -7303,6 +7392,18 @@ snapshots:
       es-errors: 1.3.0
       function-bind: 1.1.2
 
+  call-bind@1.0.8:
+    dependencies:
+      call-bind-apply-helpers: 1.0.2
+      es-define-property: 1.0.1
+      get-intrinsic: 1.3.0
+      set-function-length: 1.2.2
+
+  call-bound@1.0.4:
+    dependencies:
+      call-bind-apply-helpers: 1.0.2
+      get-intrinsic: 1.3.0
+
   camelcase@7.0.1: {}
 
   caniuse-lite@1.0.30001774: {}
@@ -7356,6 +7457,8 @@ snapshots:
       readdirp: 5.0.0
 
   chownr@3.0.0: {}
+
+  ci-info@3.9.0: {}
 
   citty@0.1.6:
     dependencies:
@@ -7488,6 +7591,12 @@ snapshots:
       ms: 2.1.3
 
   deepmerge@4.3.1: {}
+
+  define-data-property@1.1.4:
+    dependencies:
+      es-define-property: 1.0.1
+      es-errors: 1.3.0
+      gopd: 1.2.0
 
   define-lazy-prop@2.0.0: {}
 
@@ -7809,6 +7918,10 @@ snapshots:
     dependencies:
       to-regex-range: 5.0.1
 
+  find-yarn-workspace-root@2.0.0:
+    dependencies:
+      micromatch: 4.0.8
+
   follow-redirects@1.15.11: {}
 
   foreground-child@3.3.1:
@@ -7829,6 +7942,12 @@ snapshots:
   fresh@0.5.2: {}
 
   fresh@2.0.0: {}
+
+  fs-extra@10.1.0:
+    dependencies:
+      graceful-fs: 4.2.11
+      jsonfile: 6.2.0
+      universalify: 2.0.1
 
   fsevents@2.3.2:
     optional: true
@@ -7946,6 +8065,10 @@ snapshots:
       srvx: 0.11.8
 
   has-flag@4.0.0: {}
+
+  has-property-descriptors@1.0.2:
+    dependencies:
+      es-define-property: 1.0.1
 
   has-symbols@1.1.0: {}
 
@@ -8086,6 +8209,8 @@ snapshots:
 
   isarray@1.0.0: {}
 
+  isarray@2.0.5: {}
+
   isbot@5.1.35: {}
 
   isexe@2.0.0: {}
@@ -8123,7 +8248,27 @@ snapshots:
 
   jsesc@3.1.0: {}
 
+  json-stable-stringify@1.3.0:
+    dependencies:
+      call-bind: 1.0.8
+      call-bound: 1.0.4
+      isarray: 2.0.5
+      jsonify: 0.0.1
+      object-keys: 1.1.1
+
   json5@2.2.3: {}
+
+  jsonfile@6.2.0:
+    dependencies:
+      universalify: 2.0.1
+    optionalDependencies:
+      graceful-fs: 4.2.11
+
+  jsonify@0.0.1: {}
+
+  klaw-sync@6.0.0:
+    dependencies:
+      graceful-fs: 4.2.11
 
   kleur@4.1.5: {}
 
@@ -8452,6 +8597,8 @@ snapshots:
       pathe: 2.0.3
       tinyexec: 1.0.2
 
+  object-keys@1.1.1: {}
+
   ofetch@1.5.1:
     dependencies:
       destr: 2.0.5
@@ -8469,6 +8616,11 @@ snapshots:
   onetime@6.0.0:
     dependencies:
       mimic-fn: 4.0.0
+
+  open@7.4.2:
+    dependencies:
+      is-docker: 2.2.1
+      is-wsl: 2.2.0
 
   open@8.4.2:
     dependencies:
@@ -8494,6 +8646,23 @@ snapshots:
       entities: 6.0.1
 
   parseurl@1.3.3: {}
+
+  patch-package@8.0.1:
+    dependencies:
+      '@yarnpkg/lockfile': 1.1.0
+      chalk: 4.1.2
+      ci-info: 3.9.0
+      cross-spawn: 7.0.6
+      find-yarn-workspace-root: 2.0.0
+      fs-extra: 10.1.0
+      json-stable-stringify: 1.3.0
+      klaw-sync: 6.0.0
+      minimist: 1.2.8
+      open: 7.4.2
+      semver: 7.7.4
+      slash: 2.0.0
+      tmp: 0.2.5
+      yaml: 2.8.2
 
   path-key@3.1.1: {}
 
@@ -8857,6 +9026,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  set-function-length@1.2.2:
+    dependencies:
+      define-data-property: 1.1.4
+      es-errors: 1.3.0
+      function-bind: 1.1.2
+      get-intrinsic: 1.3.0
+      gopd: 1.2.0
+      has-property-descriptors: 1.0.2
+
   setprototypeof@1.2.0: {}
 
   shebang-command@2.0.0:
@@ -8868,6 +9046,8 @@ snapshots:
   shell-quote@1.8.3: {}
 
   signal-exit@4.1.0: {}
+
+  slash@2.0.0: {}
 
   slash@5.1.0: {}
 
@@ -9009,6 +9189,8 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
 
+  tmp@0.2.5: {}
+
   to-regex-range@5.0.1:
     dependencies:
       is-number: 7.0.0
@@ -9088,6 +9270,8 @@ snapshots:
       unplugin: 2.3.11
       unplugin-utils: 0.3.1
 
+  universalify@2.0.1: {}
+
   unplugin-utils@0.3.1:
     dependencies:
       pathe: 2.0.3
@@ -9166,7 +9350,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vinxi@0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0):
+  vinxi@0.5.3(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-syntax-jsx': 7.28.6(@babel/core@7.29.0)
@@ -9200,7 +9384,7 @@ snapshots:
       unctx: 2.5.0
       unenv: 1.10.0
       unstorage: 1.17.4(db0@0.3.4)(ioredis@5.9.3)
-      vite: 6.4.1(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)
+      vite: 6.4.1(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       zod: 3.25.76
     transitivePeerDependencies:
       - '@azure/app-configuration'
@@ -9258,7 +9442,7 @@ snapshots:
       lightningcss: 1.31.1
       terser: 5.46.0
 
-  vite@6.1.0(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0):
+  vite@6.1.0(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       esbuild: 0.24.2
       postcss: 8.5.6
@@ -9270,8 +9454,9 @@ snapshots:
       lightningcss: 1.31.1
       terser: 5.46.0
       tsx: 4.21.0
+      yaml: 2.8.2
 
-  vite@6.4.1(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0):
+  vite@6.4.1(@types/node@22.19.13)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.3)
@@ -9286,6 +9471,7 @@ snapshots:
       lightningcss: 1.31.1
       terser: 5.46.0
       tsx: 4.21.0
+      yaml: 2.8.2
 
   vitefu@1.1.2(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0)):
     optionalDependencies:
@@ -9301,7 +9487,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  wavesurfer.js@7.12.1: {}
+  wavesurfer.js@7.12.1(patch_hash=sqsbq5b6btklpv35vnneopl5w4): {}
 
   web-vitals@5.1.0: {}
 
@@ -9356,6 +9542,8 @@ snapshots:
   yallist@3.1.1: {}
 
   yallist@5.0.0: {}
+
+  yaml@2.8.2: {}
 
   yargs-parser@21.1.1: {}
 
