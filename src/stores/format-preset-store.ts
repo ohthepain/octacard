@@ -50,26 +50,15 @@ export const DEVICE_PRESETS: FormatPreset[] = [
     },
   },
   {
-    id: "digitakt",
-    name: "Digitakt",
-    settings: {
-      ...DEFAULT_FORMAT_SETTINGS,
-      fileFormat: "WAV",
-      sampleRate: "48000",
-      shortenFilename: true,
-      shortenFilenameMaxLength: 32,
-    },
-  },
-  {
     id: "digitakt-v1",
-    name: "Digitakt v1",
+    name: "Digitakt (v1)",
     settings: {
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
       sampleRate: "48000",
       sampleDepth: "16-bit",
       shortenFilename: true,
-      shortenFilenameMaxLength: 32,
+      shortenFilenameMaxLength: 15,
       mono: true,
     },
   },
@@ -81,7 +70,7 @@ export const DEVICE_PRESETS: FormatPreset[] = [
       fileFormat: "WAV",
       sampleRate: "48000",
       shortenFilename: true,
-      shortenFilenameMaxLength: 32,
+      shortenFilenameMaxLength: 15,
     },
   },
   {
