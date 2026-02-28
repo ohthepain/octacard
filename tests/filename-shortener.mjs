@@ -14,6 +14,11 @@ export async function assertFilenameShortener(page) {
       filenames: ["instrumental_long_take_version.wav", "instrumental-long-take-version.wav"],
       maxLength: 24,
     });
+    const keepsMoreContextOnCollision = shortenMany({
+      folderName: "MD",
+      filenames: ["MD_Drum15_kick&clap_121.wav", "MD_Drum15_nokick_121.wav"],
+      maxLength: 16,
+    });
 
     const unchanged = shortenMany({
       folderName: "Alpha",
@@ -25,6 +30,8 @@ export async function assertFilenameShortener(page) {
       shortened: shortened["Drum_loops_drum_loops_big_snare_stereo_version.wav"],
       firstCollision: collisions["instrumental_long_take_version.wav"],
       secondCollision: collisions["instrumental-long-take-version.wav"],
+      firstDrumCollision: keepsMoreContextOnCollision["MD_Drum15_kick&clap_121.wav"],
+      secondDrumCollision: keepsMoreContextOnCollision["MD_Drum15_nokick_121.wav"],
       unchanged: unchanged["kick.wav"],
     };
   });
@@ -32,6 +39,8 @@ export async function assertFilenameShortener(page) {
   assert.equal(shortenerCases.shortened, "big_snare_st_v.wav");
   assert.equal(shortenerCases.firstCollision, "inst_long_tk_v.wav");
   assert.equal(shortenerCases.secondCollision, "inst_long_tk_v_2.wav");
+  assert.equal(shortenerCases.firstDrumCollision, "Drum15_121.wav");
+  assert.equal(shortenerCases.secondDrumCollision, "Drum15_121_2.wav");
   assert.equal(shortenerCases.unchanged, "kick.wav");
 
   const integrationResult = await page.evaluate(async () => {
