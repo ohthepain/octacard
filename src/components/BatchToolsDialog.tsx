@@ -31,6 +31,7 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const ffmpegRef = useRef<FFmpeg | null>(null);
+  const ffmpegOutputRef = useRef<string[]>([]);
 
   const [targetBpm, setTargetBpm] = useState("174");
 
@@ -40,6 +41,12 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
     if (ffmpegRef.current) return ffmpegRef.current;
 
     const ffmpeg = new FFmpeg();
+    ffmpeg.on("log", ({ message }: { message: string }) => {
+      ffmpegOutputRef.current.push(message);
+      if (ffmpegOutputRef.current.length > 1000) {
+        ffmpegOutputRef.current.splice(0, ffmpegOutputRef.current.length - 1000);
+      }
+    });
     addLog("Loading FFmpeg engine...");
 
     const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
@@ -53,12 +60,32 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
     return ffmpeg;
   };
 
+  type LegacyWindowWithPickers = Window & {
+    __octacardPickDirectory?: () => Promise<FileSystemDirectoryHandle>;
+    showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+    chooseFileSystemEntries?: (options: { type: "open-directory" }) => Promise<FileSystemDirectoryHandle>;
+  };
+
+  const pickDirectory = async (): Promise<FileSystemDirectoryHandle> => {
+    const w = window as LegacyWindowWithPickers;
+    if (typeof w.__octacardPickDirectory === "function") {
+      return await w.__octacardPickDirectory();
+    }
+    if (typeof w.showDirectoryPicker === "function") {
+      return await w.showDirectoryPicker();
+    }
+    if (typeof w.chooseFileSystemEntries === "function") {
+      return await w.chooseFileSystemEntries({ type: "open-directory" });
+    }
+    throw new Error("DirectoryPickerUnsupported");
+  };
+
   const probeSampleRate = async (ffmpeg: FFmpeg, inputName: string): Promise<number> => {
     const probeOut = "probe_null.tmp";
     try {
+      ffmpegOutputRef.current = [];
       await ffmpeg.exec(["-i", inputName, "-t", "0.001", "-f", "null", probeOut]);
-      const logs = ffmpeg.exec.getLogs();
-      const logText = logs.map((l) => (typeof l === "object" && "message" in l ? (l as { message: string }).message : String(l))).join("\n");
+      const logText = ffmpegOutputRef.current.join("\n");
       const match = logText.match(/Audio:.*?(\d+)\s*Hz/);
       await ffmpeg.deleteFile(probeOut).catch(() => {});
       return match ? parseInt(match[1], 10) : 44100;
@@ -76,10 +103,7 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
         );
         return;
       }
-      const dirHandle =
-        typeof window.showDirectoryPicker === "function"
-          ? await window.showDirectoryPicker()
-          : await (window as any).chooseFileSystemEntries({ type: "open-directory" });
+      const dirHandle = await pickDirectory();
 
       setProcessing(true);
       setLogs([]);
@@ -89,7 +113,7 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
 
       const files: { name: string; handle: FileSystemFileHandle }[] = [];
 
-      for await (const entry of dirHandle.values()) {
+      for await (const entry of (dirHandle as unknown as { values: () => AsyncIterable<FileSystemHandle> }).values()) {
         if (entry.kind === "file" && /\.(wav|aif|aiff)$/i.test(entry.name)) {
           files.push({ name: entry.name, handle: entry as FileSystemFileHandle });
         }
@@ -147,6 +171,7 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
           }
 
           try {
+            ffmpegOutputRef.current = [];
             await ffmpeg.exec([
               "-i",
               inputName,
@@ -162,8 +187,7 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
               outputName,
             ]);
           } catch (execErr) {
-            const logs = ffmpeg.exec.getLogs();
-            const logText = logs.map((l) => (typeof l === "object" && "message" in l ? (l as { message: string }).message : String(l))).join("\n");
+            const logText = ffmpegOutputRef.current.join("\n");
             addLog(`FFmpeg error for ${file.name}: ${execErr}`);
             addLog(logText.slice(-500));
             throw execErr;
