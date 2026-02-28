@@ -27,15 +27,8 @@ interface TempoChooseDialogProps {
   onConfirm: (bpm: number) => void;
 }
 
-function TempoChooseDialog({
-  open,
-  onOpenChange,
-  currentTempo,
-  onConfirm,
-}: TempoChooseDialogProps) {
-  const [inputValue, setInputValue] = useState(
-    currentTempo !== "dont-change" ? currentTempo : "120",
-  );
+function TempoChooseDialog({ open, onOpenChange, currentTempo, onConfirm }: TempoChooseDialogProps) {
+  const [inputValue, setInputValue] = useState(currentTempo !== "dont-change" ? currentTempo : "120");
   const [error, setError] = useState<string | null>(null);
 
   const handleOk = () => {
@@ -135,7 +128,7 @@ export function FormatDropdown() {
   const selectedPresetLabel =
     selectedPresetId === "current"
       ? USER_SETTINGS_PRESET_LABEL
-      : devicePresets.find((preset) => preset.id === selectedPresetId)?.name ?? USER_SETTINGS_PRESET_LABEL;
+      : (devicePresets.find((preset) => preset.id === selectedPresetId)?.name ?? USER_SETTINGS_PRESET_LABEL);
 
   return (
     <>
@@ -333,7 +326,7 @@ export function FormatDropdown() {
                 />
                 <div className="grid gap-1">
                   <Label htmlFor="shorten-filename-max-length" className="font-normal text-xs text-muted-foreground">
-                    Max length
+                    Max filename length
                   </Label>
                   <Input
                     id="shorten-filename-max-length"
@@ -365,11 +358,7 @@ export function FormatDropdown() {
                   <Button type="button" variant="outline" onClick={() => setTempoChooseOpen(true)}>
                     Choose...
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => updateCurrentPreset({ tempo: "dont-change" })}
-                  >
+                  <Button type="button" variant="ghost" onClick={() => updateCurrentPreset({ tempo: "dont-change" })}>
                     Reset
                   </Button>
                 </div>
