@@ -67,6 +67,44 @@ function joinPath(...parts: string[]): string {
   return result.replace(/\/+/g, "/");
 }
 
+const BPM_MIN = 50;
+const BPM_MAX = 240;
+
+function BpmInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [editingValue, setEditingValue] = useState<string | null>(null);
+  const displayValue = editingValue ?? String(value);
+  return (
+    <div className="flex items-center gap-2">
+      <label htmlFor="header-tempo" className="text-xs text-muted-foreground shrink-0">
+        BPM
+      </label>
+      <input
+        id="header-tempo"
+        type="text"
+        inputMode="numeric"
+        min={BPM_MIN}
+        max={BPM_MAX}
+        value={displayValue}
+        onFocus={() => setEditingValue(String(value))}
+        onChange={(e) => setEditingValue(e.target.value)}
+        onBlur={() => {
+          const n = parseInt(editingValue ?? "", 10);
+          if (Number.isFinite(n) && n >= BPM_MIN && n <= BPM_MAX) {
+            onChange(n);
+          }
+          setEditingValue(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className="h-7 w-14 rounded-md border border-input bg-background px-2 text-sm"
+      />
+    </div>
+  );
+}
+
 async function yieldToUi(): Promise<void> {
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
@@ -665,25 +703,7 @@ const Index = () => {
             <Activity className="w-4 h-4 mr-1" />
             Waveform
           </Button>
-          <div className="flex items-center gap-2">
-            <label htmlFor="header-tempo" className="text-xs text-muted-foreground shrink-0">
-              BPM
-            </label>
-            <input
-              id="header-tempo"
-              type="number"
-              min={50}
-              max={240}
-              value={globalTempoBpm}
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                if (!Number.isNaN(v) && v >= 50 && v <= 240) {
-                  setGlobalTempoBpm(v);
-                }
-              }}
-              className="h-7 w-14 rounded-md border border-input bg-background px-2 text-sm"
-            />
-          </div>
+          <BpmInput value={globalTempoBpm} onChange={setGlobalTempoBpm} />
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
