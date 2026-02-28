@@ -19,6 +19,7 @@ import {
   Activity,
   Trash2,
   GripVertical,
+  GripHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -155,7 +156,6 @@ export const AudioPreview = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const numSlicesDragRef = useRef<{ startY: number; startX: number; startValue: number } | null>(null);
   const addSliceAtTimeRef = useRef<(t: number) => void>(() => {});
-  const addMarkerAtTimeRef = useRef<(t: number) => void>(() => {});
   const addMarkerModeRef = useRef(false);
   const sliceMarkersRef = useRef<SliceMarker[]>([]);
 
@@ -557,7 +557,7 @@ export const AudioPreview = ({
         normalize: normalize,
         backend: "MediaElement", // Use MediaElement to avoid audio context/stream issues
         mediaControls: false,
-        interact: true,
+        interact: false, // We handle click-to-seek ourselves; prevents seek when adding markers or envelope points
       });
 
       wavesurferRef.current = wavesurfer;
@@ -1231,12 +1231,14 @@ export const AudioPreview = ({
       const threshold = minConfidence + 0.01;
       const minSpacingSec = 20 / 1000;
       const excluded = new Set(selected.map((s) => sliceKey(s.time)));
+      const allMarked = [...selected, ...userAddedSlices];
       let best: SliceMarker | null = null;
       let bestDist = Infinity;
+      // Prefer a detected transient near the click that isn't already marked
       for (const m of sliceMarkers) {
         const key = sliceKey(m.time);
         if (excluded.has(key)) continue;
-        const tooClose = selected.some((s) => Math.abs(s.time - m.time) < minSpacingSec);
+        const tooClose = allMarked.some((s) => Math.abs(s.time - m.time) < minSpacingSec);
         if (tooClose) continue;
         const dist = Math.abs(m.time - clickTime);
         if (dist < bestDist) {
@@ -1244,11 +1246,11 @@ export const AudioPreview = ({
           best = m;
         }
       }
-      if (best) {
-        setUserAddedSlices((prev) => [...prev, { time: best!.time, confidence: Math.min(1, threshold) }]);
-      }
+      const timeToAdd = best ? best.time : clickTime;
+      setUserAddedSlices((prev) => [...prev, { time: timeToAdd, confidence: Math.min(1, threshold) }]);
+      setNumSlices((prev) => prev + 1);
     },
-    [combinedSliceMarkers, numSlices, sliceMarkers],
+    [combinedSliceMarkers, numSlices, sliceMarkers, userAddedSlices],
   );
 
   const updateSlicePosition = useCallback((originalTime: number, newTime: number) => {
@@ -1259,23 +1261,6 @@ export const AudioPreview = ({
   addSliceAtTimeRef.current = addSliceAtTime;
   addMarkerModeRef.current = addMarkerMode;
   sliceMarkersRef.current = sliceMarkers;
-
-  const addMarkerAtTime = (time: number) => {
-    if (!regionsRef.current) return;
-    const marker = regionsRef.current.addRegion({
-      start: time,
-      end: Math.min(duration, time + 0.1),
-      color: "#FF764D", // Orange marker (Ableton orange)
-      drag: true,
-      resize: false,
-      content: `Marker: ${formatTime(time)}`,
-    });
-    marker.on("update-end", () => {
-      console.log("Marker updated:", marker.start);
-    });
-  };
-
-  addMarkerAtTimeRef.current = addMarkerAtTime;
 
   const addRegion = () => {
     if (!wavesurferRef.current || !regionsRef.current) return;
@@ -1587,7 +1572,7 @@ export const AudioPreview = ({
           if (currentDuration > 0) {
             const clickTime = (x / width) * currentDuration;
             if (addMarkerModeRef.current) {
-              addMarkerAtTimeRef.current(clickTime);
+              addSliceAtTimeRef.current(clickTime);
             } else if (slicingOpen && sliceMarkersRef.current.length > 0) {
               addSliceAtTimeRef.current(clickTime);
             } else {
@@ -1638,13 +1623,15 @@ export const AudioPreview = ({
 
   return (
     <div className="border-t border-border bg-card p-4 space-y-3 shrink-0" data-testid={`audio-preview-${paneType}`}>
-      {/* Resize handle at very top - drag to adjust waveform height */}
+      {/* Resize handle - top border of filename row, drag to adjust waveform height */}
       <div
-        className="h-4 w-full cursor-ns-resize flex items-center justify-center hover:bg-muted/50 rounded transition-colors shrink-0 select-none touch-none"
+        className="-mt-4 -mx-4 mb-1 h-4 cursor-ns-resize flex items-center justify-center hover:bg-muted/50 transition-colors select-none touch-none"
         onMouseDown={handleResizeMouseDown}
         title="Drag to resize"
       >
-        <div className="w-12 h-0.5 bg-muted-foreground/40 rounded pointer-events-none" />
+        <div className="flex h-3 w-4 items-center justify-center rounded-sm border bg-border">
+          <GripHorizontal className="h-2.5 w-2.5" />
+        </div>
       </div>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -1784,16 +1771,19 @@ export const AudioPreview = ({
             />
           </div>
         )}
-        {/* Slice markers overlay - vertical lines, tap to remove, hover for trash/drag (only when slicing modal is on) */}
+        {/* Slice markers overlay - pointer-events-none on container so waveform receives taps; auto on markers for remove/drag */}
         {slicingOpen && !isEmptyState && duration > 0 && displayedSlices.length > 0 && (
-          <div className="absolute top-0 left-0 right-0 z-[5]" style={{ height: debouncedWaveformHeight }}>
+          <div
+            className="absolute top-0 left-0 right-0 z-[5] pointer-events-none"
+            style={{ height: debouncedWaveformHeight }}
+          >
             {displayedSlices.map((slice, i) => {
               const key = sliceKey(slice.originalTime);
               const isHovered = hoveredSliceKey === key;
               return (
                 <div
                   key={`${key}-${i}`}
-                  className="absolute top-0 h-full flex flex-col items-center"
+                  className="absolute top-0 h-full flex flex-col items-center pointer-events-auto"
                   style={{
                     left: `${(slice.time / duration) * 100}%`,
                     transform: "translateX(-50%)",
