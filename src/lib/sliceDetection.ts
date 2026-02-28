@@ -34,6 +34,7 @@ function rms(samples: Float32Array, start: number, length: number): number {
 /**
  * Simple envelope-based transient detection.
  * Returns onset strength (0-1) for each frame.
+ * Weighted by absolute RMS so loud transients rank higher than quiet noise spikes.
  */
 function computeTransientScores(
   samples: Float32Array,
@@ -41,7 +42,7 @@ function computeTransientScores(
 ): { time: number; score: number }[] {
   const results: { time: number; score: number }[] = [];
   const prevRms: number[] = [];
-  let maxOnset = 0;
+  let maxRawScore = 0;
 
   for (let pos = 0; pos + FRAME_SIZE <= samples.length; pos += HOP_SIZE) {
     const time = pos / sampleRate;
@@ -51,13 +52,14 @@ function computeTransientScores(
     if (prevRms.length > 4) prevRms.shift();
 
     const onset = prev > 1e-8 ? Math.max(0, (currentRms - prev) / prev) : 0;
-    maxOnset = Math.max(maxOnset, onset);
-    results.push({ time, score: onset });
+    const rawScore = onset * (currentRms + 1e-8);
+    maxRawScore = Math.max(maxRawScore, rawScore);
+    results.push({ time, score: rawScore });
   }
 
-  if (maxOnset > 0) {
+  if (maxRawScore > 0) {
     for (const r of results) {
-      r.score = Math.min(1, r.score / maxOnset);
+      r.score = Math.min(1, r.score / maxRawScore);
     }
   }
   return results;

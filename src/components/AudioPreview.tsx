@@ -9,7 +9,7 @@ import {
   ZoomOut,
   Gauge,
   RotateCcw,
-  Map,
+  Map as MapIcon,
   ChevronDown,
   ChevronUp,
   Layers,
@@ -17,6 +17,8 @@ import {
   Square,
   Download,
   Activity,
+  Trash2,
+  GripVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -33,12 +35,7 @@ import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { exportAudioWithEdits, mixOverdub, replaceSegment } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
 import { parseBpmFromString } from "@/lib/tempoUtils";
-import {
-  detectSliceMarkers,
-  selectTopSlices,
-  type SliceMarker,
-  type SliceDetectionMode,
-} from "@/lib/sliceDetection";
+import { detectSliceMarkers, selectTopSlices, type SliceMarker, type SliceDetectionMode } from "@/lib/sliceDetection";
 import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
 import {
   Dialog,
@@ -150,16 +147,48 @@ export const AudioPreview = ({
   const exportFilenameResolverRef = useRef<((name: string | null) => void) | null>(null);
   const lastRecordedBlobRef = useRef<Blob | null>(null);
 
+  const [slicingOpen, setSlicingOpen] = useState(false);
+  const [addMarkerMode, setAddMarkerMode] = useState(false);
   const [sliceMarkers, setSliceMarkers] = useState<SliceMarker[]>([]);
   const [numSlices, setNumSlices] = useState(8);
   const [sliceDetectionMode, setSliceDetectionMode] = useState<SliceDetectionMode>("transient");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const numSlicesDragRef = useRef<{ startY: number; startX: number; startValue: number } | null>(null);
+  const addSliceAtTimeRef = useRef<(t: number) => void>(() => {});
+  const addMarkerAtTimeRef = useRef<(t: number) => void>(() => {});
+  const addMarkerModeRef = useRef(false);
+  const sliceMarkersRef = useRef<SliceMarker[]>([]);
 
-  const displayedSlices = useMemo(
-    () => selectTopSlices(sliceMarkers, numSlices),
-    [sliceMarkers, numSlices]
+  const [sliceConfidenceOverrides, setSliceConfidenceOverrides] = useState<Map<string, number>>(
+    () => new Map<string, number>(),
   );
+  const [slicePositionOverrides, setSlicePositionOverrides] = useState<Map<string, number>>(
+    () => new Map<string, number>(),
+  );
+  const [userAddedSlices, setUserAddedSlices] = useState<SliceMarker[]>([]);
+  const [hoveredSliceKey, setHoveredSliceKey] = useState<string | null>(null);
+
+  const sliceKey = (t: number) => t.toFixed(4);
+
+  const combinedSliceMarkers = useMemo(() => {
+    const overridden = sliceMarkers.map((m) => {
+      const key = sliceKey(m.time);
+      const conf = sliceConfidenceOverrides.get(key);
+      return { ...m, confidence: conf !== undefined ? conf : m.confidence };
+    });
+    return [...overridden, ...userAddedSlices];
+  }, [sliceMarkers, sliceConfidenceOverrides, userAddedSlices]);
+
+  const displayedSlices = useMemo(() => {
+    const selected = selectTopSlices(combinedSliceMarkers, numSlices);
+    return selected.map((m) => {
+      const key = sliceKey(m.time);
+      const pos = slicePositionOverrides.get(key);
+      const displayTime = pos !== undefined ? pos : m.time;
+      const isUserAdded = userAddedSlices.some((u) => Math.abs(u.time - m.time) < 0.001);
+      return { ...m, time: displayTime, originalTime: m.time, isUserAdded };
+    });
+  }, [combinedSliceMarkers, numSlices, slicePositionOverrides, userAddedSlices]);
 
   const getExportBlobForEmptyState = useCallback(async (): Promise<Blob | null> => {
     if (lastRecordedBlobRef.current) return lastRecordedBlobRef.current;
@@ -197,8 +226,7 @@ export const AudioPreview = ({
         e.clientY <= overlayRect.bottom;
       // If overlay takes a large share of the minimap, treat drag as background drag
       // so users can still access vertical zoom-out without pixel-hunting outside the overlay.
-      const overlayCoverage =
-        overlayRect && minimapRect.width > 0 ? overlayRect.width / minimapRect.width : 0;
+      const overlayCoverage = overlayRect && minimapRect.width > 0 ? overlayRect.width / minimapRect.width : 0;
       const overlayFillsMinimap = overlayCoverage >= 0.5;
       const isOverlay = isWithinOverlay && !overlayFillsMinimap;
 
@@ -403,10 +431,13 @@ export const AudioPreview = ({
     };
   }, [audioUrl, fileName, isEmptyState, filePath, sliceDetectionMode]);
 
-  // Clear slice markers when file changes or empty state
+  // Clear slice markers and overrides when file changes or empty state
   useEffect(() => {
     if (isEmptyState || !filePath) {
       setSliceMarkers([]);
+      setSliceConfidenceOverrides(new Map<string, number>());
+      setSlicePositionOverrides(new Map<string, number>());
+      setUserAddedSlices([]);
     }
   }, [isEmptyState, filePath]);
 
@@ -862,7 +893,9 @@ export const AudioPreview = ({
             message: "minimap lookup paths",
             data: {
               hasWrapper: !!wrapper,
-              wrapperRootType: wrapperRoot ? (wrapperRoot as unknown as { nodeName?: string }).nodeName ?? "unknown" : null,
+              wrapperRootType: wrapperRoot
+                ? ((wrapperRoot as unknown as { nodeName?: string }).nodeName ?? "unknown")
+                : null,
               foundInParent: !!minimapInParent,
               foundInWrapperRoot: !!minimapInWrapperRoot,
               finalFound: !!minimapElement,
@@ -1156,45 +1189,93 @@ export const AudioPreview = ({
     setPlaybackRate(value[0]);
   };
 
-  const handleNumSlicesDragStart = useCallback((e: React.MouseEvent) => {
-    if (isLoading || isAnalyzing) return;
-    e.preventDefault();
-    const max = Math.max(1, sliceMarkers.length);
-    numSlicesDragRef.current = { startY: e.clientY, startX: e.clientX, startValue: numSlices };
-    const onMove = (moveE: MouseEvent) => {
-      if (!numSlicesDragRef.current) return;
-      const dy = numSlicesDragRef.current.startY - moveE.clientY;
-      const dx = moveE.clientX - numSlicesDragRef.current.startX;
-      const steps = Math.round((dy + dx) / 8);
-      const next = Math.max(1, Math.min(max, numSlicesDragRef.current.startValue + steps));
-      setNumSlices(next);
-    };
-    const onUp = () => {
-      numSlicesDragRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [isLoading, isAnalyzing, numSlices, sliceMarkers.length]);
+  const handleNumSlicesDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      if (isLoading || isAnalyzing) return;
+      e.preventDefault();
+      const max = Math.max(1, sliceMarkers.length);
+      numSlicesDragRef.current = { startY: e.clientY, startX: e.clientX, startValue: numSlices };
+      const onMove = (moveE: MouseEvent) => {
+        if (!numSlicesDragRef.current) return;
+        const dy = numSlicesDragRef.current.startY - moveE.clientY;
+        const dx = moveE.clientX - numSlicesDragRef.current.startX;
+        const steps = Math.round((dy + dx) / 8);
+        const next = Math.max(1, Math.min(max, numSlicesDragRef.current.startValue + steps));
+        setNumSlices(next);
+      };
+      const onUp = () => {
+        numSlicesDragRef.current = null;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [isLoading, isAnalyzing, numSlices, sliceMarkers.length],
+  );
 
-  const addMarker = () => {
-    if (!wavesurferRef.current || !regionsRef.current) return;
-    const currentTime = wavesurferRef.current.getCurrentTime();
-    // Create a small region as a marker (0.1 second wide)
+  const removeSlice = useCallback((originalTime: number, isUserAdded: boolean) => {
+    const key = sliceKey(originalTime);
+    if (isUserAdded) {
+      setUserAddedSlices((prev) => prev.filter((s) => Math.abs(s.time - originalTime) > 0.001));
+    } else {
+      setSliceConfidenceOverrides((prev) => new Map(prev).set(key, 0));
+    }
+    setNumSlices((prev) => Math.max(1, prev - 1));
+  }, []);
+
+  const addSliceAtTime = useCallback(
+    (clickTime: number) => {
+      const selected = selectTopSlices(combinedSliceMarkers, numSlices);
+      const minConfidence = selected.length > 0 ? Math.min(...selected.map((s) => s.confidence)) : 0.5;
+      const threshold = minConfidence + 0.01;
+      const minSpacingSec = 20 / 1000;
+      const excluded = new Set(selected.map((s) => sliceKey(s.time)));
+      let best: SliceMarker | null = null;
+      let bestDist = Infinity;
+      for (const m of sliceMarkers) {
+        const key = sliceKey(m.time);
+        if (excluded.has(key)) continue;
+        const tooClose = selected.some((s) => Math.abs(s.time - m.time) < minSpacingSec);
+        if (tooClose) continue;
+        const dist = Math.abs(m.time - clickTime);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = m;
+        }
+      }
+      if (best) {
+        setUserAddedSlices((prev) => [...prev, { time: best!.time, confidence: Math.min(1, threshold) }]);
+      }
+    },
+    [combinedSliceMarkers, numSlices, sliceMarkers],
+  );
+
+  const updateSlicePosition = useCallback((originalTime: number, newTime: number) => {
+    const key = sliceKey(originalTime);
+    setSlicePositionOverrides((prev) => new Map(prev).set(key, newTime));
+  }, []);
+
+  addSliceAtTimeRef.current = addSliceAtTime;
+  addMarkerModeRef.current = addMarkerMode;
+  sliceMarkersRef.current = sliceMarkers;
+
+  const addMarkerAtTime = (time: number) => {
+    if (!regionsRef.current) return;
     const marker = regionsRef.current.addRegion({
-      start: currentTime,
-      end: Math.min(duration, currentTime + 0.1),
+      start: time,
+      end: Math.min(duration, time + 0.1),
       color: "#FF764D", // Orange marker (Ableton orange)
       drag: true,
       resize: false,
-      content: `Marker: ${formatTime(currentTime)}`,
+      content: `Marker: ${formatTime(time)}`,
     });
-
     marker.on("update-end", () => {
       console.log("Marker updated:", marker.start);
     });
   };
+
+  addMarkerAtTimeRef.current = addMarkerAtTime;
 
   const addRegion = () => {
     if (!wavesurferRef.current || !regionsRef.current) return;
@@ -1375,20 +1456,22 @@ export const AudioPreview = ({
         try {
           const ws = wavesurferRef.current;
           if (typeof ws.getScroll === "function" && typeof ws.setScroll === "function") {
-            const overlayEl = minimapContainerRef.current?.querySelector('[part="minimap-overlay"]') as HTMLElement | null;
+            const overlayEl = minimapContainerRef.current?.querySelector(
+              '[part="minimap-overlay"]',
+            ) as HTMLElement | null;
             const minimapRect = minimapContainerRef.current?.getBoundingClientRect();
             const waveformRect = waveformRef.current?.getBoundingClientRect();
             const overlayLeftBefore =
               overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
             const scrollBefore = ws.getScroll();
             // Axis lock: ignore tiny/secondary horizontal jitter during mostly vertical drags.
-            const shouldApplyHorizontal = Math.abs(actualDeltaX) >= Math.abs(actualDeltaY) && Math.abs(actualDeltaX) >= 2;
+            const shouldApplyHorizontal =
+              Math.abs(actualDeltaX) >= Math.abs(actualDeltaY) && Math.abs(actualDeltaX) >= 2;
             // Map mouse pixels to minimap overlay pixels (~1:1 feel): one mouse px moves overlay by one px.
             // dScroll = dOverlay * (visibleWindowPx / overlayWidthPx)
             const overlayWidth = overlayEl?.getBoundingClientRect().width ?? 0;
             const visibleWindow = waveformRect?.width ?? 0;
-            const minimapPixelToScroll =
-              overlayWidth > 0 && visibleWindow > 0 ? visibleWindow / overlayWidth : 1;
+            const minimapPixelToScroll = overlayWidth > 0 && visibleWindow > 0 ? visibleWindow / overlayWidth : 1;
             const mappedDeltaX = shouldApplyHorizontal ? actualDeltaX * minimapPixelToScroll : 0;
             const newScroll = Math.max(0, dragStateRef.current.startScroll + mappedDeltaX);
             ws.setScroll(newScroll);
@@ -1487,7 +1570,7 @@ export const AudioPreview = ({
         }
         return;
       }
-      // If it was a click (no drag) on the main waveform, seek to that position
+      // If it was a click (no drag) on the main waveform: add slice if we have slice markers, else seek
       if (
         state &&
         !state.hasMoved &&
@@ -1502,8 +1585,14 @@ export const AudioPreview = ({
         if (width > 0 && x >= 0 && x <= width) {
           const currentDuration = wavesurferRef.current.getDuration();
           if (currentDuration > 0) {
-            const seekTime = (x / width) * currentDuration;
-            wavesurferRef.current.seekTo(seekTime / currentDuration);
+            const clickTime = (x / width) * currentDuration;
+            if (addMarkerModeRef.current) {
+              addMarkerAtTimeRef.current(clickTime);
+            } else if (slicingOpen && sliceMarkersRef.current.length > 0) {
+              addSliceAtTimeRef.current(clickTime);
+            } else {
+              wavesurferRef.current.seekTo(clickTime / currentDuration);
+            }
           }
         }
       }
@@ -1517,7 +1606,7 @@ export const AudioPreview = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, []);
+  }, [slicingOpen]);
 
   const handleResizeMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -1557,7 +1646,7 @@ export const AudioPreview = ({
       >
         <div className="w-12 h-0.5 bg-muted-foreground/40 rounded pointer-events-none" />
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span
             data-testid="audio-preview-filename"
@@ -1566,6 +1655,60 @@ export const AudioPreview = ({
           >
             {fileName ? `Preview: ${fileName}` : "Waveform Editor"}
           </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {slicingOpen && !isEmptyState && duration > 0 && (
+            <>
+              <div
+                role="spinbutton"
+                aria-valuenow={numSlices}
+                aria-valuemin={1}
+                aria-valuemax={Math.max(1, sliceMarkers.length)}
+                tabIndex={0}
+                onMouseDown={handleNumSlicesDragStart}
+                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
+                title="Drag up/right to increase, down/left to decrease"
+              >
+                {numSlices} slices
+              </div>
+              <Select
+                value={sliceDetectionMode}
+                onValueChange={(v) => setSliceDetectionMode(v as SliceDetectionMode)}
+                disabled={isLoading || isAnalyzing}
+              >
+                <SelectTrigger className="h-7 w-[90px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="transient">Transient</SelectItem>
+                  <SelectItem value="pitch">Pitch</SelectItem>
+                  <SelectItem value="both">Both</SelectItem>
+                </SelectContent>
+              </Select>
+              {isAnalyzing && <span className="text-xs text-muted-foreground">Analyzing…</span>}
+              <Button
+                size="sm"
+                variant={addMarkerMode ? "default" : "outline"}
+                className="h-7 text-xs gap-1"
+                onClick={() => setAddMarkerMode(!addMarkerMode)}
+                disabled={isLoading}
+                title="Tap waveform to add marker"
+              >
+                <MapIcon className="w-3 h-3" />
+                Add Marker
+              </Button>
+            </>
+          )}
+          <Button
+            size="sm"
+            variant={slicingOpen ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => setSlicingOpen(!slicingOpen)}
+            disabled={isEmptyState || isLoading}
+            title="Show slice markers on waveform"
+          >
+            Slicing
+          </Button>
         </div>
         <Button
           data-testid="audio-preview-close"
@@ -1641,22 +1784,76 @@ export const AudioPreview = ({
             />
           </div>
         )}
-        {/* Slice markers overlay - vertical lines at detected slice positions */}
-        {!isEmptyState && duration > 0 && displayedSlices.length > 0 && (
-          <div
-            className="absolute top-0 left-0 right-0 pointer-events-none z-[5]"
-            style={{ height: debouncedWaveformHeight }}
-          >
-            {displayedSlices.map((slice, i) => (
-              <div
-                key={`${slice.time}-${i}`}
-                className="absolute top-0 w-0.5 h-full"
-                style={{
-                  left: `${(slice.time / duration) * 100}%`,
-                  backgroundColor: "rgba(255, 118, 77, 0.5)",
-                }}
-              />
-            ))}
+        {/* Slice markers overlay - vertical lines, tap to remove, hover for trash/drag (only when slicing modal is on) */}
+        {slicingOpen && !isEmptyState && duration > 0 && displayedSlices.length > 0 && (
+          <div className="absolute top-0 left-0 right-0 z-[5]" style={{ height: debouncedWaveformHeight }}>
+            {displayedSlices.map((slice, i) => {
+              const key = sliceKey(slice.originalTime);
+              const isHovered = hoveredSliceKey === key;
+              return (
+                <div
+                  key={`${key}-${i}`}
+                  className="absolute top-0 h-full flex flex-col items-center"
+                  style={{
+                    left: `${(slice.time / duration) * 100}%`,
+                    transform: "translateX(-50%)",
+                    width: 16,
+                  }}
+                  onMouseEnter={() => setHoveredSliceKey(key)}
+                  onMouseLeave={() => setHoveredSliceKey(null)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeSlice(slice.originalTime, slice.isUserAdded);
+                  }}
+                >
+                  <div
+                    className="absolute top-0 w-0.5 h-full pointer-events-none"
+                    style={{ left: "50%", transform: "translateX(-50%)", backgroundColor: "rgba(255, 118, 77, 0.5)" }}
+                  />
+                  {isHovered && (
+                    <>
+                      <button
+                        type="button"
+                        className="absolute -top-1 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-destructive/10 hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeSlice(slice.originalTime, slice.isUserAdded);
+                        }}
+                        title="Remove slice"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-6 h-6 rounded flex items-center justify-center bg-background/90 border border-border shadow-sm cursor-ew-resize z-10"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          const startX = e.clientX;
+                          const startTime = slice.time;
+                          const handleMove = (moveE: MouseEvent) => {
+                            const rect = waveformRef.current?.getBoundingClientRect();
+                            if (!rect) return;
+                            const dx = moveE.clientX - startX;
+                            const timeDelta = (dx / rect.width) * duration;
+                            const newTime = Math.max(0, Math.min(duration, startTime + timeDelta));
+                            updateSlicePosition(slice.originalTime, newTime);
+                          };
+                          const handleUp = () => {
+                            window.removeEventListener("mousemove", handleMove);
+                            window.removeEventListener("mouseup", handleUp);
+                          };
+                          window.addEventListener("mousemove", handleMove);
+                          window.addEventListener("mouseup", handleUp);
+                        }}
+                        title="Drag to reposition"
+                      >
+                        <GripVertical className="w-3 h-3 text-muted-foreground" />
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1882,20 +2079,6 @@ export const AudioPreview = ({
                   >
                     Clear Regions
                   </Button>
-                </div>
-
-                {/* Marker Controls + Slice Detection */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs gap-1"
-                    onClick={addMarker}
-                    disabled={isLoading}
-                  >
-                    <Map className="w-3 h-3" />
-                    Add Marker
-                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1905,39 +2088,6 @@ export const AudioPreview = ({
                   >
                     Clear Markers
                   </Button>
-                  {!isEmptyState && duration > 0 && (
-                    <>
-                      <div
-                        role="spinbutton"
-                        aria-valuenow={numSlices}
-                        aria-valuemin={1}
-                        aria-valuemax={Math.max(1, sliceMarkers.length)}
-                        tabIndex={0}
-                        onMouseDown={handleNumSlicesDragStart}
-                        className="h-7 min-w-[2.5rem] px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
-                        title="Drag up/right to increase, down/left to decrease"
-                      >
-                        {numSlices} slices
-                      </div>
-                      <Select
-                        value={sliceDetectionMode}
-                        onValueChange={(v) => setSliceDetectionMode(v as SliceDetectionMode)}
-                        disabled={isLoading || isAnalyzing}
-                      >
-                        <SelectTrigger className="h-7 w-[100px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="transient">Transient</SelectItem>
-                          <SelectItem value="pitch">Pitch</SelectItem>
-                          <SelectItem value="both">Both</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {isAnalyzing && (
-                        <span className="text-xs text-muted-foreground">Analyzing…</span>
-                      )}
-                    </>
-                  )}
                 </div>
               </div>
             </div>
