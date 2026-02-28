@@ -996,6 +996,30 @@ class FileSystemService {
     return this.getFileBlob(virtualPath, paneType);
   }
 
+  /** Write a Blob to a file path, overwriting if it exists. */
+  async writeBlobToPath(
+    virtualPath: string,
+    blob: Blob,
+    paneType: PaneType = "source"
+  ): Promise<FileSystemResult> {
+    try {
+      const dirPath = virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
+      const fileName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
+      const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(dirPath);
+      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      await this.reindexSubtree(dirPath, paneType);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  }
+
   async getVideoFileBlob(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult<string>> {
     return this.getFileBlob(virtualPath, paneType);
   }
@@ -1019,6 +1043,7 @@ class FileSystemService {
     signal?: AbortSignal,
     shortenTargetFilename?: boolean,
     shortenTargetFilenameMaxLength?: number,
+    sampleEdits?: { region?: { start: number; end: number } | null; envelopePoints?: { time: number; volume: number }[] },
   ): Promise<FileSystemResult> {
     if (signal?.aborted) {
       return {
@@ -1084,6 +1109,11 @@ class FileSystemService {
         };
       }
 
+      const hasSampleEdits = !!(
+        sampleEdits?.region ||
+        (sampleEdits?.envelopePoints && sampleEdits.envelopePoints.length > 0)
+      );
+
       // Check if conversion is needed
       const needsConversion = !!(
         targetSampleRate ||
@@ -1093,7 +1123,8 @@ class FileSystemService {
         fileFormat === "WAV" ||
         trimStart ||
         pitch === "C" ||
-        (targetTempo != null && sourceTempo != null)
+        (targetTempo != null && sourceTempo != null) ||
+        hasSampleEdits
       );
 
       let finalFile: File | Blob = sourceFile;
@@ -1124,6 +1155,12 @@ class FileSystemService {
           sourceFileName: fileName,
           ...(targetTempo != null && sourceTempo != null
             ? { targetTempo, sourceTempo }
+            : {}),
+          ...(sampleEdits?.region
+            ? { regionStart: sampleEdits.region.start, regionEnd: sampleEdits.region.end }
+            : {}),
+          ...(sampleEdits?.envelopePoints && sampleEdits.envelopePoints.length > 0
+            ? { envelopePoints: sampleEdits.envelopePoints }
             : {}),
         });
 

@@ -13,33 +13,105 @@ import {
   Map,
   ChevronDown,
   ChevronUp,
+  Mic,
+  Square,
+  Download,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline";
 import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
+import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
+import RecordPlugin from "wavesurfer.js/dist/plugins/record";
+import { useSampleEditsStore } from "@/stores/sample-edits-store";
+import { exportAudioWithEdits } from "@/lib/exportAudio";
+import { fileSystemService } from "@/lib/fileSystem";
+import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
-interface AudioPreviewProps {
-  filePath: string;
-  fileName: string;
-  onClose: () => void;
-  paneType?: "source" | "dest";
+function createSilentWavDataUrl(durationSeconds: number): string {
+  const sampleRate = 44100;
+  const numSamples = sampleRate * durationSeconds * 2;
+  const buffer = new ArrayBuffer(44 + numSamples);
+  const view = new DataView(buffer);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + numSamples, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 2, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 4, true);
+  view.setUint16(32, 4, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, numSamples, true);
+  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
 }
 
-export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" }: AudioPreviewProps) => {
+interface AudioPreviewProps {
+  filePath: string | null;
+  fileName: string | null;
+  onClose: () => void;
+  paneType?: "source" | "dest" | null;
+  isEmptyState?: boolean;
+}
+
+export const AudioPreview = ({
+  filePath,
+  fileName,
+  onClose,
+  paneType = "source",
+  isEmptyState = false,
+}: AudioPreviewProps) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const timelineRef = useRef<TimelinePlugin | null>(null);
   const minimapRef = useRef<MinimapPlugin | null>(null);
   const minimapContainerRef = useRef<HTMLDivElement | null>(null);
+  const envelopeRef = useRef<EnvelopePlugin | null>(null);
+  const recordPluginRef = useRef<RecordPlugin | null>(null);
+  const disableDragSelectionRef = useRef<(() => void) | null>(null);
   const isInitializingRef = useRef<boolean>(false);
   const currentAudioUrlRef = useRef<string>("");
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [envelopeEnabled, setEnvelopeEnabled] = useState(false);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [isRecordPaused, setIsRecordPaused] = useState(false);
+  const [exportOverwriteOpen, setExportOverwriteOpen] = useState(false);
+  const exportOverwriteResolverRef = useRef<((choice: "abort" | "overwrite") => void) | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const setEdits = useSampleEditsStore((s) => s.setEdits);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -50,6 +122,22 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
   const [playbackRate, setPlaybackRate] = useState(1);
   const [normalize, setNormalize] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [waveformHeight, setWaveformHeight] = useState(200);
+  const [debouncedWaveformHeight, setDebouncedWaveformHeight] = useState(200);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedWaveformHeight(waveformHeight), 150);
+    return () => clearTimeout(t);
+  }, [waveformHeight]);
+  const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
+  const [exportFilenameOpen, setExportFilenameOpen] = useState(false);
+  const [exportFilename, setExportFilename] = useState("");
+  const exportFilenameResolverRef = useRef<((name: string | null) => void) | null>(null);
+  const lastRecordedBlobRef = useRef<Blob | null>(null);
+
+  const getExportBlobForEmptyState = useCallback(async (): Promise<Blob | null> => {
+    if (lastRecordedBlobRef.current) return lastRecordedBlobRef.current;
+    return null;
+  }, []);
 
   // Drag state for zoom and navigation
   const dragStateRef = useRef<{
@@ -57,64 +145,81 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
     startY: number;
     startX: number;
     startZoom: number;
-    startTime: number;
+    startScroll: number;
     isMinimapDrag: boolean;
-    hasMoved: boolean; // Track if mouse has moved enough to consider it a drag
+    hasMoved: boolean;
   } | null>(null);
 
-  // Handle mouse down on minimap (for navigation)
-  const handleMinimapMouseDown = useCallback((e: MouseEvent) => {
-    if (!wavesurferRef.current || !minimapContainerRef.current || isLoading) return;
-    const rect = minimapContainerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const width = rect.width;
-    
-    // Calculate time based on click position
-    const currentDuration = wavesurferRef.current.getDuration();
-    if (!currentDuration) return;
-    
-    const clickTime = (x / width) * currentDuration;
-    
-    dragStateRef.current = {
-      isDragging: false, // Will be set to true once movement threshold is reached
-      startY: e.clientY,
-      startX: e.clientX,
-      startZoom: zoom,
-      startTime: clickTime,
-      isMinimapDrag: true,
-      hasMoved: false,
-    };
-    
-    // Seek to clicked position immediately (click behavior)
-    wavesurferRef.current.seekTo(clickTime / currentDuration);
-    e.preventDefault();
-  }, [zoom, isLoading]);
+  // Handle mouse down on minimap: click=seek, drag=zoom (vertical) + scroll (horizontal)
+  const handleMinimapMouseDown = useCallback(
+    (e: MouseEvent) => {
+      if (!wavesurferRef.current || !minimapContainerRef.current || isLoading) return;
+      const rect = minimapContainerRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const width = rect.width;
+      const currentDuration = wavesurferRef.current.getDuration();
+      if (!currentDuration) return;
+
+      const clickTime = (x / width) * currentDuration;
+      let startScroll = 0;
+      try {
+        startScroll = wavesurferRef.current.getScroll();
+      } catch {
+        /* getScroll may not exist in some versions */
+      }
+
+      dragStateRef.current = {
+        isDragging: false,
+        startY: e.clientY,
+        startX: e.clientX,
+        startZoom: zoom,
+        startScroll,
+        isMinimapDrag: true,
+        hasMoved: false,
+      };
+
+      // Click: seek to position
+      wavesurferRef.current.seekTo(clickTime / currentDuration);
+      e.preventDefault();
+    },
+    [zoom, isLoading],
+  );
 
   // Handle mouse down on waveform (for zoom)
   const handleWaveformMouseDown = (e: React.MouseEvent) => {
     if (!wavesurferRef.current || isLoading) return;
     dragStateRef.current = {
-      isDragging: false, // Will be set to true once movement threshold is reached
+      isDragging: false,
       startY: e.clientY,
       startX: e.clientX,
       startZoom: zoom,
-      startTime: wavesurferRef.current.getCurrentTime(),
+      startScroll: 0,
       isMinimapDrag: false,
       hasMoved: false,
     };
-    // Don't prevent default - allow normal click behavior unless it becomes a drag
   };
 
   // Get audio file as blob data URL for WaveSurfer
   // WaveSurfer needs to fetch the audio file to generate waveform, so we use blob data URLs
   // which work with Fetch API (unlike custom protocol URLs)
   useEffect(() => {
+    if (!filePath || !paneType) {
+      if (isEmptyState) {
+        // Use minimal silent WAV for empty state so Record plugin has a container
+        const silentWav = createSilentWavDataUrl(1);
+        setAudioUrl(silentWav);
+        setErrorMessage("");
+      } else {
+        setAudioUrl("");
+        setIsLoading(false);
+        setErrorMessage("");
+      }
+      return;
+    }
     async function loadAudioUrl() {
       try {
-        const { fileSystemService } = await import("@/lib/fileSystem");
-        
         // Check file size first to avoid loading huge files
-        const statsResult = await fileSystemService.getFileStats(filePath, paneType);
+        const statsResult = await fileSystemService.getFileStats(filePath!, paneType!);
         if (statsResult.success && statsResult.data) {
           const fileSizeMB = statsResult.data.size / (1024 * 1024);
           // Warn for very large files but still try to load
@@ -142,7 +247,7 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
     }
 
     loadAudioUrl();
-  }, [filePath]);
+  }, [filePath, paneType, isEmptyState]);
 
   // Stop playback when file changes
   useEffect(() => {
@@ -247,16 +352,16 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
       // MediaElement backend is more stable and doesn't create multiple audio contexts/streams
       // This prevents the "Number of opened output audio streams exceed the max" error
 
-      // Create WaveSurfer instance with Ableton Live color scheme
+      // Create WaveSurfer instance - entire waveform in darker grey (no progress color)
       const wavesurfer = WaveSurfer.create({
         container: waveformRef.current,
-        waveColor: "#E0E0E0", // Light grey/white waveform (Ableton style)
-        progressColor: "#FF764D", // Orange progress (Ableton orange)
-        cursorColor: "#FF764D", // Orange cursor (Ableton orange)
+        waveColor: "#9E9E9E", // Darker grey waveform
+        progressColor: "#9E9E9E", // Same grey (no orange to left of playhead)
+        cursorColor: "#757575", // Slightly darker for cursor
         barWidth: 2,
         barRadius: 3,
         barGap: 1,
-        height: 100,
+        height: debouncedWaveformHeight,
         normalize: normalize,
         backend: "MediaElement", // Use MediaElement to avoid audio context/stream issues
         mediaControls: false,
@@ -269,6 +374,50 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
       const regions = RegionsPlugin.create();
       regionsRef.current = regions;
       wavesurfer.registerPlugin(regions);
+
+      // Add Envelope plugin (always registered; shown/active when envelopeEnabled)
+      const envelope = EnvelopePlugin.create({
+        volume: 1,
+        points: [
+          { time: 0, volume: 1 },
+          { time: 1, volume: 1 },
+        ],
+      });
+      envelopeRef.current = envelope;
+      wavesurfer.registerPlugin(envelope);
+
+      // Add Record plugin
+      const recordPlugin = RecordPlugin.create({
+        renderRecordedAudio: true,
+        scrollingWaveform: true,
+      });
+      recordPluginRef.current = recordPlugin;
+      wavesurfer.registerPlugin(recordPlugin);
+      recordPlugin.on("record-end", async (blob: Blob) => {
+        if (cancelled) return;
+        setIsRecording(false);
+        setIsRecordPaused(false);
+        lastRecordedBlobRef.current = blob;
+        if (filePath && paneType) {
+          try {
+            const dirPath = filePath.substring(0, filePath.lastIndexOf("/")) || "/";
+            const baseName = filePath.substring(filePath.lastIndexOf("/") + 1);
+            const nameWithoutExt = baseName.replace(/\.[^.]+$/, "");
+            const newName = `${nameWithoutExt}_recorded_${Date.now()}.wav`;
+            const file = new File([blob], newName, { type: "audio/wav" });
+            const result = await fileSystemService.addFileFromDrop(file, dirPath, paneType);
+            if (result.success) {
+              toast.success(`Recorded and saved: ${newName}`);
+            } else {
+              toast.error(result.error || "Failed to save recording");
+            }
+          } catch (err) {
+            toast.error(String(err));
+          }
+        } else {
+          toast.success("Recording complete. Use Export to save.");
+        }
+      });
 
       // Add Timeline plugin
       const timeline = TimelinePlugin.create({
@@ -289,8 +438,8 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
       const minimap = MinimapPlugin.create({
         height: 40,
         insertPosition: "afterend",
-        waveColor: "#C0C0C0", // Light grey for minimap waveform (Ableton style)
-        progressColor: "#FF764D80", // Orange progress with transparency (Ableton orange)
+        waveColor: "#9E9E9E",
+        progressColor: "#9E9E9E",
       });
       minimapRef.current = minimap;
       wavesurfer.registerPlugin(minimap);
@@ -303,9 +452,21 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
         }
         console.log("WaveSurfer ready");
         isInitializingRef.current = false;
-        setDuration(wavesurfer.getDuration());
+        const dur = wavesurfer.getDuration();
+        setDuration(dur);
         setIsLoading(false);
         setErrorMessage("");
+
+        // Update envelope points to span full duration
+        if (envelopeRef.current && dur > 0) {
+          const pts = envelopeRef.current.getPoints();
+          if (pts.length >= 2) {
+            envelopeRef.current.setPoints([
+              { time: 0, volume: pts[0]?.volume ?? 1 },
+              { time: dur, volume: pts[pts.length - 1]?.volume ?? 1 },
+            ]);
+          }
+        }
 
         // Set initial zoom
         wavesurfer.zoom(zoom);
@@ -346,6 +507,35 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
         if (isFinite(percent)) {
           console.log("Loading:", percent + "%");
         }
+      });
+
+      // Sync region changes to store
+      regions.on("region-updated", (region) => {
+        if (cancelled) return;
+        const pts = envelope.getPoints();
+        setEdits(filePath, {
+          region: { start: region.start, end: region.end },
+          envelopePoints: pts.length > 0 ? pts : undefined,
+        });
+      });
+      regions.on("region-removed", () => {
+        if (cancelled) return;
+        const pts = envelope.getPoints();
+        setEdits(filePath, {
+          region: null,
+          envelopePoints: pts.length > 0 ? pts : undefined,
+        });
+      });
+
+      // Sync envelope changes to store
+      envelope.on("points-change", (newPoints) => {
+        if (cancelled) return;
+        const regs = regions.getRegions();
+        const r = regs[0];
+        setEdits(filePath, {
+          region: r ? { start: r.start, end: r.end } : undefined,
+          envelopePoints: newPoints.length > 0 ? newPoints : undefined,
+        });
       });
 
       // Load audio - wrap in try-catch to handle potential promise rejections
@@ -409,28 +599,34 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
       regionsRef.current = null;
       timelineRef.current = null;
       minimapRef.current = null;
+      envelopeRef.current = null;
+      recordPluginRef.current = null;
+      if (disableDragSelectionRef.current) {
+        disableDragSelectionRef.current();
+        disableDragSelectionRef.current = null;
+      }
       setIsPlaying(false);
     };
-  }, [audioUrl, normalize, fileName]); // Removed handleMinimapMouseDown - it's attached in a separate effect
+  }, [audioUrl, normalize, fileName, filePath, setEdits, debouncedWaveformHeight]);
 
   // Effect to find and attach handler to minimap element after it's created
   useEffect(() => {
     if (isLoading || !duration) return;
 
-    // Find the minimap element (it's created after the waveform by the plugin)
+    // Find the minimap element (inserted after waveform by WaveSurfer with part="minimap")
     const findMinimap = () => {
       if (waveformRef.current) {
-        // The minimap is typically the next sibling element
-        const minimapElement = waveformRef.current.nextElementSibling as HTMLElement;
-        if (minimapElement && minimapElement.querySelector('wave')) {
-          // Found the minimap element
+        // Try next sibling first (insertPosition: afterend)
+        let minimapElement =
+          (waveformRef.current.nextElementSibling as HTMLElement) ||
+          (waveformRef.current.parentElement?.querySelector('[part="minimap"]') as HTMLElement);
+        if (minimapElement) {
           if (minimapContainerRef.current !== minimapElement) {
-            // Remove old listener if exists
             if (minimapContainerRef.current) {
               minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
             }
             minimapContainerRef.current = minimapElement;
-            minimapElement.style.cursor = "ew-resize";
+            minimapElement.style.cursor = "crosshair";
             minimapElement.addEventListener("mousedown", handleMinimapMouseDown);
           }
           return true;
@@ -439,19 +635,23 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
       return false;
     };
 
-    // Try to find minimap immediately
     if (!findMinimap()) {
-      // If not found, try again after a short delay
-      const timeout = setTimeout(() => {
-        findMinimap();
-      }, 200);
-      return () => clearTimeout(timeout);
+      const timeout = setTimeout(findMinimap, 100);
+      const timeout2 = setTimeout(findMinimap, 500);
+      return () => {
+        clearTimeout(timeout);
+        clearTimeout(timeout2);
+        if (minimapContainerRef.current) {
+          minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+          minimapContainerRef.current = null;
+        }
+      };
     }
 
     return () => {
-      // Cleanup: remove event listener
       if (minimapContainerRef.current) {
         minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+        minimapContainerRef.current = null;
       }
     };
   }, [isLoading, duration, handleMinimapMouseDown]);
@@ -477,15 +677,52 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
     }
   }, [volume]);
 
-  const togglePlayPause = () => {
-    if (!wavesurferRef.current) return;
+  // Sync region drag selection with envelope toggle
+  useEffect(() => {
+    if (!regionsRef.current || isLoading) return;
 
+    // Clean up previous
+    if (disableDragSelectionRef.current) {
+      disableDragSelectionRef.current();
+      disableDragSelectionRef.current = null;
+    }
+
+    if (!envelopeEnabled) {
+      const disable = regionsRef.current.enableDragSelection({
+        color: "rgba(255, 118, 77, 0.3)",
+        drag: true,
+        resize: true,
+      });
+      disableDragSelectionRef.current = disable;
+    }
+  }, [envelopeEnabled, isLoading]);
+
+  const togglePlayPause = useCallback(() => {
+    if (!wavesurferRef.current || isLoading) return;
     if (isPlaying) {
       wavesurferRef.current.pause();
     } else {
       wavesurferRef.current.play();
     }
-  };
+  }, [isPlaying, isLoading]);
+
+  // Spacebar to start/stop playback (playback resumes from current position)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      togglePlayPause();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [togglePlayPause]);
 
   const skipBackward = () => {
     if (!wavesurferRef.current) return;
@@ -577,6 +814,130 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const handleExport = async () => {
+    if (isExporting) return;
+    if (isEmptyState || !filePath || !paneType) {
+      setExportFilename("recording.wav");
+      setExportFilenameOpen(true);
+      const name = await new Promise<string | null>((resolve) => {
+        exportFilenameResolverRef.current = resolve;
+      });
+      setExportFilenameOpen(false);
+      if (!name?.trim()) return;
+      const blob = await getExportBlobForEmptyState();
+      if (!blob) {
+        toast.error("No audio to export. Record or load a file first.");
+        return;
+      }
+      const safeName = name.trim().replace(/\.wav$/i, "") + ".wav";
+      const result = await fileSystemService.addFileFromDrop(
+        new File([blob], safeName, { type: "audio/wav" }),
+        "/",
+        paneType || "source"
+      );
+      if (result.success) {
+        toast.success(`Exported ${safeName}`);
+      } else {
+        toast.error(result.error || "Export failed");
+      }
+      return;
+    }
+    const blobResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
+    if (!blobResult.success || !blobResult.data) {
+      toast.error(blobResult.error || "Failed to load audio");
+      return;
+    }
+    const blob = await fetch(blobResult.data).then((r) => r.blob());
+    const regs = regionsRef.current?.getRegions() ?? [];
+    const region = regs[0];
+    const regionStart = region?.start ?? 0;
+    const regionEnd = region?.end ?? duration;
+    const pts = envelopeRef.current?.getPoints() ?? [];
+    const envelopePoints = pts.length > 0 ? pts : undefined;
+
+    const statsResult = await fileSystemService.getFileStats(filePath, paneType);
+    const willOverwrite = statsResult.success && statsResult.data;
+
+    if (willOverwrite) {
+      setExportOverwriteOpen(true);
+      const choice = await new Promise<"abort" | "overwrite">((resolve) => {
+        exportOverwriteResolverRef.current = resolve;
+      });
+      if (choice === "abort") return;
+    }
+
+    setIsExporting(true);
+    try {
+      const exported = await exportAudioWithEdits(
+        blob,
+        { regionStart, regionEnd, envelopePoints },
+        duration
+      );
+      const result = await fileSystemService.writeBlobToPath(filePath, exported, paneType);
+      if (result.success) {
+        toast.success(`Exported ${fileName}`);
+      } else {
+        toast.error(result.error || "Export failed");
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportOverwriteChoice = (choice: "abort" | "overwrite") => {
+    setExportOverwriteOpen(false);
+    exportOverwriteResolverRef.current?.(choice);
+    exportOverwriteResolverRef.current = null;
+  };
+
+  const refreshAudioDevices = async () => {
+    try {
+      const devices = await RecordPlugin.getAvailableAudioDevices();
+      setAudioDevices(devices);
+      if (devices.length > 0 && !selectedDeviceId) {
+        setSelectedDeviceId(devices[0].deviceId);
+      }
+    } catch {
+      setAudioDevices([]);
+    }
+  };
+
+  const handleStartRecord = async () => {
+    const plugin = recordPluginRef.current;
+    if (!plugin || !wavesurferRef.current) return;
+    try {
+      const opts = selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : undefined;
+      await plugin.startRecording(opts);
+      setIsRecording(true);
+      setIsRecordPaused(false);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  };
+
+  const handleStopRecord = async () => {
+    const plugin = recordPluginRef.current;
+    if (!plugin) return;
+    plugin.stopRecording();
+  };
+
+  const handlePauseRecord = () => {
+    const plugin = recordPluginRef.current;
+    if (!plugin) return;
+    plugin.pauseRecording();
+    setIsRecordPaused(true);
+  };
+
+  const handleResumeRecord = () => {
+    const plugin = recordPluginRef.current;
+    if (!plugin) return;
+    plugin.resumeRecording();
+    setIsRecordPaused(false);
+  };
+
+
   // Handle mouse move for drag operations
   useEffect(() => {
     const DRAG_THRESHOLD = 5; // Pixels of movement before considering it a drag
@@ -586,8 +947,8 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
 
       const deltaY = Math.abs(e.clientY - dragStateRef.current.startY);
       const deltaX = Math.abs(e.clientX - dragStateRef.current.startX);
-      const hasMovedEnough = dragStateRef.current.isMinimapDrag 
-        ? deltaX > DRAG_THRESHOLD 
+      const hasMovedEnough = dragStateRef.current.isMinimapDrag
+        ? deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD
         : deltaY > DRAG_THRESHOLD;
 
       // Mark as dragging once threshold is reached
@@ -604,13 +965,22 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
       const currentDuration = wavesurferRef.current.getDuration();
 
       if (dragStateRef.current.isMinimapDrag) {
-        // Horizontal drag on minimap - navigate the waveform
-        if (minimapContainerRef.current && currentDuration) {
-          const rect = minimapContainerRef.current.getBoundingClientRect();
-          const width = rect.width;
-          const relativeX = (e.clientX - rect.left) / width;
-          const newTime = Math.max(0, Math.min(currentDuration, relativeX * currentDuration));
-          wavesurferRef.current.seekTo(newTime / currentDuration);
+        // Minimap: vertical = zoom (up=in, down=out), horizontal = scroll visible area
+        const actualDeltaY = e.clientY - dragStateRef.current.startY;
+        const actualDeltaX = e.clientX - dragStateRef.current.startX;
+        // Vertical: zoom - drag up = zoom in, drag down = zoom out
+        const zoomDelta = -actualDeltaY * 0.5;
+        const newZoom = Math.max(0, Math.min(500, dragStateRef.current.startZoom + zoomDelta));
+        setZoom(newZoom);
+        // Horizontal: scroll visible area - drag right = scroll right, drag left = scroll left
+        try {
+          const ws = wavesurferRef.current;
+          if (typeof ws.getScroll === "function" && typeof ws.setScroll === "function") {
+            const newScroll = Math.max(0, dragStateRef.current.startScroll + actualDeltaX);
+            ws.setScroll(newScroll);
+          }
+        } catch {
+          /* scroll API may not exist */
         }
       } else {
         // Vertical drag on main waveform - zoom in/out
@@ -623,8 +993,29 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
       }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
+      const state = dragStateRef.current;
       dragStateRef.current = null;
+      // If it was a click (no drag) on the main waveform, seek to that position
+      if (
+        state &&
+        !state.hasMoved &&
+        !state.isMinimapDrag &&
+        waveformRef.current &&
+        wavesurferRef.current &&
+        !isLoading
+      ) {
+        const rect = waveformRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const width = rect.width;
+        if (width > 0 && x >= 0 && x <= width) {
+          const currentDuration = wavesurferRef.current.getDuration();
+          if (currentDuration > 0) {
+            const seekTime = (x / width) * currentDuration;
+            wavesurferRef.current.seekTo(seekTime / currentDuration);
+          }
+        }
+      }
     };
 
     // Always attach listeners - they'll only fire if dragStateRef.current exists
@@ -637,16 +1028,52 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
     };
   }, []);
 
+  const handleResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startY = e.clientY;
+      const startH = waveformHeight;
+      heightDragStartRef.current = { y: startY, h: startH };
+
+      const handleMove = (moveE: MouseEvent) => {
+        if (!heightDragStartRef.current) return;
+        moveE.preventDefault();
+        const dy = moveE.clientY - heightDragStartRef.current.y;
+        // Drag down = smaller, drag up = bigger (inverted so handle at top behaves intuitively)
+        const newH = Math.max(80, Math.min(500, heightDragStartRef.current.h - dy));
+        setWaveformHeight(newH);
+      };
+      const handleUp = () => {
+        heightDragStartRef.current = null;
+        window.removeEventListener("mousemove", handleMove, true);
+        window.removeEventListener("mouseup", handleUp, true);
+      };
+      // Use capture phase so we receive events before other handlers
+      window.addEventListener("mousemove", handleMove, true);
+      window.addEventListener("mouseup", handleUp, true);
+    },
+    [waveformHeight],
+  );
+
   return (
     <div className="border-t border-border bg-card p-4 space-y-3 shrink-0" data-testid={`audio-preview-${paneType}`}>
+      {/* Resize handle at very top - drag to adjust waveform height */}
+      <div
+        className="h-4 w-full cursor-ns-resize flex items-center justify-center hover:bg-muted/50 rounded transition-colors shrink-0 select-none touch-none"
+        onMouseDown={handleResizeMouseDown}
+        title="Drag to resize"
+      >
+        <div className="w-12 h-0.5 bg-muted-foreground/40 rounded pointer-events-none" />
+      </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <span
             data-testid="audio-preview-filename"
-            title={fileName}
+            title={fileName ?? "Waveform Editor"}
             className="block max-w-full text-sm font-semibold uppercase tracking-wide text-muted-foreground truncate"
           >
-            Preview: {fileName}
+            {fileName ? `Preview: ${fileName}` : "Waveform Editor"}
           </span>
         </div>
         <Button
@@ -670,22 +1097,64 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
         </div>
       )}
 
-      {/* Waveform */}
-      <div className="space-y-2">
-        <div 
-          ref={waveformRef} 
-          className="w-full cursor-ns-resize" 
+      {/* Waveform - resizable height (overflow-hidden to contain minimap) */}
+      <div
+        className="relative overflow-hidden"
+        style={{ minHeight: debouncedWaveformHeight + 60 }}
+      >
+        <div
+          ref={waveformRef}
+          className="w-full cursor-pointer"
+          style={{ height: debouncedWaveformHeight }}
           onMouseDown={handleWaveformMouseDown}
         />
-        {isLoading && (
-          <div className="flex items-center justify-center py-4">
+        {isLoading && !isEmptyState && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/50">
             <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        {isEmptyState && !audioUrl && (
+          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
+            Record or load a file to get started
+          </div>
+        )}
+        {/* Playhead overlay with dragger handle - only when we have audio */}
+        {!isEmptyState && duration > 0 && (
+          <div
+            className="absolute top-0 bottom-8 left-0 w-0.5 pointer-events-none z-10"
+            style={{
+              left: `${(currentTime / duration) * 100}%`,
+              backgroundColor: "#757575",
+            }}
+          >
+            <div
+              className="absolute -top-1 -left-2 w-4 h-3 rounded-sm bg-primary cursor-ew-resize pointer-events-auto shadow-sm border border-border"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                const startX = e.clientX;
+                const startTime = currentTime;
+                const handleMove = (moveE: MouseEvent) => {
+                  const rect = waveformRef.current?.getBoundingClientRect();
+                  if (!rect || !wavesurferRef.current) return;
+                  const dx = moveE.clientX - startX;
+                  const timeDelta = (dx / rect.width) * duration;
+                  const newTime = Math.max(0, Math.min(duration, startTime + timeDelta));
+                  wavesurferRef.current.seekTo(newTime / duration);
+                };
+                const handleUp = () => {
+                  window.removeEventListener("mousemove", handleMove);
+                  window.removeEventListener("mouseup", handleUp);
+                };
+                window.addEventListener("mousemove", handleMove);
+                window.addEventListener("mouseup", handleUp);
+              }}
+            />
           </div>
         )}
       </div>
 
-      {/* Playback Controls */}
-      <div className="flex items-center gap-3 flex-wrap" style={{ minHeight: "2rem" }}>
+      {/* Playback Controls - z-10 ensures they stay above minimap */}
+      <div className="relative z-10 flex items-center gap-3 flex-wrap" style={{ minHeight: "2rem" }}>
         <div className="flex items-center gap-2 shrink-0">
           <Button
             size="sm"
@@ -726,18 +1195,6 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
           <span>{formatTime(duration)}</span>
         </div>
 
-        {/* Progress Slider */}
-        <div className="flex-1 shrink min-w-0" style={{ minWidth: "150px" }}>
-          <Slider
-            value={[currentTime]}
-            max={duration || 100}
-            step={0.1}
-            onValueChange={handleSeek}
-            disabled={isLoading || duration === 0}
-            className="cursor-pointer"
-          />
-        </div>
-
         {/* Volume Control */}
         <div className="flex items-center gap-2 shrink-0" style={{ width: "128px", minWidth: "128px" }}>
           <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -751,8 +1208,8 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
         </div>
       </div>
 
-      {/* Advanced Controls */}
-      <div className="flex items-center gap-4 flex-wrap pt-2 border-t border-border">
+      {/* Advanced Controls - z-10 ensures they stay above minimap */}
+      <div className="relative z-10 flex items-center gap-4 flex-wrap pt-2 border-t border-border">
         {/* Zoom Controls */}
         <div className="flex items-center gap-2">
           <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleZoomOut} disabled={isLoading}>
@@ -790,6 +1247,34 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
           <span className="text-xs text-muted-foreground font-mono min-w-[40px]">{playbackRate.toFixed(2)}x</span>
         </div>
 
+        {/* Envelope Toggle */}
+        <Button
+          size="sm"
+          variant={envelopeEnabled ? "default" : "outline"}
+          className="h-7 gap-2"
+          onClick={() => setEnvelopeEnabled(!envelopeEnabled)}
+          disabled={isLoading}
+        >
+          <Activity className="w-3.5 h-3.5" />
+          Envelope
+        </Button>
+
+        {/* Export Button */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-2"
+          onClick={handleExport}
+          disabled={isLoading || isExporting}
+        >
+          {isExporting ? (
+            <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Download className="w-3.5 h-3.5" />
+          )}
+          Export
+        </Button>
+
         {/* Advanced Controls Collapsible */}
         <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen}>
           <CollapsibleTrigger asChild>
@@ -808,49 +1293,163 @@ export const AudioPreview = ({ filePath, fileName, onClose, paneType = "source" 
             </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2">
-            <div className="flex items-center gap-4 flex-wrap">
-              {/* Normalize Toggle */}
-              <Button
-                size="sm"
-                variant={normalize ? "default" : "outline"}
-                className="h-7 gap-2"
-                onClick={() => setNormalize(!normalize)}
-                disabled={isLoading}
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Normalize
-              </Button>
-
-              {/* Region Controls */}
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addRegion} disabled={isLoading}>
-                  Add Region
-                </Button>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearRegions} disabled={isLoading}>
-                  Clear Regions
-                </Button>
-              </div>
-
-              {/* Marker Controls */}
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
+                {/* Normalize Toggle */}
                 <Button
                   size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1"
-                  onClick={addMarker}
+                  variant={normalize ? "default" : "outline"}
+                  className="h-7 gap-2"
+                  onClick={() => setNormalize(!normalize)}
                   disabled={isLoading}
                 >
-                  <Map className="w-3 h-3" />
-                  Add Marker
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Normalize
                 </Button>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearMarkers} disabled={isLoading}>
-                  Clear Markers
-                </Button>
+
+                {/* Region Controls */}
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addRegion} disabled={isLoading}>
+                    Add Region
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearRegions} disabled={isLoading}>
+                    Clear Regions
+                  </Button>
+                </div>
+
+                {/* Marker Controls */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1"
+                    onClick={addMarker}
+                    disabled={isLoading}
+                  >
+                    <Map className="w-3 h-3" />
+                    Add Marker
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={clearMarkers} disabled={isLoading}>
+                    Clear Markers
+                  </Button>
+                </div>
+              </div>
+
+              {/* Record Section */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-border">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <Mic className="w-3.5 h-3.5" />
+                  Record
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={refreshAudioDevices}
+                  >
+                    Refresh devices
+                  </Button>
+                  {audioDevices.length > 0 && (
+                    <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+                      <SelectTrigger className="h-7 w-[200px]">
+                        <SelectValue placeholder="Select input device" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {audioDevices.map((d) => (
+                          <SelectItem key={d.deviceId} value={d.deviceId}>
+                            {d.label || `Device ${d.deviceId.slice(0, 8)}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {!isRecording ? (
+                    <Button size="sm" variant="default" className="h-7 gap-1" onClick={handleStartRecord}>
+                      <Mic className="w-3 h-3" />
+                      Record
+                    </Button>
+                  ) : (
+                    <>
+                      <Button size="sm" variant="secondary" className="h-7 gap-1" onClick={handleStopRecord}>
+                        <Square className="w-3 h-3" />
+                        Stop
+                      </Button>
+                      {isRecordPaused ? (
+                        <Button size="sm" variant="outline" className="h-7 gap-1" onClick={handleResumeRecord}>
+                          Record
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="h-7 gap-1" onClick={handlePauseRecord}>
+                          Pause
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </CollapsibleContent>
         </Collapsible>
       </div>
+
+      <ExportOverwriteDialog
+        open={exportOverwriteOpen}
+        fileName={fileName ?? "file"}
+        onChoice={handleExportOverwriteChoice}
+      />
+
+      {/* Export filename prompt for empty state */}
+      <Dialog
+        open={exportFilenameOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            exportFilenameResolverRef.current?.(null);
+            exportFilenameResolverRef.current = null;
+            setExportFilename("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export As</DialogTitle>
+            <DialogDescription>Enter a filename for the exported audio.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="export-filename">Filename</Label>
+              <Input
+                id="export-filename"
+                value={exportFilename}
+                onChange={(e) => setExportFilename(e.target.value)}
+                placeholder="recording.wav"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    exportFilenameResolverRef.current?.(exportFilename.trim() || "recording.wav");
+                    exportFilenameResolverRef.current = null;
+                    setExportFilenameOpen(false);
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportFilenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                exportFilenameResolverRef.current?.(exportFilename.trim() || "recording.wav");
+                exportFilenameResolverRef.current = null;
+                setExportFilenameOpen(false);
+              }}
+              disabled={!exportFilename.trim()}
+            >
+              Export
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

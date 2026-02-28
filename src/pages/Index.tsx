@@ -18,10 +18,14 @@ import {
 } from "@/components/ui/dialog";
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
-import { Play, HelpCircle } from "lucide-react";
+import { Play, HelpCircle, Activity } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useSampleEditsStore } from "@/stores/sample-edits-store";
+import { useShallow } from "zustand/react/shallow";
+import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { MultiSampleStack } from "@/components/MultiSampleStack";
+import { AudioPreview } from "@/components/AudioPreview";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
@@ -91,6 +95,16 @@ const Index = () => {
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
+  const waveformEditor = useWaveformEditorStore(
+    useShallow((s) => ({
+      isOpen: s.isOpen,
+      filePath: s.filePath,
+      fileName: s.fileName,
+      paneType: s.paneType,
+      isEmptyState: s.isEmptyState,
+      close: s.close,
+    }))
+  );
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<{
     isVisible: boolean;
@@ -367,6 +381,8 @@ const Index = () => {
           continue;
         }
 
+        const sampleEdits = useSampleEditsStore.getState().getEdits(entry.path);
+
         const result = await fileSystemService.convertAndCopyFile(
           entry.path,
           destDir,
@@ -386,6 +402,7 @@ const Index = () => {
           conversionAbortControllerRef.current.signal,
           formatSettings.shortenFilename,
           formatSettings.shortenFilenameMaxLength,
+          sampleEdits,
         );
         if (!result.success) {
           if (result.cancelled || conversionCancelRequestedRef.current) {
@@ -635,6 +652,16 @@ const Index = () => {
           >
             Multi
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Waveform editor"
+            data-testid="waveform-editor-button"
+            onClick={() => useWaveformEditorStore.getState().open()}
+          >
+            <Activity className="w-4 h-4 mr-1" />
+            Waveform
+          </Button>
         </div>
         <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
           <Play className="w-4 h-4" />
@@ -799,6 +826,15 @@ const Index = () => {
             />
           </ResizablePanel>
         </ResizablePanelGroup>
+        {waveformEditor.isOpen && (
+          <AudioPreview
+            filePath={waveformEditor.filePath}
+            fileName={waveformEditor.fileName}
+            paneType={waveformEditor.paneType}
+            isEmptyState={waveformEditor.isEmptyState}
+            onClose={waveformEditor.close}
+          />
+        )}
         {previewMode === "multi" && <MultiSampleStack className="shrink-0" />}
       </div>
 
