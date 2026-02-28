@@ -51,7 +51,7 @@ export const DEVICE_PRESETS: FormatPreset[] = [
   },
   {
     id: "digitakt-v1",
-    name: "Digitakt (v1)",
+    name: "Digitakt I",
     settings: {
       ...DEFAULT_FORMAT_SETTINGS,
       fileFormat: "WAV",
