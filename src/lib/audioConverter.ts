@@ -19,6 +19,11 @@ export function cancelActiveConversion(): void {
   isInitializing = false;
 }
 
+export interface EnvelopePoint {
+  time: number;
+  volume: number;
+}
+
 interface ConversionOptions {
   sampleRate?: number;
   bitDepth?: '16-bit' | 'dont-change';
@@ -33,6 +38,12 @@ interface ConversionOptions {
   targetTempo?: number;
   /** Source BPM (detected from path). Requires targetTempo. */
   sourceTempo?: number;
+  /** Region trim start (seconds). Applied before FFmpeg. */
+  regionStart?: number;
+  /** Region trim end (seconds). Applied before FFmpeg. */
+  regionEnd?: number;
+  /** Volume envelope points. Applied before FFmpeg. */
+  envelopePoints?: EnvelopePoint[];
 }
 
 async function initializeFFmpeg(): Promise<FFmpeg> {
@@ -152,6 +163,29 @@ export async function convertAudio(
   inputFile: File,
   options: ConversionOptions
 ): Promise<Blob> {
+  let fileToConvert = inputFile;
+
+  // Pre-process with region trim and envelope if specified
+  if (
+    options.regionStart != null ||
+    options.regionEnd != null ||
+    (options.envelopePoints && options.envelopePoints.length > 0)
+  ) {
+    const { exportAudioWithEdits } = await import('./exportAudio');
+    const blob = await exportAudioWithEdits(
+      inputFile,
+      {
+        regionStart: options.regionStart,
+        regionEnd: options.regionEnd,
+        envelopePoints: options.envelopePoints,
+      },
+      0
+    );
+    fileToConvert = new File([blob], inputFile.name.replace(/\.[^.]+$/, '.wav') || 'input.wav', {
+      type: 'audio/wav',
+    });
+  }
+
   const ffmpeg = await initializeFFmpeg();
 
   const inputFileName = 'input.wav';
@@ -159,12 +193,12 @@ export async function convertAudio(
 
   try {
     // Write input file to FFmpeg virtual filesystem
-    await ffmpeg.writeFile(inputFileName, await fetchFile(inputFile));
+    await ffmpeg.writeFile(inputFileName, await fetchFile(fileToConvert));
 
     // Detect silence at start if needed
     let silenceStartTime = 0;
     if (options.trimStart) {
-      silenceStartTime = await detectSilenceStart(inputFile, ffmpeg);
+      silenceStartTime = await detectSilenceStart(fileToConvert, ffmpeg);
       console.log(`Detected silence at start: ${silenceStartTime} seconds`);
     }
 
@@ -277,6 +311,9 @@ export function needsConversion(options: ConversionOptions): boolean {
     options.trimStart ||
     options.pitchToC ||
     options.targetTempo ||
-    options.sourceTempo
+    options.sourceTempo ||
+    options.regionStart != null ||
+    options.regionEnd != null ||
+    (options.envelopePoints && options.envelopePoints.length > 0)
   );
 }

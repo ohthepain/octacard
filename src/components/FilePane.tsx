@@ -37,7 +37,6 @@ import { Progress } from "@/components/ui/progress";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { useFavorites } from "@/hooks/use-favorites";
-import { AudioPreview } from "@/components/AudioPreview";
 import { VideoPreview } from "@/components/VideoPreview";
 import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
@@ -45,6 +44,7 @@ import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
 import { toast } from "sonner";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -1437,6 +1437,10 @@ export const FilePane = ({
     };
   }, [paneName]);
 
+  // Keep ref in sync for arrow key handler (avoids stale closure when pressing keys rapidly)
+  const selectedItemsRef = useRef(selectedItems);
+  selectedItemsRef.current = selectedItems;
+
   // Handle keyboard shortcuts for deleting selected items and arrow key navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1459,13 +1463,14 @@ export const FilePane = ({
       const activeElement = document.activeElement;
       // Check if the pane contains the active element or the event target
       // Since we clear other panes' selections when clicking, only one pane should have selections
+      const currentSelected = selectedItemsRef.current;
       const isPaneFocused =
-        paneContainer.contains(activeElement) || paneContainer.contains(target) || selectedItems.size > 0;
+        paneContainer.contains(activeElement) || paneContainer.contains(target) || currentSelected.size > 0;
 
       if (!isPaneFocused) return;
 
       // Handle Delete/Backspace when items are selected
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedItems.size > 0) {
+      if ((e.key === "Delete" || e.key === "Backspace") && currentSelected.size > 0) {
         e.preventDefault();
         e.stopPropagation();
         // Call handleDelete without arguments to delete all selected items
@@ -1475,43 +1480,119 @@ export const FilePane = ({
         return;
       }
 
+      // Build itemsToRender for arrow key logic (shared by single and multi-select)
+      const currentTree = searchQuery ? buildFolderTreeFromSearchResults(searchResults, currentRootPath) : fileTree;
+      const showParentLink = currentRootPath && currentRootPath !== rootPath;
+      const itemsToRender = showParentLink
+        ? [
+            {
+              id: "parent-link",
+              name: "..",
+              type: "folder" as const,
+              path: (() => {
+                const parts = currentRootPath.split("/").filter(Boolean);
+                return currentRootPath.startsWith("/")
+                  ? "/" + parts.slice(0, -1).join("/")
+                  : parts.slice(0, -1).join("/") || "/";
+              })(),
+              loaded: false,
+            },
+            ...currentTree,
+          ]
+        : currentTree;
+      const flatNodes = getFlatNodeList(itemsToRender.filter((n) => n.id !== "parent-link"));
+
+      // Handle Arrow Up/Down (no Shift) for single-item navigation
+      if (!e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && flatNodes.length > 0) {
+        let currentIndex = lastSelectedIndex;
+        if (currentIndex < 0 || currentIndex >= flatNodes.length) {
+          if (currentSelected.size > 0) {
+            const firstSelectedId = Array.from(currentSelected)[0];
+            currentIndex = flatNodes.findIndex((n) => n.id === firstSelectedId);
+            if (currentIndex < 0) currentIndex = 0;
+          } else {
+            currentIndex = 0;
+          }
+        }
+        const newIndex =
+          e.key === "ArrowUp" ? Math.max(0, currentIndex - 1) : Math.min(flatNodes.length - 1, currentIndex + 1);
+        if (newIndex !== currentIndex || currentSelected.size !== 1) {
+          const newNode = flatNodes[newIndex];
+          if (newNode && newNode.id !== "parent-link") {
+            setSelectedItems(new Set([newNode.id]));
+            setLastSelectedIndex(newIndex);
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }
+        return;
+      }
+
+      // Handle Arrow Right to expand folder (use toggleFolder to trigger load if needed)
+      if (!e.shiftKey && e.key === "ArrowRight" && currentSelected.size > 0) {
+        const firstSelectedId = Array.from(currentSelected)[0];
+        const node = flatNodes.find((n) => n.id === firstSelectedId);
+        if (node?.type === "folder" && !expandedFolders.has(node.id)) {
+          void toggleFolder(node);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
+      // Handle Arrow Left to collapse folder or collapse parent
+      if (!e.shiftKey && e.key === "ArrowLeft" && currentSelected.size > 0) {
+        const firstSelectedId = Array.from(currentSelected)[0];
+        const node = flatNodes.find((n) => n.id === firstSelectedId);
+        if (node?.type === "folder" && expandedFolders.has(node.id)) {
+          // Collapse this folder
+          setExpandedFolders((prev) => {
+            const next = new Set(prev);
+            next.delete(node.id);
+            return next;
+          });
+          e.preventDefault();
+          e.stopPropagation();
+        } else if (node && (node.type === "file" || !expandedFolders.has(node.id))) {
+          // File or collapsed folder: collapse parent and select parent
+          const parentPath = dirname(node.path);
+          if (parentPath && parentPath !== currentRootPath) {
+            const parentNode = flatNodes.find(
+              (n) => n.type === "folder" && n.path === parentPath
+            );
+            if (parentNode && expandedFolders.has(parentNode.id)) {
+              setExpandedFolders((prev) => {
+                const next = new Set(prev);
+                next.delete(parentNode.id);
+                return next;
+              });
+              setSelectedItems(new Set([parentNode.id]));
+              setLastSelectedIndex(flatNodes.findIndex((n) => n.id === parentNode.id));
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }
+        }
+        if (!e.defaultPrevented && showParentLink && itemsToRender[0]?.id === "parent-link") {
+          // Fallback: navigate to parent folder (e.g. when at root of current view)
+          const parentNode = itemsToRender[0] as FileNode;
+          void navigateToFolder(parentNode.path);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
       // Handle Shift + Arrow Up/Down for multi-select navigation
       if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-        // Get the current file tree (accounting for search state)
-        // Compute searchResultsAsNodes if searching
-        const currentTree = searchQuery ? buildFolderTreeFromSearchResults(searchResults, currentRootPath) : fileTree;
-        if (currentTree.length === 0) return;
-
-        // Add parent link if needed (same logic as renderFileTree)
-        const showParentLink = currentRootPath && currentRootPath !== rootPath;
-        const itemsToRender = showParentLink
-          ? [
-              {
-                id: "parent-link",
-                name: "..",
-                type: "folder" as const,
-                path: (() => {
-                  const parts = currentRootPath.split("/").filter(Boolean);
-                  return currentRootPath.startsWith("/")
-                    ? "/" + parts.slice(0, -1).join("/")
-                    : parts.slice(0, -1).join("/") || "/";
-                })(),
-                loaded: false,
-              },
-              ...currentTree,
-            ]
-          : currentTree;
-
-        // Get flat list (excluding parent link)
-        const flatNodes = getFlatNodeList(itemsToRender.filter((n) => n.id !== "parent-link"));
         if (flatNodes.length === 0) return;
 
         // Find the anchor index (lastSelectedIndex or first selected item's index)
         let anchorIndex = lastSelectedIndex;
         if (anchorIndex < 0 || anchorIndex >= flatNodes.length) {
           // Find first selected item's index
-          if (selectedItems.size > 0) {
-            const firstSelectedId = Array.from(selectedItems)[0];
+          if (currentSelected.size > 0) {
+            const firstSelectedId = Array.from(currentSelected)[0];
             anchorIndex = flatNodes.findIndex((n) => n.id === firstSelectedId);
             if (anchorIndex < 0) return; // No valid selection found
           } else {
@@ -1559,6 +1640,9 @@ export const FilePane = ({
     currentRootPath,
     rootPath,
     getFlatNodeList,
+    expandedFolders,
+    navigateToFolder,
+    toggleFolder,
   ]);
 
   const navigateToParent = async () => {
@@ -3044,7 +3128,9 @@ export const FilePane = ({
                     if (previewMode === "multi") {
                       addToStack({ path: node.path, name: node.name, paneType });
                     } else {
-                      setSelectedAudioFile({ path: node.path, name: node.name });
+                      const file = { path: node.path, name: node.name };
+                      setSelectedAudioFile(file);
+                      useWaveformEditorStore.getState().openWithFile(file.path, file.name, paneType);
                     }
                     setSelectedVideoFile(null); // Clear video preview if audio is selected
                   } else if (node.type === "file" && isVideoFile(node.name)) {
@@ -3696,16 +3782,6 @@ export const FilePane = ({
             )}
           </div>
         </ScrollArea>
-
-        {/* Audio Preview - only in single mode */}
-        {previewMode === "single" && selectedAudioFile && (
-          <AudioPreview
-            filePath={selectedAudioFile.path}
-            fileName={selectedAudioFile.name}
-            onClose={() => setSelectedAudioFile(null)}
-            paneType={paneType}
-          />
-        )}
 
         {/* Video Preview */}
         {selectedVideoFile && (
