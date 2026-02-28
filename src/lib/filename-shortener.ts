@@ -70,16 +70,38 @@ export function shortenFilenames({ folderName, filenames, maxLength }: FilenameS
     const reducedTokens = reduceRedundantTokens(baseTokens, folderTokens);
     const compressedTokens = reducedTokens.map((token) => abbreviateToken(token));
     const compactBase = fitLeadingTokens(compressedTokens, split.basename, baseBudget);
+    const disambiguationSource = compressedTokens.join("_") || split.basename;
+    const disambiguationTokens = getDisambiguationTokens(disambiguationSource, compactBase);
 
     let candidate = `${compactBase}${split.extension}`;
     if (candidate.length > maxLength) {
       candidate = `${fitRawBase(compactBase, baseBudget)}${split.extension}`;
     }
 
+    if (usedNames.has(candidate)) {
+      for (let tokenCount = 1; tokenCount <= disambiguationTokens.length; tokenCount += 1) {
+        const disambiguatedBase = withTrailingDisambiguator({
+          base: compactBase,
+          disambiguationTokens,
+          tokenCount,
+          maxLength: baseBudget,
+        });
+        if (!disambiguatedBase) {
+          continue;
+        }
+        const disambiguatedCandidate = `${disambiguatedBase}${split.extension}`;
+        if (!usedNames.has(disambiguatedCandidate)) {
+          candidate = disambiguatedCandidate;
+          break;
+        }
+      }
+    }
+
+    const numericCollisionBase = getNumericFallbackBase(compactBase, split.extension, maxLength);
     let suffixIndex = 1;
     while (usedNames.has(candidate)) {
       suffixIndex += 1;
-      candidate = withNumericSuffix(compactBase, split.extension, maxLength, suffixIndex);
+      candidate = withNumericSuffix(numericCollisionBase, split.extension, maxLength, suffixIndex);
     }
 
     usedNames.add(candidate);
@@ -87,6 +109,36 @@ export function shortenFilenames({ folderName, filenames, maxLength }: FilenameS
   }
 
   return result;
+}
+
+function getDisambiguationTokens(sourceBasename: string, compactBase: string): string[] {
+  const sourceTokens = tokenize(sourceBasename);
+  const compactTokens = tokenize(compactBase);
+  if (sourceTokens.length === 0 || compactTokens.length === 0) {
+    return sourceTokens;
+  }
+
+  const abbreviatedSourceTokens = sourceTokens.map((token) => abbreviateToken(token));
+  const equivalentToCompact =
+    abbreviatedSourceTokens.length === compactTokens.length &&
+    abbreviatedSourceTokens.every(
+      (token, idx) => normalizeToken(token) === normalizeToken(compactTokens[idx] ?? ""),
+    );
+  if (equivalentToCompact) {
+    return [];
+  }
+
+  let prefixMatches = 0;
+  while (
+    prefixMatches < sourceTokens.length &&
+    prefixMatches < compactTokens.length &&
+    normalizeToken(sourceTokens[prefixMatches]) === normalizeToken(compactTokens[prefixMatches])
+  ) {
+    prefixMatches += 1;
+  }
+
+  const remaining = sourceTokens.slice(prefixMatches).map((token) => abbreviateToken(token));
+  return remaining.filter(Boolean);
 }
 
 function splitFilename(filename: string): SplitFilename {
@@ -160,7 +212,20 @@ function fitLeadingTokens(tokens: string[], fallbackBasename: string, budget: nu
   }
 
   if (joined.length <= budget) {
+    if (active.length === 1 && filteredTokens.length >= 2) {
+      const firstAndLast = `${filteredTokens[0]}_${filteredTokens[filteredTokens.length - 1]}`;
+      if (firstAndLast.length <= budget) {
+        return firstAndLast;
+      }
+    }
     return joined;
+  }
+
+  if (filteredTokens.length >= 2) {
+    const firstAndLast = `${filteredTokens[0]}_${filteredTokens[filteredTokens.length - 1]}`;
+    if (firstAndLast.length <= budget) {
+      return firstAndLast;
+    }
   }
 
   return fitRawBase(joined, budget);
@@ -176,6 +241,45 @@ function fitRawBase(value: string, budget: number): string {
 
   const sliced = value.slice(0, budget).replace(TRAILING_SEPARATOR_PATTERN, "");
   return sliced.length > 0 ? sliced : value.slice(0, budget);
+}
+
+function withTrailingDisambiguator({
+  base,
+  disambiguationTokens,
+  tokenCount,
+  maxLength,
+}: {
+  base: string;
+  disambiguationTokens: string[];
+  tokenCount: number;
+  maxLength: number;
+}): string | null {
+  if (maxLength <= 0 || tokenCount <= 0 || disambiguationTokens.length === 0) {
+    return null;
+  }
+
+  const tail = disambiguationTokens.slice(-tokenCount).join("_");
+  if (!tail) {
+    return null;
+  }
+
+  const suffix = `_${tail}`;
+  const baseBudget = Math.max(0, maxLength - suffix.length);
+  if (baseBudget <= 0 || baseBudget < base.length) {
+    return null;
+  }
+
+  return `${fitRawBase(base, baseBudget)}${suffix}`;
+}
+
+function getNumericFallbackBase(base: string, extension: string, maxLength: number): string {
+  const minSuffixLength = "_2".length;
+  if (base.length + extension.length + minSuffixLength <= maxLength) {
+    return base;
+  }
+
+  const tokens = tokenize(base);
+  return tokens[0] ?? base;
 }
 
 function withNumericSuffix(base: string, extension: string, maxLength: number, suffixIndex: number): string {
