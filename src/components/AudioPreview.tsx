@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Play,
-  Pause,
   SkipBack,
   SkipForward,
   Volume2,
@@ -80,6 +79,8 @@ interface AudioPreviewProps {
   onClose: () => void;
   paneType?: "source" | "dest" | null;
   isEmptyState?: boolean;
+  /** Called when a file is saved (export or record) so the file pane can refresh */
+  onFileSaved?: (paneType: "source" | "dest") => void;
 }
 
 export const AudioPreview = ({
@@ -88,6 +89,7 @@ export const AudioPreview = ({
   onClose,
   paneType = "source",
   isEmptyState = false,
+  onFileSaved,
 }: AudioPreviewProps) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -129,6 +131,9 @@ export const AudioPreview = ({
     return () => clearTimeout(t);
   }, [waveformHeight]);
   const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
+  const playStartTimeRef = useRef<number>(0);
+  const onFileSavedRef = useRef(onFileSaved);
+  onFileSavedRef.current = onFileSaved;
   const [exportFilenameOpen, setExportFilenameOpen] = useState(false);
   const [exportFilename, setExportFilename] = useState("");
   const exportFilenameResolverRef = useRef<((name: string | null) => void) | null>(null);
@@ -408,6 +413,7 @@ export const AudioPreview = ({
             const result = await fileSystemService.addFileFromDrop(file, dirPath, paneType);
             if (result.success) {
               toast.success(`Recorded and saved: ${newName}`);
+              onFileSavedRef.current?.(paneType);
             } else {
               toast.error(result.error || "Failed to save recording");
             }
@@ -697,16 +703,20 @@ export const AudioPreview = ({
     }
   }, [envelopeEnabled, isLoading]);
 
-  const togglePlayPause = useCallback(() => {
+  const handleStopOrPlay = useCallback(() => {
     if (!wavesurferRef.current || isLoading) return;
     if (isPlaying) {
       wavesurferRef.current.pause();
+      if (duration > 0) {
+        wavesurferRef.current.seekTo(playStartTimeRef.current / duration);
+      }
     } else {
+      playStartTimeRef.current = wavesurferRef.current.getCurrentTime();
       wavesurferRef.current.play();
     }
-  }, [isPlaying, isLoading]);
+  }, [isPlaying, isLoading, duration]);
 
-  // Spacebar to start/stop playback (playback resumes from current position)
+  // Spacebar to start/stop playback (stop resets to position when play was pressed)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat) return;
@@ -718,11 +728,11 @@ export const AudioPreview = ({
         return;
       }
       e.preventDefault();
-      togglePlayPause();
+      handleStopOrPlay();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [togglePlayPause]);
+  }, [handleStopOrPlay]);
 
   const skipBackward = () => {
     if (!wavesurferRef.current) return;
@@ -837,6 +847,7 @@ export const AudioPreview = ({
       );
       if (result.success) {
         toast.success(`Exported ${safeName}`);
+        onFileSaved?.(paneType || "source");
       } else {
         toast.error(result.error || "Export failed");
       }
@@ -876,6 +887,7 @@ export const AudioPreview = ({
       const result = await fileSystemService.writeBlobToPath(filePath, exported, paneType);
       if (result.success) {
         toast.success(`Exported ${fileName}`);
+        onFileSaved?.(paneType);
       } else {
         toast.error(result.error || "Export failed");
       }
@@ -1124,11 +1136,12 @@ export const AudioPreview = ({
             className="absolute top-0 bottom-8 left-0 w-0.5 pointer-events-none z-10"
             style={{
               left: `${(currentTime / duration) * 100}%`,
-              backgroundColor: "#757575",
+              backgroundColor: "#FF764D",
             }}
           >
             <div
-              className="absolute -top-1 -left-2 w-4 h-3 rounded-sm bg-primary cursor-ew-resize pointer-events-auto shadow-sm border border-border"
+              className="absolute -top-1 -left-2 w-4 h-3 rounded-sm cursor-ew-resize pointer-events-auto shadow-sm border border-border"
+              style={{ backgroundColor: "#FF764D" }}
               onMouseDown={(e) => {
                 e.stopPropagation();
                 const startX = e.clientX;
@@ -1153,7 +1166,7 @@ export const AudioPreview = ({
         )}
       </div>
 
-      {/* Playback Controls - z-10 ensures they stay above minimap */}
+      {/* Transport bar: playback, time, volume, zoom, envelope, export, advanced */}
       <div className="relative z-10 flex items-center gap-3 flex-wrap" style={{ minHeight: "2rem" }}>
         <div className="flex items-center gap-2 shrink-0">
           <Button
@@ -1169,13 +1182,14 @@ export const AudioPreview = ({
             size="sm"
             variant="secondary"
             className="h-8 w-8 p-0 shrink-0"
-            onClick={togglePlayPause}
+            onClick={handleStopOrPlay}
             disabled={isLoading}
+            title={isPlaying ? "Stop (reset to start position)" : "Play"}
           >
             {isLoading ? (
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : isPlaying ? (
-              <Pause className="w-4 h-4" />
+              <Square className="w-4 h-4" />
             ) : (
               <Play className="w-4 h-4" />
             )}
@@ -1206,52 +1220,31 @@ export const AudioPreview = ({
             className="cursor-pointer"
           />
         </div>
-      </div>
 
-      {/* Advanced Controls - z-10 ensures they stay above minimap */}
-      <div className="relative z-10 flex items-center gap-4 flex-wrap pt-2 border-t border-border">
-        {/* Zoom Controls */}
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleZoomOut} disabled={isLoading}>
-            <ZoomOut className="w-3.5 h-3.5" />
-          </Button>
-          <div className="flex items-center gap-2 w-32">
-            <ZoomIn className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            <Slider
-              value={[zoom]}
-              min={0}
-              max={500}
-              step={10}
-              onValueChange={handleZoomChange}
-              disabled={isLoading}
-              className="cursor-pointer"
-            />
-          </div>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleZoomIn} disabled={isLoading}>
-            <ZoomIn className="w-3.5 h-3.5" />
-          </Button>
-        </div>
-
-        {/* Playback Rate */}
-        <div className="flex items-center gap-2">
-          <Gauge className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleZoomOut} disabled={isLoading}>
+          <ZoomOut className="w-3.5 h-3.5" />
+        </Button>
+        <div className="flex items-center gap-2 w-28">
+          <ZoomIn className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           <Slider
-            value={[playbackRate]}
-            min={0.25}
-            max={2}
-            step={0.05}
-            onValueChange={handlePlaybackRateChange}
+            value={[zoom]}
+            min={0}
+            max={500}
+            step={10}
+            onValueChange={handleZoomChange}
             disabled={isLoading}
-            className="cursor-pointer w-24"
+            className="cursor-pointer"
           />
-          <span className="text-xs text-muted-foreground font-mono min-w-[40px]">{playbackRate.toFixed(2)}x</span>
         </div>
+        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleZoomIn} disabled={isLoading}>
+          <ZoomIn className="w-3.5 h-3.5" />
+        </Button>
 
-        {/* Envelope Toggle */}
+        {/* Envelope */}
         <Button
           size="sm"
           variant={envelopeEnabled ? "default" : "outline"}
-          className="h-7 gap-2"
+          className="h-7 gap-2 shrink-0"
           onClick={() => setEnvelopeEnabled(!envelopeEnabled)}
           disabled={isLoading}
         >
@@ -1259,11 +1252,11 @@ export const AudioPreview = ({
           Envelope
         </Button>
 
-        {/* Export Button */}
+        {/* Export */}
         <Button
           size="sm"
           variant="outline"
-          className="h-7 gap-2"
+          className="h-7 gap-2 shrink-0"
           onClick={handleExport}
           disabled={isLoading || isExporting}
         >
@@ -1275,10 +1268,10 @@ export const AudioPreview = ({
           Export
         </Button>
 
-        {/* Advanced Controls Collapsible */}
+        {/* Advanced Collapsible Trigger */}
         <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen}>
           <CollapsibleTrigger asChild>
-            <Button size="sm" variant="outline" className="h-7 gap-2">
+            <Button size="sm" variant="outline" className="h-7 gap-2 shrink-0">
               {isAdvancedOpen ? (
                 <>
                   <ChevronUp className="w-3.5 h-3.5" />
@@ -1292,9 +1285,23 @@ export const AudioPreview = ({
               )}
             </Button>
           </CollapsibleTrigger>
-          <CollapsibleContent className="pt-2">
+          <CollapsibleContent className="pt-2 w-full basis-full">
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-4 flex-wrap">
+                        {/* Playback Rate */}
+                <div className="flex items-center gap-2">
+                  <Gauge className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <Slider
+                    value={[playbackRate]}
+                    min={0.25}
+                    max={2}
+                    step={0.05}
+                    onValueChange={handlePlaybackRateChange}
+                    disabled={isLoading}
+                    className="cursor-pointer w-24"
+                  />
+                  <span className="text-xs text-muted-foreground font-mono min-w-[40px]">{playbackRate.toFixed(2)}x</span>
+                </div>
                 {/* Normalize Toggle */}
                 <Button
                   size="sm"
