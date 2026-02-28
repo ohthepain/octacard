@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Play,
   SkipBack,
@@ -32,6 +32,13 @@ import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { exportAudioWithEdits, mixOverdub, replaceSegment } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
+import { parseBpmFromString } from "@/lib/tempoUtils";
+import {
+  detectSliceMarkers,
+  selectTopSlices,
+  type SliceMarker,
+  type SliceDetectionMode,
+} from "@/lib/sliceDetection";
 import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
 import {
   Dialog,
@@ -142,6 +149,17 @@ export const AudioPreview = ({
   const [exportFilename, setExportFilename] = useState("");
   const exportFilenameResolverRef = useRef<((name: string | null) => void) | null>(null);
   const lastRecordedBlobRef = useRef<Blob | null>(null);
+
+  const [sliceMarkers, setSliceMarkers] = useState<SliceMarker[]>([]);
+  const [numSlices, setNumSlices] = useState(8);
+  const [sliceDetectionMode, setSliceDetectionMode] = useState<SliceDetectionMode>("transient");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const numSlicesDragRef = useRef<{ startY: number; startX: number; startValue: number } | null>(null);
+
+  const displayedSlices = useMemo(
+    () => selectTopSlices(sliceMarkers, numSlices),
+    [sliceMarkers, numSlices]
+  );
 
   const getExportBlobForEmptyState = useCallback(async (): Promise<Blob | null> => {
     if (lastRecordedBlobRef.current) return lastRecordedBlobRef.current;
@@ -345,6 +363,52 @@ export const AudioPreview = ({
 
     loadAudioUrl();
   }, [filePath, paneType, isEmptyState]);
+
+  // Slice detection: decode audio and run transient/pitch detection when we have audio
+  useEffect(() => {
+    if (isEmptyState || !filePath || !audioUrl) return;
+    let cancelled = false;
+
+    async function runDetection() {
+      setIsAnalyzing(true);
+      try {
+        const res = await fetch(audioUrl);
+        const arrayBuffer = await res.arrayBuffer();
+        if (cancelled) return;
+        const ctx = new AudioContext();
+        const buffer = await ctx.decodeAudioData(arrayBuffer);
+        await ctx.close();
+        if (cancelled) return;
+
+        const bpmResult = parseBpmFromString(fileName ?? "");
+        const bpm = bpmResult?.bpm ?? 120;
+        const markers = detectSliceMarkers(buffer, buffer.duration, bpm, sliceDetectionMode);
+        if (cancelled) return;
+        setSliceMarkers(markers);
+        const bars = (buffer.duration * bpm) / 240;
+        setNumSlices(Math.max(1, Math.floor(8 * bars)));
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("Slice detection failed:", err);
+          setSliceMarkers([]);
+        }
+      } finally {
+        if (!cancelled) setIsAnalyzing(false);
+      }
+    }
+
+    runDetection();
+    return () => {
+      cancelled = true;
+    };
+  }, [audioUrl, fileName, isEmptyState, filePath, sliceDetectionMode]);
+
+  // Clear slice markers when file changes or empty state
+  useEffect(() => {
+    if (isEmptyState || !filePath) {
+      setSliceMarkers([]);
+    }
+  }, [isEmptyState, filePath]);
 
   // Stop playback when file changes
   useEffect(() => {
@@ -1092,6 +1156,28 @@ export const AudioPreview = ({
     setPlaybackRate(value[0]);
   };
 
+  const handleNumSlicesDragStart = useCallback((e: React.MouseEvent) => {
+    if (isLoading || isAnalyzing) return;
+    e.preventDefault();
+    const max = Math.max(1, sliceMarkers.length);
+    numSlicesDragRef.current = { startY: e.clientY, startX: e.clientX, startValue: numSlices };
+    const onMove = (moveE: MouseEvent) => {
+      if (!numSlicesDragRef.current) return;
+      const dy = numSlicesDragRef.current.startY - moveE.clientY;
+      const dx = moveE.clientX - numSlicesDragRef.current.startX;
+      const steps = Math.round((dy + dx) / 8);
+      const next = Math.max(1, Math.min(max, numSlicesDragRef.current.startValue + steps));
+      setNumSlices(next);
+    };
+    const onUp = () => {
+      numSlicesDragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [isLoading, isAnalyzing, numSlices, sliceMarkers.length]);
+
   const addMarker = () => {
     if (!wavesurferRef.current || !regionsRef.current) return;
     const currentTime = wavesurferRef.current.getCurrentTime();
@@ -1555,6 +1641,24 @@ export const AudioPreview = ({
             />
           </div>
         )}
+        {/* Slice markers overlay - vertical lines at detected slice positions */}
+        {!isEmptyState && duration > 0 && displayedSlices.length > 0 && (
+          <div
+            className="absolute top-0 left-0 right-0 pointer-events-none z-[5]"
+            style={{ height: debouncedWaveformHeight }}
+          >
+            {displayedSlices.map((slice, i) => (
+              <div
+                key={`${slice.time}-${i}`}
+                className="absolute top-0 w-0.5 h-full"
+                style={{
+                  left: `${(slice.time / duration) * 100}%`,
+                  backgroundColor: "rgba(255, 118, 77, 0.5)",
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Transport bar: playback, time, volume, zoom, envelope, export, advanced */}
@@ -1664,6 +1768,30 @@ export const AudioPreview = ({
           <ZoomIn className="w-3.5 h-3.5" />
         </Button>
 
+        {/* Microphone device selection */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Label htmlFor="audio-device" className="text-xs text-muted-foreground shrink-0 sr-only">
+            Input device
+          </Label>
+          <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={refreshAudioDevices}>
+            Refresh
+          </Button>
+          {audioDevices.length > 0 && (
+            <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+              <SelectTrigger id="audio-device" className="h-7 w-[160px]">
+                <SelectValue placeholder="Input device" />
+              </SelectTrigger>
+              <SelectContent>
+                {audioDevices.map((d) => (
+                  <SelectItem key={d.deviceId} value={d.deviceId}>
+                    {d.label || `Device ${d.deviceId.slice(0, 8)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
         {/* Envelope */}
         <Button
           size="sm"
@@ -1756,8 +1884,8 @@ export const AudioPreview = ({
                   </Button>
                 </div>
 
-                {/* Marker Controls */}
-                <div className="flex items-center gap-2">
+                {/* Marker Controls + Slice Detection */}
+                <div className="flex items-center gap-2 flex-wrap">
                   <Button
                     size="sm"
                     variant="outline"
@@ -1777,29 +1905,38 @@ export const AudioPreview = ({
                   >
                     Clear Markers
                   </Button>
-                </div>
-              </div>
-
-              {/* Microphone device selection */}
-              <div className="flex flex-col gap-2 pt-2 border-t border-border">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Microphone</div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={refreshAudioDevices}>
-                    Refresh devices
-                  </Button>
-                  {audioDevices.length > 0 && (
-                    <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-                      <SelectTrigger className="h-7 w-[200px]">
-                        <SelectValue placeholder="Select input device" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {audioDevices.map((d) => (
-                          <SelectItem key={d.deviceId} value={d.deviceId}>
-                            {d.label || `Device ${d.deviceId.slice(0, 8)}`}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  {!isEmptyState && duration > 0 && (
+                    <>
+                      <div
+                        role="spinbutton"
+                        aria-valuenow={numSlices}
+                        aria-valuemin={1}
+                        aria-valuemax={Math.max(1, sliceMarkers.length)}
+                        tabIndex={0}
+                        onMouseDown={handleNumSlicesDragStart}
+                        className="h-7 min-w-[2.5rem] px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
+                        title="Drag up/right to increase, down/left to decrease"
+                      >
+                        {numSlices} slices
+                      </div>
+                      <Select
+                        value={sliceDetectionMode}
+                        onValueChange={(v) => setSliceDetectionMode(v as SliceDetectionMode)}
+                        disabled={isLoading || isAnalyzing}
+                      >
+                        <SelectTrigger className="h-7 w-[100px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="transient">Transient</SelectItem>
+                          <SelectItem value="pitch">Pitch</SelectItem>
+                          <SelectItem value="both">Both</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {isAnalyzing && (
+                        <span className="text-xs text-muted-foreground">Analyzing…</span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
