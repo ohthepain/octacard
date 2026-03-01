@@ -112,6 +112,18 @@ export const DEVICE_PRESETS: FormatPreset[] = [
     },
   },
   {
+    id: "sp-404og",
+    name: "SP-404 (OG)",
+    settings: {
+      ...DEFAULT_FORMAT_SETTINGS,
+      sampleRate: "44100",
+      sampleDepth: "16-bit",
+      sanitizeFilename: true,
+      shortenFilenameMaxLength: 8,
+      shortenFilename: true,
+    },
+  },
+  {
     id: "sp-404sx",
     name: "SP-404SX",
     settings: {

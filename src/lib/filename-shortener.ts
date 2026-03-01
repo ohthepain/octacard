@@ -65,7 +65,8 @@ export function shortenFilenames({ folderName, filenames, maxLength }: FilenameS
 
   for (const filename of filenames) {
     const split = splitFilename(filename);
-    const baseBudget = Math.max(0, maxLength - split.extension.length);
+    // maxLength applies to the base name only; extension is appended without counting toward the limit
+    const baseBudget = Math.max(0, maxLength);
     const baseTokens = tokenize(split.basename);
     const reducedTokens = reduceRedundantTokens(baseTokens, folderTokens);
     const compressedTokens = reducedTokens.map((token) => abbreviateToken(token));
@@ -74,7 +75,7 @@ export function shortenFilenames({ folderName, filenames, maxLength }: FilenameS
     const disambiguationTokens = getDisambiguationTokens(disambiguationSource, compactBase);
 
     let candidate = `${compactBase}${split.extension}`;
-    if (candidate.length > maxLength) {
+    if (compactBase.length > baseBudget) {
       candidate = `${fitRawBase(compactBase, baseBudget)}${split.extension}`;
     }
 
@@ -274,7 +275,8 @@ function withTrailingDisambiguator({
 
 function getNumericFallbackBase(base: string, extension: string, maxLength: number): string {
   const minSuffixLength = "_2".length;
-  if (base.length + extension.length + minSuffixLength <= maxLength) {
+  // maxLength applies to base + suffix only; extension is not counted
+  if (base.length + minSuffixLength <= maxLength) {
     return base;
   }
 
@@ -284,7 +286,8 @@ function getNumericFallbackBase(base: string, extension: string, maxLength: numb
 
 function withNumericSuffix(base: string, extension: string, maxLength: number, suffixIndex: number): string {
   const suffix = `_${suffixIndex}`;
-  const baseBudget = Math.max(0, maxLength - extension.length - suffix.length);
+  // maxLength applies to base + suffix only; extension is appended without counting
+  const baseBudget = Math.max(0, maxLength - suffix.length);
   const fittedBase = fitRawBase(base, baseBudget);
   return `${fittedBase}${suffix}${extension}`;
 }
