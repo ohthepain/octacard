@@ -197,6 +197,33 @@ export function detectSliceMarkers(
     markers.push({ time: bestTime, confidence: Math.min(1, bestConfidence) });
   }
 
+  // Ensure a slice at the start when there is audio there (first slice would otherwise be missed)
+  const startWindowMs = 50;
+  const startWindowSamples = Math.min(
+    Math.floor((startWindowMs / 1000) * sampleRate),
+    channel.length
+  );
+  const startRms = rms(channel, 0, startWindowSamples);
+  const numFrames = Math.min(500, Math.ceil(channel.length / HOP_SIZE));
+  const maxRms = Math.max(
+    ...Array.from({ length: numFrames }, (_, i) =>
+      rms(channel, i * HOP_SIZE, FRAME_SIZE)
+    ),
+    1e-10
+  );
+  const hasAudioAtStart = startRms > maxRms * 0.03;
+  const nearestToStart = markers.reduce(
+    (best, m) => (m.time < best.time ? m : best),
+    markers[0] ?? { time: Infinity, confidence: 0 }
+  );
+  const minSpacingSec = MIN_SPACING_MS / 1000;
+  const startAlreadyCovered = nearestToStart && nearestToStart.time < minSpacingSec;
+  if (hasAudioAtStart && !startAlreadyCovered) {
+    const startConfidence = Math.min(1, 0.5 + (startRms / maxRms) * 0.5);
+    markers.push({ time: 0, confidence: startConfidence });
+    markers.sort((a, b) => a.time - b.time);
+  }
+
   return markers;
 }
 

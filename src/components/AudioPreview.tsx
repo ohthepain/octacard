@@ -1059,6 +1059,31 @@ export const AudioPreview = ({
     }
   }, [envelopeEnabled, isLoading]);
 
+  // Hide envelope when slicing is open so the first slice marker is visible (avoids overlap with first envelope point)
+  useEffect(() => {
+    if (!waveformRef.current || isLoading || !duration) return;
+    const findAndUpdateEnvelope = () => {
+      const wrapper = wavesurferRef.current?.getWrapper?.() as HTMLElement | undefined;
+      const envelopeEl =
+        waveformRef.current?.parentElement?.querySelector('[part="envelope"]') ??
+        wrapper?.querySelector('[part="envelope"]');
+      const el = envelopeEl as HTMLElement | null;
+      if (!el) return false;
+      const showEnvelope = envelopeEnabled && !slicingOpen;
+      el.style.visibility = showEnvelope ? "" : "hidden";
+      el.style.pointerEvents = showEnvelope ? "" : "none";
+      return true;
+    };
+    if (!findAndUpdateEnvelope()) {
+      const t = setTimeout(findAndUpdateEnvelope, 100);
+      const t2 = setTimeout(findAndUpdateEnvelope, 500);
+      return () => {
+        clearTimeout(t);
+        clearTimeout(t2);
+      };
+    }
+  }, [envelopeEnabled, slicingOpen, isLoading, duration]);
+
   const startRecordingFromHere = useCallback(
     async (mode: "replace" | "overdub") => {
       const plugin = recordPluginRef.current;
