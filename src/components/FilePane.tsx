@@ -216,6 +216,7 @@ export const FilePane = ({
   const [searchResults, setSearchResults] = useState<
     Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>
   >([]);
+  const [searchResultsTree, setSearchResultsTree] = useState<FileNode[]>([]);
   const [rootPath, setRootPath] = useState<string>("");
   const [currentRootPath, setCurrentRootPath] = useState<string>("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
@@ -1034,34 +1035,139 @@ export const FilePane = ({
   }, [autoNavigateToCard, paneName]);
   // getNavigationState is intentionally omitted - it's stable (memoized) and only used inside async functions
 
+  const loadSearchFolderContents = useCallback(
+    async (folderPath: string, nodeId: string): Promise<FileNode[]> => {
+      const result = await fileSystemService.readDirectory(folderPath, paneType);
+      if (!result.success || !result.data) return [];
+
+      const query = searchQuery.toLowerCase();
+      const folderPathsWithMatches = new Set<string>();
+      searchResults.forEach((r) => {
+        const parentPath = dirname(r.path);
+        if (parentPath && parentPath !== "." && parentPath !== "/") {
+          folderPathsWithMatches.add(parentPath);
+        }
+        if (r.isDirectory) {
+          folderPathsWithMatches.add(r.path);
+        }
+      });
+
+      const filteredEntries = result.data.filter((entry) => {
+        if (entry.name.startsWith(".") || entry.name.startsWith("~")) return false;
+        return true;
+      });
+
+      let children: FileNode[];
+      if (treeViewMode === "all") {
+        children = filteredEntries.map((entry) => {
+          const entryWithDates = entry as typeof entry & { birthtime?: number; mtime?: number; atime?: number };
+          return {
+            id: `${nodeId}-${entry.path}`,
+            name: entry.name,
+            type: entry.type,
+            path: entry.path,
+            size: entry.type === "file" ? formatFileSize(entry.size) : undefined,
+            loaded: false,
+            birthtime: entryWithDates.birthtime,
+            mtime: entryWithDates.mtime,
+            atime: entryWithDates.atime,
+          };
+        });
+      } else {
+        children = filteredEntries
+          .filter((entry) => {
+            if (entry.type === "folder") {
+              return (
+                folderPathsWithMatches.has(entry.path) ||
+                Array.from(folderPathsWithMatches).some((p) => p.startsWith(entry.path + "/"))
+              );
+            }
+            return entry.name.toLowerCase().includes(query);
+          })
+          .map((entry) => {
+            const entryWithDates = entry as typeof entry & { birthtime?: number; mtime?: number; atime?: number };
+            return {
+              id: `${nodeId}-${entry.path}`,
+              name: entry.name,
+              type: entry.type,
+              path: entry.path,
+              size: entry.type === "file" ? formatFileSize(entry.size) : undefined,
+              loaded: false,
+              birthtime: entryWithDates.birthtime,
+              mtime: entryWithDates.mtime,
+              atime: entryWithDates.atime,
+            };
+          });
+      }
+
+      children.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      return children;
+    },
+    [searchQuery, searchResults, treeViewMode, paneType],
+  );
+
   const toggleFolder = async (node: FileNode) => {
     const newExpanded = new Set(expandedFolders);
     if (newExpanded.has(node.id)) {
       newExpanded.delete(node.id);
     } else {
       newExpanded.add(node.id);
-      // Load directory if not already loaded
       if (!node.loaded && node.type === "folder" && node.path) {
-        setFileTree((prev) => {
-          const updateNode = (nodes: FileNode[]): FileNode[] => {
-            return nodes.map((n) => {
-              if (n.id === node.id) {
-                return { ...n, isLoading: true };
-              }
-              if (n.children) {
-                return { ...n, children: updateNode(n.children) };
-              }
-              return n;
-            });
-          };
-          return updateNode(prev);
-        });
-        await loadDirectory(node.path, node.id);
+        if (node.id.startsWith("search-folder-")) {
+          setSearchResultsTree((prev) => {
+            const updateNode = (nodes: FileNode[]): FileNode[] => {
+              return nodes.map((n) => {
+                if (n.id === node.id) {
+                  return { ...n, isLoading: true };
+                }
+                if (n.children) {
+                  return { ...n, children: updateNode(n.children) };
+                }
+                return n;
+              });
+            };
+            return updateNode(prev);
+          });
+          const children = await loadSearchFolderContents(node.path, node.id);
+          setSearchResultsTree((prev) => {
+            const updateNode = (nodes: FileNode[]): FileNode[] => {
+              return nodes.map((n) => {
+                if (n.id === node.id) {
+                  return { ...n, children, loaded: true, isLoading: false };
+                }
+                if (n.children) {
+                  return { ...n, children: updateNode(n.children) };
+                }
+                return n;
+              });
+            };
+            return updateNode(prev);
+          });
+        } else {
+          setFileTree((prev) => {
+            const updateNode = (nodes: FileNode[]): FileNode[] => {
+              return nodes.map((n) => {
+                if (n.id === node.id) {
+                  return { ...n, isLoading: true };
+                }
+                if (n.children) {
+                  return { ...n, children: updateNode(n.children) };
+                }
+                return n;
+              });
+            };
+            return updateNode(prev);
+          });
+          await loadDirectory(node.path, node.id);
+        }
       }
     }
     setExpandedFolders(newExpanded);
 
-    // Save navigation state with expanded folders
     saveNavigationState(currentVolumeUUID ?? NAV_STATE_FALLBACK_VOLUME, currentRootPath, newExpanded);
   };
 
@@ -1557,9 +1663,7 @@ export const FilePane = ({
           // File or collapsed folder: collapse parent and select parent
           const parentPath = dirname(node.path);
           if (parentPath && parentPath !== currentRootPath) {
-            const parentNode = flatNodes.find(
-              (n) => n.type === "folder" && n.path === parentPath
-            );
+            const parentNode = flatNodes.find((n) => n.type === "folder" && n.path === parentPath);
             if (parentNode && expandedFolders.has(parentNode.id)) {
               setExpandedFolders((prev) => {
                 const next = new Set(prev);
@@ -2371,18 +2475,14 @@ export const FilePane = ({
 
       if (itemsToCopy.length > 0) {
         const destinationPath =
-          destinationNode && destinationNode.type === "folder"
-            ? destinationNode.path
-            : currentRootPath || rootPath;
+          destinationNode && destinationNode.type === "folder" ? destinationNode.path : currentRootPath || rootPath;
 
         if (!destinationPath || destinationPath.trim() === "") {
           console.error("No destination path available for drop");
           return;
         }
 
-        const filtered = itemsToCopy.filter(
-          (item) => !isNoOpDrop(item.path, item.type, destinationPath)
-        );
+        const filtered = itemsToCopy.filter((item) => !isNoOpDrop(item.path, item.type, destinationPath));
         if (filtered.length === 0) {
           if (itemsToCopy.length > 0 && sourcePane === "source") {
             toast.warning("Same Folder", {
@@ -2463,9 +2563,7 @@ export const FilePane = ({
         ];
       }
 
-      const filtered = itemsToCopy.filter(
-        (item) => !isNoOpDrop(item.path, item.type, destinationPath)
-      );
+      const filtered = itemsToCopy.filter((item) => !isNoOpDrop(item.path, item.type, destinationPath));
       if (filtered.length > 0) {
         const sourcePane = sourcePaneData === "dest" ? "dest" : "source";
         await copyMultipleItems(filtered, destinationPath, destinationNode, false, sourcePane);
@@ -3119,12 +3217,7 @@ export const FilePane = ({
                   handlePaneClick();
 
                   if (node.type === "folder") {
-                    // If this is a search result folder, navigate to it and keep search text.
-                    if (searchQuery && node.id.startsWith("search-folder-")) {
-                      navigateToFolder(node.path);
-                    } else {
-                      toggleFolder(node);
-                    }
+                    toggleFolder(node);
                   } else if (node.type === "file" && isAudioFile(node.name)) {
                     if (previewMode === "multi") {
                       addToStack({ path: node.path, name: node.name, paneType });
@@ -3140,10 +3233,9 @@ export const FilePane = ({
                   }
                 }}
                 onDoubleClick={() => {
-                  if (!isParentLink && node.type === "folder") {
-                    // If this is a search result folder, keep search text when navigating.
-                    navigateToFolder(node.path);
-                  }
+                  // if (!isParentLink && node.type === "folder" && !node.id.startsWith("search-folder-")) {
+                  navigateToFolder(node.path);
+                  // }
                 }}
               >
                 {node.type === "folder" ? (
@@ -3248,110 +3340,158 @@ export const FilePane = ({
   };
 
   // Convert search results to folder tree structure - only show folders containing matches
-  const buildFolderTreeFromSearchResults = (
-    results: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>,
-    searchRootPath?: string,
-  ): FileNode[] => {
-    if (results.length === 0) return [];
+  const buildFolderTreeFromSearchResults = useCallback(
+    (
+      results: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>,
+      searchRootPath?: string,
+      includeFiles?: boolean,
+    ): FileNode[] => {
+      if (results.length === 0) return [];
 
-    // Extract all unique folder paths that contain matches
-    const folderPaths = new Set<string>();
+      // Extract all unique folder paths that contain matches
+      const folderPaths = new Set<string>();
 
-    results.forEach((result) => {
-      // Get the parent directory of each result
-      const parentPath = dirname(result.path);
-      if (parentPath && parentPath !== "." && parentPath !== "/") {
-        // If searching within a specific path, only include folders within that path
-        if (!searchRootPath || parentPath.startsWith(searchRootPath)) {
-          folderPaths.add(parentPath);
-        }
-      }
-
-      // If the result itself is a folder, include it
-      if (result.isDirectory) {
-        if (!searchRootPath || result.path.startsWith(searchRootPath)) {
-          folderPaths.add(result.path);
-        }
-      }
-    });
-
-    if (folderPaths.size === 0) return [];
-
-    // Build a tree structure from folder paths
-    const folderMap = new Map<string, FileNode>();
-    const rootFolders: FileNode[] = [];
-
-    // Sort folder paths by depth (shallowest first)
-    const sortedPaths = Array.from(folderPaths).sort((a, b) => {
-      const depthA = a.split("/").filter(Boolean).length;
-      const depthB = b.split("/").filter(Boolean).length;
-      return depthA - depthB;
-    });
-
-    // Determine the root path for the tree (either searchRootPath or common ancestor)
-    const treeRoot =
-      searchRootPath ||
-      (() => {
-        // Find common root path
-        const paths = Array.from(folderPaths);
-        if (paths.length === 0) return "";
-        let commonRoot = paths[0];
-        for (let i = 1; i < paths.length; i++) {
-          const parts = commonRoot.split("/").filter(Boolean);
-          const otherParts = paths[i].split("/").filter(Boolean);
-          let j = 0;
-          while (j < parts.length && j < otherParts.length && parts[j] === otherParts[j]) {
-            j++;
+      results.forEach((result) => {
+        // Get the parent directory of each result
+        const parentPath = dirname(result.path);
+        if (parentPath && parentPath !== "." && parentPath !== "/") {
+          // If searching within a specific path, only include folders within that path
+          if (!searchRootPath || parentPath.startsWith(searchRootPath)) {
+            folderPaths.add(parentPath);
           }
-          commonRoot = "/" + parts.slice(0, j).join("/");
         }
-        return commonRoot || "/";
-      })();
 
-    sortedPaths.forEach((folderPath) => {
-      const parts = folderPath.split("/").filter(Boolean);
-      const folderName = parts[parts.length - 1];
-
-      // Create folder node
-      const folderNode: FileNode = {
-        id: `search-folder-${folderPath}`,
-        name: folderName,
-        type: "folder",
-        path: folderPath,
-        loaded: false, // Not loaded yet - user can expand to see contents
-        children: undefined,
-      };
-
-      folderMap.set(folderPath, folderNode);
-
-      // Find parent folder
-      const parentPath = dirname(folderPath);
-      if (parentPath && parentPath !== treeRoot && parentPath !== "/") {
-        const parentNode = folderMap.get(parentPath);
-        if (parentNode) {
-          if (!parentNode.children) {
-            parentNode.children = [];
+        // If the result itself is a folder, include it
+        if (result.isDirectory) {
+          if (!searchRootPath || result.path.startsWith(searchRootPath)) {
+            folderPaths.add(result.path);
           }
-          parentNode.children.push(folderNode);
+        }
+      });
+
+      if (folderPaths.size === 0) return [];
+
+      // Build a tree structure from folder paths
+      const folderMap = new Map<string, FileNode>();
+      const rootFolders: FileNode[] = [];
+
+      // Sort folder paths by depth (shallowest first)
+      const sortedPaths = Array.from(folderPaths).sort((a, b) => {
+        const depthA = a.split("/").filter(Boolean).length;
+        const depthB = b.split("/").filter(Boolean).length;
+        return depthA - depthB;
+      });
+
+      // Determine the root path for the tree (either searchRootPath or common ancestor)
+      const treeRoot =
+        searchRootPath ||
+        (() => {
+          // Find common root path
+          const paths = Array.from(folderPaths);
+          if (paths.length === 0) return "";
+          let commonRoot = paths[0];
+          for (let i = 1; i < paths.length; i++) {
+            const parts = commonRoot.split("/").filter(Boolean);
+            const otherParts = paths[i].split("/").filter(Boolean);
+            let j = 0;
+            while (j < parts.length && j < otherParts.length && parts[j] === otherParts[j]) {
+              j++;
+            }
+            commonRoot = "/" + parts.slice(0, j).join("/");
+          }
+          return commonRoot || "/";
+        })();
+
+      sortedPaths.forEach((folderPath) => {
+        const parts = folderPath.split("/").filter(Boolean);
+        const folderName = parts[parts.length - 1];
+
+        // Create folder node
+        const folderNode: FileNode = {
+          id: `search-folder-${folderPath}`,
+          name: folderName,
+          type: "folder",
+          path: folderPath,
+          loaded: false, // Not loaded yet - user can expand to see contents
+          children: undefined,
+        };
+
+        folderMap.set(folderPath, folderNode);
+
+        // Find parent folder
+        const parentPath = dirname(folderPath);
+        if (parentPath && parentPath !== treeRoot && parentPath !== "/") {
+          const parentNode = folderMap.get(parentPath);
+          if (parentNode) {
+            if (!parentNode.children) {
+              parentNode.children = [];
+            }
+            parentNode.children.push(folderNode);
+          } else {
+            // Parent not in our set yet, add to root
+            rootFolders.push(folderNode);
+          }
         } else {
-          // Parent not in our set yet, add to root
+          // Root level folder (relative to tree root)
           rootFolders.push(folderNode);
         }
-      } else {
-        // Root level folder (relative to tree root)
-        rootFolders.push(folderNode);
+      });
+
+      // All mode: add matching files as children of their parent folder
+      if (includeFiles) {
+        results.forEach((result) => {
+          if (result.isDirectory) return;
+          const parentPath = dirname(result.path);
+          if (!parentPath || parentPath === "." || parentPath === "/") return;
+          if (searchRootPath && !parentPath.startsWith(searchRootPath)) return;
+
+          const parentNode = folderMap.get(parentPath);
+          if (parentNode) {
+            const fileNode: FileNode = {
+              id: `search-file-${result.path}`,
+              name: result.name,
+              type: "file",
+              path: result.path,
+              size: formatFileSize(result.size),
+              loaded: true,
+            };
+            if (!parentNode.children) {
+              parentNode.children = [];
+            }
+            if (!parentNode.children.some((c) => c.id === fileNode.id)) {
+              parentNode.children.push(fileNode);
+            }
+          }
+        });
+
+        folderMap.forEach((node) => {
+          if (node.children) {
+            node.children.sort((a, b) => {
+              if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            });
+          }
+        });
       }
-    });
 
-    // Sort root folders alphabetically
-    rootFolders.sort((a, b) => a.name.localeCompare(b.name));
+      // Sort root folders alphabetically
+      rootFolders.sort((a, b) => a.name.localeCompare(b.name));
 
-    return rootFolders;
-  };
+      return rootFolders;
+    },
+    [searchQuery],
+  );
 
-  const searchResultsAsNodes: FileNode[] = searchQuery
-    ? buildFolderTreeFromSearchResults(searchResults, currentRootPath)
-    : [];
+  // Sync searchResultsTree when search results or mode change
+  useEffect(() => {
+    if (!searchQuery) {
+      setSearchResultsTree([]);
+      return;
+    }
+    const includeFiles = treeViewMode === "all";
+    const tree = buildFolderTreeFromSearchResults(searchResults, currentRootPath, includeFiles);
+    setSearchResultsTree(tree);
+  }, [searchQuery, searchResults, currentRootPath, treeViewMode, buildFolderTreeFromSearchResults]);
 
   const filteredFileSystem = filterNodes(fileTree, searchQuery);
 
@@ -3366,7 +3506,7 @@ export const FilePane = ({
 
   const filteredTreeNodes = treeViewMode === "folders" ? filterFoldersOnly(filteredFileSystem) : filteredFileSystem;
   const searchTreeNodes =
-    treeViewMode === "folders" ? searchResultsAsNodes.filter((n) => n.type === "folder") : searchResultsAsNodes;
+    treeViewMode === "folders" ? searchResultsTree.filter((n) => n.type === "folder") : searchResultsTree;
   const activeTreeNodes = searchQuery ? searchTreeNodes : filteredTreeNodes;
 
   // Scroll selected item into view when selection changes (e.g. keyboard navigation)
@@ -3408,14 +3548,7 @@ export const FilePane = ({
     if (el) {
       (el as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [
-    selectedItems,
-    lastSelectedIndex,
-    activeTreeNodes,
-    currentRootPath,
-    rootPath,
-    getFlatNodeList,
-  ]);
+  }, [selectedItems, lastSelectedIndex, activeTreeNodes, currentRootPath, rootPath, getFlatNodeList]);
 
   // Keep selections independent per pane so source and destination can both remain selected.
   const handlePaneClick = () => {
@@ -3762,7 +3895,7 @@ export const FilePane = ({
                   <div className="text-sm text-muted-foreground">Searching...</div>
                 </div>
               </div>
-            ) : searchQuery && searchResultsAsNodes.length === 0 ? (
+            ) : searchQuery && searchResultsTree.length === 0 ? (
               <div className="text-center py-8 text-sm text-muted-foreground">
                 No files found matching &quot;{searchQuery}&quot;
               </div>
