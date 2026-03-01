@@ -150,6 +150,7 @@ export const AudioPreview = ({
   }, [waveformHeight]);
   const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
   const playStartTimeRef = useRef<number>(0);
+  const playSliceEndRef = useRef<number | null>(null);
   const onFileSavedRef = useRef(onFileSaved);
   onFileSavedRef.current = onFileSaved;
   const [exportFilenameOpen, setExportFilenameOpen] = useState(false);
@@ -262,27 +263,6 @@ export const AudioPreview = ({
         debugMoveSamples: 0,
         debugScrollSamples: 0,
       };
-      // #region agent log
-      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-        body: JSON.stringify({
-          sessionId: "f12403",
-          runId: "minimap-drag-v1",
-          hypothesisId: "H1",
-          location: "AudioPreview.tsx:handleMinimapMouseDown",
-          message: "minimap mousedown captured",
-          data: {
-            isOverlay,
-            startZoom: zoomRef.current,
-            startScroll,
-            minimapWidth: minimapRect.width,
-            overlayCoverage,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       e.preventDefault();
     },
     [isLoading],
@@ -298,42 +278,7 @@ export const AudioPreview = ({
       e.clientX <= minimapRect.right &&
       e.clientY >= minimapRect.top &&
       e.clientY <= minimapRect.bottom;
-    // #region agent log
-    fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-      body: JSON.stringify({
-        sessionId: "f12403",
-        runId: "minimap-drag-v4",
-        hypothesisId: "H8",
-        location: "AudioPreview.tsx:handleWaveformMouseDown",
-        message: "waveform mousedown fired",
-        data: {
-          isInsideMinimap,
-          priorDragStateIsMinimap: !!dragStateRef.current?.isMinimapDrag,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     if (isInsideMinimap) {
-      // #region agent log
-      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-        body: JSON.stringify({
-          sessionId: "f12403",
-          runId: "minimap-drag-postfix1",
-          hypothesisId: "H9",
-          location: "AudioPreview.tsx:handleWaveformMouseDown",
-          message: "ignored waveform mousedown inside minimap",
-          data: {
-            preservedMinimapDragState: !!dragStateRef.current?.isMinimapDrag,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return;
     }
     dragStateRef.current = {
@@ -798,7 +743,14 @@ export const AudioPreview = ({
       });
 
       wavesurfer.on("timeupdate", (time) => {
-        if (!cancelled) setCurrentTime(time);
+        if (!cancelled) {
+          setCurrentTime(time);
+          const end = playSliceEndRef.current;
+          if (end != null && time >= end - 0.01) {
+            playSliceEndRef.current = null;
+            wavesurfer.pause();
+          }
+        }
       });
 
       wavesurfer.on("error", (error) => {
@@ -938,48 +890,7 @@ export const AudioPreview = ({
           '[part="minimap"]',
         ) as HTMLDivElement | null;
         const minimapElement = minimapInParent || minimapInWrapperRoot;
-        // #region agent log
-        fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-          body: JSON.stringify({
-            sessionId: "f12403",
-            runId: "minimap-drag-v3",
-            hypothesisId: "H7",
-            location: "AudioPreview.tsx:findMinimap",
-            message: "minimap lookup paths",
-            data: {
-              hasWrapper: !!wrapper,
-              wrapperRootType: wrapperRoot
-                ? ((wrapperRoot as unknown as { nodeName?: string }).nodeName ?? "unknown")
-                : null,
-              foundInParent: !!minimapInParent,
-              foundInWrapperRoot: !!minimapInWrapperRoot,
-              finalFound: !!minimapElement,
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         if (minimapElement) {
-          // #region agent log
-          fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-            body: JSON.stringify({
-              sessionId: "f12403",
-              runId: "minimap-drag-v2",
-              hypothesisId: "H5",
-              location: "AudioPreview.tsx:findMinimap",
-              message: "minimap element found",
-              data: {
-                tagName: minimapElement.tagName,
-                part: minimapElement.getAttribute("part"),
-              },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
           if (minimapContainerRef.current !== minimapElement) {
             if (minimapContainerRef.current) {
               minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
@@ -987,21 +898,6 @@ export const AudioPreview = ({
             minimapContainerRef.current = minimapElement;
             minimapElement.style.cursor = "crosshair";
             minimapElement.addEventListener("mousedown", handleMinimapMouseDown);
-            // #region agent log
-            fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-              body: JSON.stringify({
-                sessionId: "f12403",
-                runId: "minimap-drag-v2",
-                hypothesisId: "H5",
-                location: "AudioPreview.tsx:findMinimap",
-                message: "attached mousedown listener",
-                data: {},
-                timestamp: Date.now(),
-              }),
-            }).catch(() => {});
-            // #endregion
           }
           return true;
         }
@@ -1037,24 +933,6 @@ export const AudioPreview = ({
       const inside =
         e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
       if (!inside) return;
-      // #region agent log
-      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-        body: JSON.stringify({
-          sessionId: "f12403",
-          runId: "minimap-drag-v2",
-          hypothesisId: "H6",
-          location: "AudioPreview.tsx:pointerdownCapture",
-          message: "pointerdown inside minimap bounds",
-          data: {
-            targetTag: (e.target as HTMLElement | null)?.tagName ?? null,
-            targetPart: (e.target as HTMLElement | null)?.getAttribute?.("part") ?? null,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
     };
     window.addEventListener("pointerdown", handlePointerDownCapture, true);
     return () => window.removeEventListener("pointerdown", handlePointerDownCapture, true);
@@ -1063,21 +941,6 @@ export const AudioPreview = ({
   // Update zoom
   useEffect(() => {
     if (wavesurferRef.current) {
-      // #region agent log
-      fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-        body: JSON.stringify({
-          sessionId: "f12403",
-          runId: "minimap-drag-v1",
-          hypothesisId: "H4",
-          location: "AudioPreview.tsx:zoomEffect",
-          message: "zoom effect invoked",
-          data: { zoom },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       wavesurferRef.current.zoom(zoom);
     }
   }, [zoom]);
@@ -1340,6 +1203,19 @@ export const AudioPreview = ({
     setSlicePositionOverrides((prev) => new Map(prev).set(key, newTime));
   }, []);
 
+  const playSlice = useCallback(
+    (sliceIndex: number) => {
+      if (!wavesurferRef.current || duration <= 0) return;
+      const start = displayedSlices[sliceIndex]?.time ?? 0;
+      const end = displayedSlices[sliceIndex + 1]?.time ?? duration;
+      if (start >= end) return;
+      playSliceEndRef.current = end;
+      wavesurferRef.current.seekTo(start / duration);
+      wavesurferRef.current.play();
+    },
+    [duration, displayedSlices],
+  );
+
   addSliceAtTimeRef.current = addSliceAtTime;
   addMarkerModeRef.current = addMarkerMode;
   sliceMarkersRef.current = sliceMarkers;
@@ -1560,27 +1436,6 @@ export const AudioPreview = ({
       if (hasMovedEnough && !dragStateRef.current.isDragging) {
         dragStateRef.current.isDragging = true;
         dragStateRef.current.hasMoved = true;
-        // #region agent log
-        fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-          body: JSON.stringify({
-            sessionId: "f12403",
-            runId: "minimap-drag-v1",
-            hypothesisId: "H3",
-            location: "AudioPreview.tsx:handleMouseMove",
-            message: "drag threshold crossed",
-            data: {
-              isMinimapDrag: dragStateRef.current.isMinimapDrag,
-              isOverlayDrag: dragStateRef.current.isOverlayDrag,
-              deltaX,
-              deltaY,
-              threshold: DRAG_THRESHOLD,
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         // Prevent default behavior once drag is detected
         e.preventDefault();
       }
@@ -1618,36 +1473,6 @@ export const AudioPreview = ({
               overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
             if (dragStateRef.current.debugScrollSamples < 6) {
               dragStateRef.current.debugScrollSamples += 1;
-              // #region agent log
-              fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-                body: JSON.stringify({
-                  sessionId: "f12403",
-                  runId: "minimap-drag-v5",
-                  hypothesisId: "H11",
-                  location: "AudioPreview.tsx:handleMouseMove",
-                  message: "minimap horizontal coupling sample",
-                  data: {
-                    actualDeltaX,
-                    actualDeltaY,
-                    verticalDominant: Math.abs(actualDeltaY) > Math.abs(actualDeltaX),
-                    shouldApplyHorizontal,
-                    minimapPixelToScroll,
-                    mappedDeltaX,
-                    scrollBefore,
-                    newScroll,
-                    overlayLeftBefore,
-                    overlayLeftAfter,
-                    overlayDelta:
-                      overlayLeftBefore != null && overlayLeftAfter != null
-                        ? overlayLeftAfter - overlayLeftBefore
-                        : null,
-                  },
-                  timestamp: Date.now(),
-                }),
-              }).catch(() => {});
-              // #endregion
             }
           }
         } catch {
@@ -1660,27 +1485,6 @@ export const AudioPreview = ({
         const newZoom = Math.max(0, Math.min(500, dragStateRef.current.startZoom + zoomDelta));
         if (dragStateRef.current.debugMoveSamples < 3) {
           dragStateRef.current.debugMoveSamples += 1;
-          // #region agent log
-          fetch("http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f12403" },
-            body: JSON.stringify({
-              sessionId: "f12403",
-              runId: "minimap-drag-postfix2",
-              hypothesisId: "H10",
-              location: "AudioPreview.tsx:handleMouseMove",
-              message: "minimap drag computed zoom (overlay and background)",
-              data: {
-                isOverlayDrag: dragStateRef.current.isOverlayDrag,
-                actualDeltaY,
-                zoomDelta,
-                startZoom: dragStateRef.current.startZoom,
-                newZoom,
-              },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
         }
         setZoom(newZoom);
       }
@@ -1945,10 +1749,6 @@ export const AudioPreview = ({
                   }}
                   onMouseEnter={() => setHoveredSliceKey(key)}
                   onMouseLeave={() => setHoveredSliceKey(null)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeSlice(slice.originalTime, slice.isUserAdded);
-                  }}
                 >
                   <div
                     className="absolute top-0 w-0.5 h-full pointer-events-none"
@@ -1966,6 +1766,17 @@ export const AudioPreview = ({
                         title="Remove slice"
                       >
                         <Trash2 className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        className="absolute top-6 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-primary/10 hover:text-primary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playSlice(i);
+                        }}
+                        title="Play slice"
+                      >
+                        <Play className="w-3 h-3" />
                       </button>
                       <div
                         className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-6 h-6 rounded flex items-center justify-center bg-background/90 border border-border shadow-sm cursor-ew-resize z-10"
