@@ -25,6 +25,11 @@ import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
 import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
 import { assertFilenameShortener } from "../../tests/filename-shortener.mjs";
 import { assertBraveBrowserSupport } from "../../tests/brave-browser-support.mjs";
+import { assertWaveformButtonOpensEmptyState } from "../../tests/waveform-button-opens-empty-state.mjs";
+import { assertExportPromptsFilenameInEmptyState } from "../../tests/export-prompts-filename-empty-state.mjs";
+import { assertFilePaneKeyboardNavigation } from "../../tests/filepane-keyboard-navigation.mjs";
+import { assertSearchModesAllFoldersFiles } from "../../tests/search-modes-all-folders-files.mjs";
+import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-folder-does-not-auto-select-dest.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -334,6 +339,8 @@ try {
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
   await assertMultiModeToggle(page);
+  await assertWaveformButtonOpensEmptyState(page);
+  await assertExportPromptsFilenameInEmptyState(page);
   await assertFormatMenuCategories(page);
   await assertTermsAndPrivacyLinks(page, { baseUrl });
   await assertSampleRateOptions(page);
@@ -381,6 +388,9 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
+  await assertFilePaneKeyboardNavigation(page);
+  await assertSearchModesAllFoldersFiles(page);
+  await assertSourceFolderDoesNotAutoSelectDest(page);
   await assertExpandedFoldersPersistOnReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });

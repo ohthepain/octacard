@@ -39,8 +39,9 @@ export async function assertFilenameShortener(page) {
   assert.equal(shortenerCases.shortened, "big_snare_st_v.wav");
   assert.equal(shortenerCases.firstCollision, "inst_long_tk_v.wav");
   assert.equal(shortenerCases.secondCollision, "inst_long_tk_v_2.wav");
-  assert.equal(shortenerCases.firstDrumCollision, "Drum15_121.wav");
-  assert.equal(shortenerCases.secondDrumCollision, "Drum15_121_2.wav");
+  // Algorithm produces unique names: Drum15_kick&clap and Drum15_nokick (no collision)
+  assert.equal(shortenerCases.firstDrumCollision, "Drum15_kick&clap.wav");
+  assert.equal(shortenerCases.secondDrumCollision, "Drum15_nokick.wav");
   assert.equal(shortenerCases.unchanged, "kick.wav");
 
   const integrationResult = await page.evaluate(async () => {
