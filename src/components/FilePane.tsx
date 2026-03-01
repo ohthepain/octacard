@@ -257,7 +257,7 @@ export const FilePane = ({
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
-  const [treeViewMode, setTreeViewMode] = useState<"all" | "folders">("all");
+  const [treeViewMode, setTreeViewMode] = useState<"all" | "folders" | "files">("all");
   const [sortBy, setSortBy] = useState<"name" | "dateAdded" | "dateCreated" | "dateModified" | "dateLastOpened">(
     "name",
   );
@@ -283,7 +283,11 @@ export const FilePane = ({
 
   // Helper function to recursively count files in a folder
   const countFilesRecursively = useCallback(
-    async (folderPath: string, sourcePane?: "source" | "dest"): Promise<number> => {
+    async (
+      folderPath: string,
+      sourcePane?: "source" | "dest",
+      options?: { audioOnly?: boolean },
+    ): Promise<number> => {
       try {
         const result = await fileSystemService.readDirectory(folderPath, sourcePane ?? paneType);
         if (!result.success || !result.data) return 0;
@@ -291,9 +295,11 @@ export const FilePane = ({
         let count = 0;
         for (const entry of result.data) {
           if (entry.type === "file") {
-            count++;
+            if (!options?.audioOnly || isAudioFile(entry.path)) {
+              count++;
+            }
           } else if (entry.type === "folder") {
-            count += await countFilesRecursively(entry.path, sourcePane ?? paneType);
+            count += await countFilesRecursively(entry.path, sourcePane ?? paneType, options);
           }
         }
         return count;
@@ -1042,15 +1048,31 @@ export const FilePane = ({
 
       const query = searchQuery.toLowerCase();
       const folderPathsWithMatches = new Set<string>();
-      searchResults.forEach((r) => {
-        const parentPath = dirname(r.path);
-        if (parentPath && parentPath !== "." && parentPath !== "/") {
-          folderPathsWithMatches.add(parentPath);
-        }
-        if (r.isDirectory) {
-          folderPathsWithMatches.add(r.path);
-        }
-      });
+      if (treeViewMode === "files") {
+        // Files mode: only folders that contain a matching file (not folders that match by name)
+        searchResults.forEach((r) => {
+          if (r.isDirectory) return;
+          const parentPath = dirname(r.path);
+          if (parentPath && parentPath !== "." && parentPath !== "/") {
+            folderPathsWithMatches.add(parentPath);
+            let p = dirname(parentPath);
+            while (p && p !== "." && p !== "/") {
+              folderPathsWithMatches.add(p);
+              p = dirname(p);
+            }
+          }
+        });
+      } else {
+        searchResults.forEach((r) => {
+          const parentPath = dirname(r.path);
+          if (parentPath && parentPath !== "." && parentPath !== "/") {
+            folderPathsWithMatches.add(parentPath);
+          }
+          if (r.isDirectory) {
+            folderPathsWithMatches.add(r.path);
+          }
+        });
+      }
 
       const filteredEntries = result.data.filter((entry) => {
         if (entry.name.startsWith(".") || entry.name.startsWith("~")) return false;
@@ -1073,7 +1095,34 @@ export const FilePane = ({
             atime: entryWithDates.atime,
           };
         });
+      } else if (treeViewMode === "files") {
+        // Files mode: matching files + folders that contain a matching file
+        children = filteredEntries
+          .filter((entry) => {
+            if (entry.type === "folder") {
+              return (
+                folderPathsWithMatches.has(entry.path) ||
+                Array.from(folderPathsWithMatches).some((p) => p.startsWith(entry.path + "/"))
+              );
+            }
+            return entry.name.toLowerCase().includes(query);
+          })
+          .map((entry) => {
+            const entryWithDates = entry as typeof entry & { birthtime?: number; mtime?: number; atime?: number };
+            return {
+              id: `${nodeId}-${entry.path}`,
+              name: entry.name,
+              type: entry.type,
+              path: entry.path,
+              size: entry.type === "file" ? formatFileSize(entry.size) : undefined,
+              loaded: false,
+              birthtime: entryWithDates.birthtime,
+              mtime: entryWithDates.mtime,
+              atime: entryWithDates.atime,
+            };
+          });
       } else {
+        // Folders mode
         children = filteredEntries
           .filter((entry) => {
             if (entry.type === "folder") {
@@ -1865,13 +1914,13 @@ export const FilePane = ({
     ) => {
       if (typeof window === "undefined") return;
 
-      // Count total files for progress tracking
+      // Count total audio files for progress tracking (only copy/convert audio files)
       let totalFiles = 0;
       for (const item of items) {
         if (item.type === "file") {
-          totalFiles++;
+          if (isAudioFile(item.path)) totalFiles++;
         } else {
-          totalFiles += await countFilesRecursively(item.path, sourcePane);
+          totalFiles += await countFilesRecursively(item.path, sourcePane, { audioOnly: true });
         }
       }
 
@@ -1935,6 +1984,7 @@ export const FilePane = ({
           for (const entry of result.data) {
             const entryDestPath = joinPath(destFolder, entry.name);
             if (entry.type === "file") {
+              if (!isAudioFile(entry.path)) continue;
               currentFileIndex++;
               if (showProgress) {
                 setCopyProgress({
@@ -1948,17 +1998,17 @@ export const FilePane = ({
               // For external drops (from Finder), treat as from different pane
               // For internal drops, check if source is from different pane
               const isFromDifferentPane = isExternal || sourcePane !== paneType;
-              const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(entry.path);
+              const entryIsAudio = isAudioFile(entry.path);
 
               let finalDestPath = entryDestPath;
-              if (convertFiles && isFromDifferentPane && isAudioFile && fileFormat === "WAV") {
+              if (convertFiles && isFromDifferentPane && entryIsAudio && fileFormat === "WAV") {
                 finalDestPath = entryDestPath.replace(/\.\w+$/i, ".wav");
               }
 
               const needsConversion =
                 convertFiles &&
                 isFromDifferentPane &&
-                isAudioFile &&
+                entryIsAudio &&
                 (fileFormat === "WAV" ||
                   sampleRate !== "dont-change" ||
                   sampleDepth === "16-bit" ||
@@ -2042,6 +2092,7 @@ export const FilePane = ({
         const destFilePath = joinPath(destinationPath, fileName);
 
         if (item.type === "file") {
+          if (!isAudioFile(item.path)) continue;
           currentFileIndex++;
           if (showProgress) {
             setCopyProgress({
@@ -2056,17 +2107,17 @@ export const FilePane = ({
           // For external drops (from Finder), treat as from different pane
           // For internal drops, check if source is from different pane
           const isFromDifferentPane = isExternal || sourcePane !== paneType;
-          const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.path);
+          const itemIsAudio = isAudioFile(item.path);
 
           let finalDestFilePath = destFilePath;
-          if (convertFiles && isFromDifferentPane && isAudioFile && fileFormat === "WAV") {
+          if (convertFiles && isFromDifferentPane && itemIsAudio && fileFormat === "WAV") {
             finalDestFilePath = destFilePath.replace(/\.\w+$/i, ".wav");
           }
 
           const needsConversion =
             convertFiles &&
             isFromDifferentPane &&
-            isAudioFile &&
+            itemIsAudio &&
             (fileFormat === "WAV" ||
               sampleRate !== "dont-change" ||
               sampleDepth === "16-bit" ||
@@ -2277,6 +2328,7 @@ export const FilePane = ({
 
       for (const item of itemsToProcess) {
         if (item.type === "file") {
+          if (!isAudioFile(item.name)) continue;
           currentFileIndex++;
           if (showProgress) {
             setCopyProgress({
@@ -2297,21 +2349,21 @@ export const FilePane = ({
             continue;
           }
 
-          const isAudioFile = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac)$/i.test(item.name);
+          const itemIsAudio = isAudioFile(item.name);
           let finalDestFileName = item.name;
-          if (isAudioFile && pitch === "C") {
+          if (itemIsAudio && pitch === "C") {
             const { analyzeFilenameForNote } = await import("@/lib/batch-math");
             const pitchAnalysis = analyzeFilenameForNote(item.name);
             if (pitchAnalysis && pitchAnalysis.semitonesDownToC !== 0) {
               finalDestFileName = finalDestFileName.replace(pitchAnalysis.originalString, "C");
             }
           }
-          if (isAudioFile && fileFormat === "WAV") {
+          if (itemIsAudio && fileFormat === "WAV") {
             finalDestFileName = finalDestFileName.replace(/\.\w+$/i, ".wav");
           }
 
           const needsConversion =
-            isAudioFile &&
+            itemIsAudio &&
             (fileFormat === "WAV" ||
               sampleRate !== "dont-change" ||
               sampleDepth === "16-bit" ||
@@ -2667,8 +2719,8 @@ export const FilePane = ({
       }> = [];
 
       for (const item of externalItems) {
-        if (item.type === "file" && item.file) {
-          // File: convert and save in destination folder
+        if (item.type === "file" && item.file && isAudioFile(item.name)) {
+          // File: convert and save in destination folder (audio files only)
           itemsToProcess.push({
             file: item.file,
             name: item.name,
@@ -2701,6 +2753,7 @@ export const FilePane = ({
               // Some TS setups don't include `dom.iterable`, so `entries()` may be missing from the type.
               for await (const [name, entryHandle] of (handle as any).entries()) {
                 if (entryHandle.kind === "file") {
+                  if (!isAudioFile(name)) continue;
                   const fileHandle = entryHandle as FileSystemFileHandle;
                   const file = await fileHandle.getFile();
                   itemsToProcess.push({
@@ -3344,27 +3397,43 @@ export const FilePane = ({
     (
       results: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>,
       searchRootPath?: string,
-      includeFiles?: boolean,
+      mode: "all" | "folders" | "files" = "all",
     ): FileNode[] => {
       if (results.length === 0) return [];
 
       // Extract all unique folder paths that contain matches
       const folderPaths = new Set<string>();
 
-      results.forEach((result) => {
-        // Get the parent directory of each result
-        const parentPath = dirname(result.path);
-        if (parentPath && parentPath !== "." && parentPath !== "/") {
-          // If searching within a specific path, only include folders within that path
-          if (!searchRootPath || parentPath.startsWith(searchRootPath)) {
-            folderPaths.add(parentPath);
+      const addAncestorChain = (path: string) => {
+        let p = path;
+        while (p && p !== "." && p !== "/") {
+          if (!searchRootPath || p.startsWith(searchRootPath)) {
+            folderPaths.add(p);
           }
+          p = dirname(p);
         }
+      };
 
-        // If the result itself is a folder, include it
-        if (result.isDirectory) {
-          if (!searchRootPath || result.path.startsWith(searchRootPath)) {
-            folderPaths.add(result.path);
+      results.forEach((result) => {
+        if (mode === "files") {
+          // Files mode: only folders that contain a matching file (not folders that match by name)
+          if (result.isDirectory) return;
+          const parentPath = dirname(result.path);
+          if (parentPath && parentPath !== "." && parentPath !== "/") {
+            addAncestorChain(parentPath);
+          }
+        } else {
+          // All/Folders mode: include parent of each result and folders that match
+          const parentPath = dirname(result.path);
+          if (parentPath && parentPath !== "." && parentPath !== "/") {
+            if (!searchRootPath || parentPath.startsWith(searchRootPath)) {
+              folderPaths.add(parentPath);
+            }
+          }
+          if (result.isDirectory) {
+            if (!searchRootPath || result.path.startsWith(searchRootPath)) {
+              folderPaths.add(result.path);
+            }
           }
         }
       });
@@ -3437,8 +3506,8 @@ export const FilePane = ({
         }
       });
 
-      // All mode: add matching files as children of their parent folder
-      if (includeFiles) {
+      // All and Files mode: add matching files as children of their parent folder
+      if (mode === "all" || mode === "files") {
         results.forEach((result) => {
           if (result.isDirectory) return;
           const parentPath = dirname(result.path);
@@ -3488,8 +3557,7 @@ export const FilePane = ({
       setSearchResultsTree([]);
       return;
     }
-    const includeFiles = treeViewMode === "all";
-    const tree = buildFolderTreeFromSearchResults(searchResults, currentRootPath, includeFiles);
+    const tree = buildFolderTreeFromSearchResults(searchResults, currentRootPath, treeViewMode);
     setSearchResultsTree(tree);
   }, [searchQuery, searchResults, currentRootPath, treeViewMode, buildFolderTreeFromSearchResults]);
 
@@ -3692,6 +3760,15 @@ export const FilePane = ({
                   title="Show folders only"
                 >
                   Folders
+                </Button>
+                <Button
+                  size="sm"
+                  variant={treeViewMode === "files" ? "secondary" : "ghost"}
+                  className="rounded-none"
+                  onClick={() => setTreeViewMode("files")}
+                  title="Show matching files and folders that contain matching files"
+                >
+                  Files
                 </Button>
               </div>
               <div className="relative">
