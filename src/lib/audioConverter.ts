@@ -172,7 +172,7 @@ export async function convertAudio(
     (options.envelopePoints && options.envelopePoints.length > 0)
   ) {
     const { exportAudioWithEdits } = await import('./exportAudio');
-    const blob = await exportAudioWithEdits(
+    const { mainBlob } = await exportAudioWithEdits(
       inputFile,
       {
         regionStart: options.regionStart,
@@ -181,7 +181,7 @@ export async function convertAudio(
       },
       0
     );
-    fileToConvert = new File([blob], inputFile.name.replace(/\.[^.]+$/, '.wav') || 'input.wav', {
+    fileToConvert = new File([mainBlob], inputFile.name.replace(/\.[^.]+$/, '.wav') || 'input.wav', {
       type: 'audio/wav',
     });
   }

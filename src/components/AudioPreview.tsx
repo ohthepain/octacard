@@ -33,11 +33,16 @@ import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
 import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
-import { exportAudioWithEdits, mixOverdub, replaceSegment } from "@/lib/exportAudio";
+import { exportAudioWithEdits, mixOverdub, replaceSegment, parseWavCueMarkers } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { detectSliceMarkers, selectTopSlices, type SliceMarker, type SliceDetectionMode } from "@/lib/sliceDetection";
 import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
+import {
+  ExportOptionsDialog,
+  DEFAULT_OPTIONS as DEFAULT_EXPORT_OPTIONS,
+  type ExportMarkerOptions,
+} from "@/components/ExportOptionsDialog";
 import {
   Dialog,
   DialogContent,
@@ -117,6 +122,10 @@ export const AudioPreview = ({
   const [exportOverwriteOpen, setExportOverwriteOpen] = useState(false);
   const exportOverwriteResolverRef = useRef<((choice: "abort" | "overwrite") => void) | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
+  const [exportMarkerOptions, setExportMarkerOptions] = useState<ExportMarkerOptions>(() => ({
+    ...DEFAULT_EXPORT_OPTIONS,
+  }));
 
   const setEdits = useSampleEditsStore((s) => s.setEdits);
   const [currentTime, setCurrentTime] = useState(0);
@@ -392,44 +401,92 @@ export const AudioPreview = ({
     loadAudioUrl();
   }, [filePath, paneType, isEmptyState]);
 
-  // Slice detection: decode audio and run transient/pitch detection when we have audio
+  const sliceDetectionRunForRef = useRef<string | null>(null);
+
+  // On load: quick parse for embedded cue markers. If found, open Slicing so user sees them.
   useEffect(() => {
     if (isEmptyState || !filePath || !audioUrl) return;
     let cancelled = false;
-
-    async function runDetection() {
-      setIsAnalyzing(true);
+    (async () => {
       try {
         const res = await fetch(audioUrl);
         const arrayBuffer = await res.arrayBuffer();
         if (cancelled) return;
-        const ctx = new AudioContext();
-        const buffer = await ctx.decodeAudioData(arrayBuffer);
-        await ctx.close();
-        if (cancelled) return;
-
-        const bpmResult = parseBpmFromString(fileName ?? "");
-        const bpm = bpmResult?.bpm ?? 120;
-        const markers = detectSliceMarkers(buffer, buffer.duration, bpm, sliceDetectionMode);
-        if (cancelled) return;
-        setSliceMarkers(markers);
-        const bars = (buffer.duration * bpm) / 240;
-        setNumSlices(Math.max(1, Math.floor(8 * bars)));
-      } catch (err) {
-        if (!cancelled) {
-          console.warn("Slice detection failed:", err);
-          setSliceMarkers([]);
+        const parsed = parseWavCueMarkers(arrayBuffer);
+        if (parsed && parsed.sampleFrames.length > 0) {
+          const markers: SliceMarker[] = parsed.sampleFrames.map((frame) => ({
+            time: frame / parsed.sampleRate,
+            confidence: 1,
+          }));
+          setSliceMarkers(markers);
+          setNumSlices(markers.length);
+          setSlicingOpen(true);
+          setExportMarkerOptions((prev) => ({ ...prev, sliceFiles: true }));
+          sliceDetectionRunForRef.current = `${filePath}-${audioUrl}`;
         }
-      } finally {
-        if (!cancelled) setIsAnalyzing(false);
+      } catch {
+        // Ignore parse errors; user can open Slicing for detection
       }
-    }
-
-    runDetection();
+    })();
     return () => {
       cancelled = true;
     };
+  }, [audioUrl, filePath, isEmptyState]);
+
+  // Slice detection: run only when user opens Slicing panel (lazy). Parse embedded cues first (fast), else run transient/pitch detection.
+  const runSliceDetection = useCallback(async () => {
+    if (isEmptyState || !filePath || !audioUrl) return;
+    const key = `${filePath}-${audioUrl}`;
+    if (sliceDetectionRunForRef.current === key) return;
+    sliceDetectionRunForRef.current = key;
+
+    setIsAnalyzing(true);
+    try {
+      const res = await fetch(audioUrl);
+      const arrayBuffer = await res.arrayBuffer();
+
+      const parsed = parseWavCueMarkers(arrayBuffer);
+      if (parsed && parsed.sampleFrames.length > 0) {
+        const markers: SliceMarker[] = parsed.sampleFrames.map((frame) => ({
+          time: frame / parsed.sampleRate,
+          confidence: 1,
+        }));
+        setSliceMarkers(markers);
+        setNumSlices(markers.length);
+        setExportMarkerOptions((prev) => ({ ...prev, sliceFiles: true }));
+        setIsAnalyzing(false);
+        return;
+      }
+
+      const ctx = new AudioContext();
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      await ctx.close();
+
+      const bpmResult = parseBpmFromString(fileName ?? "");
+      const bpm = bpmResult?.bpm ?? 120;
+      const markers = detectSliceMarkers(buffer, buffer.duration, bpm, sliceDetectionMode);
+      setSliceMarkers(markers);
+      const bars = (buffer.duration * bpm) / 240;
+      setNumSlices(Math.max(1, Math.floor(8 * bars)));
+    } catch (err) {
+      console.warn("Slice detection failed:", err);
+      setSliceMarkers([]);
+    } finally {
+      setIsAnalyzing(false);
+    }
   }, [audioUrl, fileName, isEmptyState, filePath, sliceDetectionMode]);
+
+  useEffect(() => {
+    if (isEmptyState || !filePath) {
+      sliceDetectionRunForRef.current = null;
+    }
+  }, [isEmptyState, filePath]);
+
+  useEffect(() => {
+    if (slicingOpen && !isEmptyState && filePath && audioUrl && sliceMarkers.length === 0) {
+      runSliceDetection();
+    }
+  }, [slicingOpen, isEmptyState, filePath, audioUrl, sliceMarkers.length, runSliceDetection]);
 
   // Clear slice markers and overrides when file changes or empty state
   useEffect(() => {
@@ -1326,6 +1383,104 @@ export const AudioPreview = ({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const performExport = useCallback(
+    async (markerOptions: ExportMarkerOptions | null) => {
+      if (!filePath || !paneType) return;
+      const blobResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
+      if (!blobResult.success || !blobResult.data) {
+        toast.error(blobResult.error || "Failed to load audio");
+        return;
+      }
+      const blob = await fetch(blobResult.data).then((r) => r.blob());
+      const regs = regionsRef.current?.getRegions() ?? [];
+      const region = regs[0];
+      const regionStart = region?.start ?? 0;
+      const regionEnd = region?.end ?? duration;
+      const pts = envelopeRef.current?.getPoints() ?? [];
+      const envelopePoints = pts.length > 0 ? pts : undefined;
+      const slices = displayedSlices.map((s) => ({ time: s.time }));
+      const hasSlices = slices.length > 0;
+
+      const statsResult = await fileSystemService.getFileStats(filePath, paneType);
+      const willOverwrite = statsResult.success && statsResult.data;
+
+      if (willOverwrite) {
+        setExportOverwriteOpen(true);
+        const choice = await new Promise<"abort" | "overwrite">((resolve) => {
+          exportOverwriteResolverRef.current = resolve;
+        });
+        if (choice === "abort") return;
+      }
+
+      setIsExporting(true);
+      try {
+        const bpmResult = parseBpmFromString(fileName ?? "");
+        const tempo = bpmResult?.bpm;
+
+        const params = {
+          regionStart,
+          regionEnd,
+          envelopePoints,
+          slices: hasSlices ? slices : undefined,
+          embeddedMarkers: hasSlices && (markerOptions?.embeddedMarkers ?? true),
+          ixmlMetadata: markerOptions?.ixmlMetadata ?? true,
+          exportSliceFiles: hasSlices && (markerOptions?.sliceFiles ?? false),
+          tempo,
+          timeSignature: undefined,
+        };
+
+        const { mainBlob, sliceBlobs } = await exportAudioWithEdits(blob, params, duration);
+
+        const result = await fileSystemService.writeBlobToPath(filePath, mainBlob, paneType);
+        if (!result.success) {
+          toast.error(result.error || "Export failed");
+          return;
+        }
+
+        if (sliceBlobs && sliceBlobs.length > 0) {
+          const baseName = (fileName ?? "export").replace(/\.wav$/i, "");
+          const dirPath = filePath.substring(0, filePath.lastIndexOf("/")) || "/";
+          const folderResult = await fileSystemService.createFolder(dirPath, baseName, paneType);
+          if (!folderResult.success) {
+            toast.error(folderResult.error || "Failed to create slice folder");
+            return;
+          }
+          const sliceFolderPath = `${dirPath}/${baseName}`;
+          const padWidth = Math.max(2, String(sliceBlobs.length).length);
+          for (let i = 0; i < sliceBlobs.length; i++) {
+            const num = String(i + 1).padStart(padWidth, "0");
+            const slicePath = `${sliceFolderPath}/${baseName}_${num}.wav`;
+            const sliceResult = await fileSystemService.writeBlobToPath(
+              slicePath,
+              sliceBlobs[i],
+              paneType
+            );
+            if (!sliceResult.success) {
+              toast.error(sliceResult.error || `Failed to export slice ${i + 1}`);
+              return;
+            }
+          }
+          toast.success(`Exported ${fileName} and ${sliceBlobs.length} slices`);
+        } else {
+          toast.success(`Exported ${fileName}`);
+        }
+        onFileSaved?.(paneType);
+      } catch (err) {
+        toast.error(String(err));
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [
+      filePath,
+      paneType,
+      duration,
+      fileName,
+      displayedSlices,
+      onFileSaved,
+    ]
+  );
+
   const handleExport = async () => {
     if (isExporting) return;
     if (isEmptyState || !filePath || !paneType) {
@@ -1355,46 +1510,20 @@ export const AudioPreview = ({
       }
       return;
     }
-    const blobResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
-    if (!blobResult.success || !blobResult.data) {
-      toast.error(blobResult.error || "Failed to load audio");
+
+    const hasSlices = displayedSlices.length > 0;
+    if (hasSlices) {
+      setExportOptionsOpen(true);
       return;
     }
-    const blob = await fetch(blobResult.data).then((r) => r.blob());
-    const regs = regionsRef.current?.getRegions() ?? [];
-    const region = regs[0];
-    const regionStart = region?.start ?? 0;
-    const regionEnd = region?.end ?? duration;
-    const pts = envelopeRef.current?.getPoints() ?? [];
-    const envelopePoints = pts.length > 0 ? pts : undefined;
 
-    const statsResult = await fileSystemService.getFileStats(filePath, paneType);
-    const willOverwrite = statsResult.success && statsResult.data;
-
-    if (willOverwrite) {
-      setExportOverwriteOpen(true);
-      const choice = await new Promise<"abort" | "overwrite">((resolve) => {
-        exportOverwriteResolverRef.current = resolve;
-      });
-      if (choice === "abort") return;
-    }
-
-    setIsExporting(true);
-    try {
-      const exported = await exportAudioWithEdits(blob, { regionStart, regionEnd, envelopePoints }, duration);
-      const result = await fileSystemService.writeBlobToPath(filePath, exported, paneType);
-      if (result.success) {
-        toast.success(`Exported ${fileName}`);
-        onFileSaved?.(paneType);
-      } else {
-        toast.error(result.error || "Export failed");
-      }
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setIsExporting(false);
-    }
+    await performExport(null);
   };
+
+  const handleExportOptionsConfirm = useCallback(() => {
+    setExportOptionsOpen(false);
+    performExport(exportMarkerOptions);
+  }, [exportMarkerOptions, performExport]);
 
   const handleExportOverwriteChoice = (choice: "abort" | "overwrite") => {
     setExportOverwriteOpen(false);
@@ -2114,6 +2243,14 @@ export const AudioPreview = ({
         open={exportOverwriteOpen}
         fileName={fileName ?? "file"}
         onChoice={handleExportOverwriteChoice}
+      />
+
+      <ExportOptionsDialog
+        open={exportOptionsOpen}
+        onOpenChange={setExportOptionsOpen}
+        options={exportMarkerOptions}
+        onOptionsChange={setExportMarkerOptions}
+        onConfirm={handleExportOptionsConfirm}
       />
 
       {/* Export filename prompt for empty state */}
