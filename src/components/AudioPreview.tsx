@@ -1958,6 +1958,7 @@ export const AudioPreview = ({
 
         {/* Export */}
         <Button
+          data-testid="audio-preview-export-button"
           size="sm"
           variant="outline"
           className="h-7 gap-2 shrink-0"
