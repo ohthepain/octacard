@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
@@ -30,6 +31,28 @@ export default defineConfig(({ command }) => {
 
   return {
     plugins: [react()],
+    test: {
+      globals: true,
+      environment: "jsdom",
+      include: ["src/**/*.{test,spec}.{ts,tsx}"],
+      coverage: {
+        provider: "v8",
+        reporter: [
+          "text",
+          "html",
+          "lcov",
+          ["json", { file: "coverage-final.json" }],
+        ],
+        reportsDirectory: "./coverage/unit",
+        include: ["src/**/*.{ts,tsx}"],
+        exclude: [
+          "src/**/*.d.ts",
+          "src/**/*.{test,spec}.{ts,tsx}",
+          "src/main.tsx",
+          "src/routeTree.gen.ts",
+        ],
+      },
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
