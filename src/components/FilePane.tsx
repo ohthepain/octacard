@@ -524,6 +524,7 @@ export const FilePane = ({
         if (result.success && result.data) {
           // Directory exists, clear the error state
           setPathDoesNotExist(false);
+          if (nodeId === "root") setLoading(false);
 
           // Filter out hidden files/folders (starting with '.' or '~')
           // Note: In web/File System Access API, "/" is the user's selected folder - show all contents.
@@ -598,12 +599,14 @@ export const FilePane = ({
           if (nodeId === "root") {
             setPathDoesNotExist(true);
             setFileTree([]);
+            setLoading(false);
           }
         } else {
           console.error("Failed to read directory:", result.error);
           if (nodeId === "root") {
             setPathDoesNotExist(true);
             setFileTree([]);
+            setLoading(false);
           }
         }
       } catch (error) {
@@ -611,6 +614,7 @@ export const FilePane = ({
         if (nodeId === "root") {
           setPathDoesNotExist(true);
           setFileTree([]);
+          setLoading(false);
         }
       }
     },
@@ -942,6 +946,20 @@ export const FilePane = ({
 
         // Fallback to home directory (when no card detected or autoNavigateToCard is false)
         console.log(`${paneName} - No card detected or not auto-navigating, falling back to home directory`);
+        // When root is already set (e.g. from Browse for folder), let the simple mount effect handle loading.
+        // Avoid running setFileTree([]) which would clear the tree populated by the other effect.
+        if (fileSystemService.hasRootForPane(paneType)) {
+          const rootName = fileSystemService.getRootDirectoryName(paneType);
+          setRootPath("/");
+          setCurrentRootPath("/");
+          setDisplayTitle(rootName);
+          setCurrentVolumeUUID(rootName || null);
+          rootPathRef.current = "/";
+          currentRootPathRef.current = "/";
+          setLoading(false);
+          hasInitializedNavStateRef.current = true;
+          return;
+        }
         // Home directory not available in web - use root
         const homeResult = { success: true, data: "/" };
         console.log(`${paneName} - Home directory result:`, homeResult);

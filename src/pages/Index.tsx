@@ -645,12 +645,8 @@ const Index = () => {
   };
 
   const handleBrowseForFolder = async (paneType: "source" | "dest", currentPath?: string) => {
-    if (!fileSystemService.hasRootDirectory()) {
-      const initialized = await initializeRootDirectories();
-      if (initialized) {
-        return;
-      }
-    }
+    // Always use pane-specific selection so source and dest remain independent.
+    // Do NOT fall back to requestRootDirectory (which sets both) when selecting from a specific pane.
     const result = await fileSystemService.requestDirectoryForPane(paneType, currentPath);
     if (result.success && result.data) {
       applyBrowseSelection(paneType, result.data);

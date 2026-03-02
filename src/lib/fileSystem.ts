@@ -1108,6 +1108,12 @@ class FileSystemService {
           error: "Source file not found",
         };
       }
+      if (sourceFile.size === 0) {
+        return {
+          success: false,
+          error: `File "${fileName}" is empty or could not be read. Please ensure the file contains data and you have access to read it.`,
+        };
+      }
 
       const hasSampleEdits = !!(
         sampleEdits?.region ||
