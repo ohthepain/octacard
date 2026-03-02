@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertSp404PresetSanitizesFilename(page) {
   await page.getByTestId("format-settings-button").click();
@@ -25,7 +26,7 @@ export async function assertSp404PresetSanitizesFilename(page) {
   await page.getByRole("button", { name: "Convert" }).click();
   await page.getByRole("button", { name: "Convert & Save" }).click();
 
-  await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length >= 1);
+  await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length >= 1");
   const convertCalls = await page.evaluate(() => window.__convertCalls);
   const meloCall = convertCalls.find((call) => call.sourceVirtualPath === "/Alpha/Melô.wav");
   assert.ok(meloCall, "Expected conversion call for /Alpha/Melô.wav.");

@@ -30,6 +30,7 @@ import { assertExportPromptsFilenameInEmptyState } from "../../tests/export-prom
 import { assertFilePaneKeyboardNavigation } from "../../tests/filepane-keyboard-navigation.mjs";
 import { assertSearchModesAllFoldersFiles } from "../../tests/search-modes-all-folders-files.mjs";
 import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-folder-does-not-auto-select-dest.mjs";
+import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -413,7 +414,7 @@ try {
     sourceFavorite.click();
     destFavorite.click();
   });
-  await page.waitForFunction(() => Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 3);
+  await waitForPageCondition(page, "Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 3");
   const pickerCallsAfterFavorites = await page.evaluate(() => window.__pickerCalls.slice(0, 3));
   assert.equal(pickerCallsAfterFavorites.length, 3, "Expected three picker calls after opening source+dest favorites.");
   assert.deepEqual(
@@ -449,7 +450,7 @@ try {
     (await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"))) ?? "[]",
   );
   await breadcrumbFavoriteButton.click();
-  await expectAriaPressed(breadcrumbFavoriteButton, "true");
+  await waitForAriaPressed(breadcrumbFavoriteButton, "true");
 
   let storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
   assert.ok(storedFavorites, "Source favorites should be persisted.");
@@ -493,7 +494,7 @@ try {
 
   const breadcrumbFavoriteButtonAfterReload = page.getByTestId("breadcrumb-favorite-source");
   await breadcrumbFavoriteButtonAfterReload.click();
-  await expectAriaPressed(breadcrumbFavoriteButtonAfterReload, "false");
+  await waitForAriaPressed(breadcrumbFavoriteButtonAfterReload, "false");
   storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
   assert.ok(storedFavorites, "Source favorites storage should exist after toggle.");
   const parsedFavoritesAfterRemove = JSON.parse(storedFavorites);
@@ -537,7 +538,7 @@ try {
   // await convertButton.click();
   // await page.getByRole("heading", { name: "Convert Files?" }).waitFor({ state: "visible" });
   // await page.getByRole("button", { name: "Convert & Save" }).click();
-  // await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+  // await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1");
   // const listCalls = await page.evaluate(() => window.__listCalls);
   // const convertCalls = await page.evaluate(() => window.__convertCalls);
   // assert.equal(listCalls.length, 1, "Expected one listAudioFilesRecursively call.");
@@ -577,7 +578,7 @@ try {
   // await page.getByRole("heading", { name: "Copy Files?" }).waitFor({ state: "visible" });
   // await page.getByText("1 file will be copied to the destination.").waitFor({ state: "visible" });
   // await page.getByRole("button", { name: "Copy" }).click();
-  // await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+  // await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1");
   // await page.getByTestId("tree-node-dest-_Alpha").click();
   // await page.evaluate(() => {
   //   window.__listCalls = [];
@@ -587,7 +588,7 @@ try {
   // await page.getByRole("heading", { name: "Copy Files?" }).waitFor({ state: "visible" });
   // await page.getByText("1 file will be copied to the destination.").waitFor({ state: "visible" });
   // await page.getByRole("button", { name: "Copy" }).click();
-  // await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+  // await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1");
   // const sameNameListCalls = await page.evaluate(() => window.__listCalls);
   // const sameNameConvertCalls = await page.evaluate(() => window.__convertCalls);
   // assert.equal(sameNameListCalls.length, 1, "Expected one listAudioFilesRecursively call for same-name case.");
@@ -658,14 +659,6 @@ try {
 
 if (process.exitCode) {
   process.exit(process.exitCode);
-}
-
-async function expectAriaPressed(locator, value) {
-  await locator.waitFor({ state: "visible" });
-  await page.waitForFunction(
-    ([element, expectedValue]) => element?.getAttribute("aria-pressed") === expectedValue,
-    [await locator.elementHandle(), value],
-  );
 }
 
 function toTestIdSegment(value) {

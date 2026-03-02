@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { waitForAriaPressed } from "./wait-utils.mjs";
 
 export async function assertDevModeButton(page, { convertButton, formatButton }) {
   const devModeButton = page.getByTestId("dev-mode-button");
   await devModeButton.waitFor({ state: "visible" });
-  await expectAriaPressed(page, devModeButton, "false");
+  await waitForAriaPressed(devModeButton, "false");
 
   const convertBox = await convertButton.boundingBox();
   const devModeBox = await devModeButton.boundingBox();
@@ -31,7 +32,7 @@ export async function assertDevModeButton(page, { convertButton, formatButton })
   );
 
   await devModeButton.click();
-  await expectAriaPressed(page, devModeButton, "true");
+  await waitForAriaPressed(devModeButton, "true");
   const enabledClassName = await devModeButton.getAttribute("class");
   assert.ok(
     enabledClassName?.includes("bg-orange-500"),
@@ -39,13 +40,5 @@ export async function assertDevModeButton(page, { convertButton, formatButton })
   );
 
   await devModeButton.click();
-  await expectAriaPressed(page, devModeButton, "false");
-}
-
-async function expectAriaPressed(page, locator, value) {
-  await locator.waitFor({ state: "visible" });
-  await page.waitForFunction(
-    ([element, expectedValue]) => element?.getAttribute("aria-pressed") === expectedValue,
-    [await locator.elementHandle(), value],
-  );
+  await waitForAriaPressed(devModeButton, "false");
 }

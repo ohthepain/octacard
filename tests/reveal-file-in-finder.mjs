@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertRevealFileInFinder(page) {
   const alphaNode = page.getByTestId("tree-node-source-_Alpha");
@@ -16,7 +17,7 @@ export async function assertRevealFileInFinder(page) {
   await revealMenuItem.waitFor({ state: "visible" });
   await revealMenuItem.click();
 
-  await page.waitForFunction(() => Array.isArray(window.__revealCalls) && window.__revealCalls.length >= 1);
+  await waitForPageCondition(page, "Array.isArray(window.__revealCalls) && window.__revealCalls.length >= 1");
   const revealCalls = await page.evaluate(() => window.__revealCalls);
   const lastCall = revealCalls.at(-1);
   assert.ok(lastCall, "Expected a reveal call for the file.");

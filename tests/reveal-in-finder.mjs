@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertRevealInFinder(page) {
   const alphaNode = page.getByTestId("tree-node-source-_Alpha");
@@ -9,7 +10,7 @@ export async function assertRevealInFinder(page) {
   await revealMenuItem.waitFor({ state: "visible" });
   await revealMenuItem.click();
 
-  await page.waitForFunction(() => Array.isArray(window.__revealCalls) && window.__revealCalls.length >= 1);
+  await waitForPageCondition(page, "Array.isArray(window.__revealCalls) && window.__revealCalls.length >= 1");
   const revealCalls = await page.evaluate(() => window.__revealCalls);
   assert.equal(revealCalls.length, 1, "Expected a single reveal call.");
   assert.equal(revealCalls[0].virtualPath, "/Alpha", "Reveal should use the selected folder path.");

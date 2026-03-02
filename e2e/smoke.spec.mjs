@@ -21,6 +21,7 @@ import { assertRevealInFinderDest } from "../tests/reveal-in-finder-dest.mjs";
 import { assertRevealFileInFinder } from "../tests/reveal-file-in-finder.mjs";
 import { assertRevealInFinderDoesNotOpenPickerFallback } from "../tests/reveal-in-finder-no-picker-fallback.mjs";
 import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../tests/search-navigation-preserves-query.mjs";
+import { waitForPageCondition } from "../tests/wait-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseUrl = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3010";
@@ -98,7 +99,7 @@ test("full smoke flow", async ({ page }) => {
     if (sourceFavorite instanceof HTMLElement) sourceFavorite.click();
     if (destFavorite instanceof HTMLElement) destFavorite.click();
   });
-  await page.waitForFunction(() => Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 3);
+  await waitForPageCondition(page, "Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 3");
   const pickerCalls = await page.evaluate(() => window.__pickerCalls.slice(0, 3));
   assert.equal(pickerCalls.length, 3, "Expected three picker calls.");
   assert.deepEqual(
