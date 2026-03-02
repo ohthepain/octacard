@@ -33,7 +33,13 @@ import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
 import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
-import { exportAudioWithEdits, mixOverdub, replaceSegment, parseWavCueMarkers } from "@/lib/exportAudio";
+import {
+  exportAudioWithEdits,
+  mixOverdub,
+  replaceSegment,
+  parseWavCueMarkers,
+  parseWavMetadata,
+} from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { detectSliceMarkers, selectTopSlices, type SliceMarker, type SliceDetectionMode } from "@/lib/sliceDetection";
@@ -177,6 +183,65 @@ export const AudioPreview = ({
   );
   const [userAddedSlices, setUserAddedSlices] = useState<SliceMarker[]>([]);
   const [hoveredSliceKey, setHoveredSliceKey] = useState<string | null>(null);
+  const [timeDisplayMode, setTimeDisplayMode] = useState<"clock" | "bars">("clock");
+  const [tempoBpm, setTempoBpm] = useState(120);
+  const [timeSignature, setTimeSignature] = useState("4/4");
+  const [loopStart, setLoopStart] = useState(0);
+  const [loopEnd, setLoopEnd] = useState(0);
+  const [rootKey, setRootKey] = useState("");
+  const [tuningCents, setTuningCents] = useState(0);
+  const loopPartDragRef = useRef<{ startY: number; startX: number; startValue: number } | null>(null);
+
+  const parsedTimeSignature = useMemo(() => {
+    const m = timeSignature.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (!m) return { beatsPerBar: 4, beatUnit: 4 };
+    const beatsPerBar = Math.max(1, Number.parseInt(m[1], 10) || 4);
+    const beatUnit = Math.max(1, Number.parseInt(m[2], 10) || 4);
+    return { beatsPerBar, beatUnit };
+  }, [timeSignature]);
+
+  const secondsPerBeat = useMemo(() => {
+    const beatUnitFactor = 4 / parsedTimeSignature.beatUnit;
+    return (60 / Math.max(1, tempoBpm)) * beatUnitFactor;
+  }, [parsedTimeSignature.beatUnit, tempoBpm]);
+
+  const secondsPerBar = useMemo(
+    () => secondsPerBeat * parsedTimeSignature.beatsPerBar,
+    [secondsPerBeat, parsedTimeSignature.beatsPerBar],
+  );
+
+  const snapToSixteenth = useCallback(
+    (seconds: number) => {
+      if (secondsPerBeat <= 0) return seconds;
+      const sixteenth = secondsPerBeat / 4;
+      return Math.round(seconds / sixteenth) * sixteenth;
+    },
+    [secondsPerBeat],
+  );
+
+  const clampToDuration = useCallback(
+    (seconds: number) => Math.max(0, Math.min(duration, seconds)),
+    [duration],
+  );
+
+  const formatTime = useCallback((seconds: number): string => {
+    if (isNaN(seconds)) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  }, []);
+
+  const formatBarsBeats = useCallback(
+    (seconds: number): string => {
+      if (!Number.isFinite(seconds) || seconds < 0 || secondsPerBeat <= 0) return "1.1.00";
+      const totalBeats = seconds / secondsPerBeat;
+      const barsZero = Math.floor(totalBeats / parsedTimeSignature.beatsPerBar);
+      const beatInBar = Math.floor(totalBeats % parsedTimeSignature.beatsPerBar);
+      const sixteenth = Math.floor(((totalBeats - Math.floor(totalBeats)) * 4) % 4);
+      return `${barsZero + 1}.${beatInBar + 1}.${String(Math.max(0, sixteenth)).padStart(2, "0")}`;
+    },
+    [parsedTimeSignature.beatsPerBar, secondsPerBeat],
+  );
 
   const sliceKey = (t: number) => t.toFixed(4);
 
@@ -348,7 +413,7 @@ export const AudioPreview = ({
 
   const sliceDetectionRunForRef = useRef<string | null>(null);
 
-  // On load: quick parse for embedded cue markers. If found, open Slicing so user sees them.
+  // On load: parse embedded metadata (tempo/timesig/slices/start-end).
   useEffect(() => {
     if (isEmptyState || !filePath || !audioUrl) return;
     let cancelled = false;
@@ -357,17 +422,34 @@ export const AudioPreview = ({
         const res = await fetch(audioUrl);
         const arrayBuffer = await res.arrayBuffer();
         if (cancelled) return;
-        const parsed = parseWavCueMarkers(arrayBuffer);
-        if (parsed && parsed.sampleFrames.length > 0) {
-          const markers: SliceMarker[] = parsed.sampleFrames.map((frame) => ({
-            time: frame / parsed.sampleRate,
-            confidence: 1,
-          }));
-          setSliceMarkers(markers);
-          setNumSlices(markers.length);
-          setSlicingOpen(true);
-          setExportMarkerOptions((prev) => ({ ...prev, sliceFiles: true }));
-          sliceDetectionRunForRef.current = `${filePath}-${audioUrl}`;
+        const parsed = parseWavMetadata(arrayBuffer);
+        if (parsed) {
+          if (parsed.tempo != null && Number.isFinite(parsed.tempo)) setTempoBpm(parsed.tempo);
+          else {
+            const bpmResult = parseBpmFromString(fileName ?? "");
+            if (bpmResult?.bpm) setTempoBpm(bpmResult.bpm);
+          }
+          if (parsed.timeSignature) setTimeSignature(parsed.timeSignature);
+          if (parsed.rootKey != null && Number.isFinite(parsed.rootKey)) setRootKey(String(parsed.rootKey));
+          if (parsed.tuningCents != null && Number.isFinite(parsed.tuningCents)) setTuningCents(parsed.tuningCents);
+
+          const metadataStart = parsed.sampleStartFrame != null ? parsed.sampleStartFrame / parsed.sampleRate : 0;
+          const metadataEnd =
+            parsed.sampleEndFrame != null ? parsed.sampleEndFrame / parsed.sampleRate : Math.max(metadataStart, duration);
+          setLoopStart(Math.max(0, metadataStart));
+          setLoopEnd(Math.max(metadataStart + 0.001, metadataEnd));
+
+          if (parsed.sliceFrames.length > 0) {
+            const markers: SliceMarker[] = parsed.sliceFrames.map((frame) => ({
+              time: frame / parsed.sampleRate,
+              confidence: 1,
+            }));
+            setSliceMarkers(markers);
+            setNumSlices(markers.length);
+            setSlicingOpen(true);
+            setExportMarkerOptions((prev) => ({ ...prev, sliceFiles: true }));
+            sliceDetectionRunForRef.current = `${filePath}-${audioUrl}`;
+          }
         }
       } catch {
         // Ignore parse errors; user can open Slicing for detection
@@ -376,7 +458,7 @@ export const AudioPreview = ({
     return () => {
       cancelled = true;
     };
-  }, [audioUrl, filePath, isEmptyState]);
+  }, [audioUrl, duration, fileName, filePath, isEmptyState]);
 
   // Slice detection: run only when user opens Slicing panel (lazy). Parse embedded cues first (fast), else run transient/pitch detection.
   const runSliceDetection = useCallback(async () => {
@@ -442,6 +524,26 @@ export const AudioPreview = ({
       setUserAddedSlices([]);
     }
   }, [isEmptyState, filePath]);
+
+  useEffect(() => {
+    if (duration <= 0) return;
+    setLoopEnd((prev) => (prev > 0 ? Math.min(duration, prev) : duration));
+  }, [duration]);
+
+  useEffect(() => {
+    if (!filePath) {
+      setTimeDisplayMode("clock");
+      setTimeSignature("4/4");
+      setTempoBpm(120);
+      setLoopStart(0);
+      setLoopEnd(0);
+      setRootKey("");
+      setTuningCents(0);
+      return;
+    }
+    const bpmResult = parseBpmFromString(fileName ?? "");
+    if (bpmResult?.bpm) setTempoBpm(bpmResult.bpm);
+  }, [fileName, filePath]);
 
   // Stop playback when file changes
   useEffect(() => {
@@ -676,12 +778,19 @@ export const AudioPreview = ({
       });
 
       // Add Timeline plugin
+      const timelineTimeInterval =
+        timeDisplayMode === "bars" && secondsPerBeat > 0 ? secondsPerBeat / 4 : 0.2;
+      const timelinePrimaryInterval =
+        timeDisplayMode === "bars" && secondsPerBar > 0 ? secondsPerBar : 5;
+      const timelineSecondaryInterval =
+        timeDisplayMode === "bars" && secondsPerBeat > 0 ? secondsPerBeat : 1;
       const timeline = TimelinePlugin.create({
         height: 20,
         insertPosition: "beforebegin",
-        timeInterval: 0.2,
-        primaryLabelInterval: 5,
-        secondaryLabelInterval: 1,
+        timeInterval: timelineTimeInterval,
+        primaryLabelInterval: timelinePrimaryInterval,
+        secondaryLabelInterval: timelineSecondaryInterval,
+        formatTimeCallback: (sec: number) => (timeDisplayMode === "bars" ? formatBarsBeats(sec) : formatTime(sec)),
         style: {
           fontSize: "10px",
           color: "#B0B0B0", // Light grey text (Ableton style)
@@ -872,7 +981,19 @@ export const AudioPreview = ({
       }
       setIsPlaying(false);
     };
-  }, [audioUrl, normalize, fileName, filePath, setEdits, debouncedWaveformHeight]);
+  }, [
+    audioUrl,
+    normalize,
+    fileName,
+    filePath,
+    setEdits,
+    debouncedWaveformHeight,
+    timeDisplayMode,
+    secondsPerBar,
+    secondsPerBeat,
+    formatBarsBeats,
+    formatTime,
+  ]);
 
   // Effect to find and attach handler to minimap element after it's created
   useEffect(() => {
@@ -1252,12 +1373,135 @@ export const AudioPreview = ({
     });
   };
 
-  const formatTime = (seconds: number): string => {
-    if (isNaN(seconds)) return "0:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+  const getLoopLengthParts = useCallback(() => {
+    const len = Math.max(0, loopEnd - loopStart);
+    const totalBeats = secondsPerBeat > 0 ? len / secondsPerBeat : 0;
+    const bars = Math.floor(totalBeats / parsedTimeSignature.beatsPerBar);
+    const beats = Math.floor(totalBeats % parsedTimeSignature.beatsPerBar);
+    const sixteenths = Math.round((totalBeats - Math.floor(totalBeats)) * 4);
+    return { bars, beats, sixteenths };
+  }, [loopEnd, loopStart, parsedTimeSignature.beatsPerBar, secondsPerBeat]);
+
+  const applyLoopLengthParts = useCallback(
+    (parts: { bars: number; beats: number; sixteenths: number }) => {
+      const bars = Math.max(0, Math.floor(parts.bars));
+      const beats = Math.max(0, Math.floor(parts.beats));
+      const sixteenths = Math.max(0, Math.floor(parts.sixteenths));
+      const totalBeats = bars * parsedTimeSignature.beatsPerBar + beats + sixteenths / 4;
+      const nextEnd = clampToDuration(loopStart + totalBeats * secondsPerBeat);
+      if (nextEnd <= loopStart) return;
+      setLoopEnd(nextEnd);
+    },
+    [clampToDuration, loopStart, parsedTimeSignature.beatsPerBar, secondsPerBeat],
+  );
+
+  const handleLoopBoundaryDrag = useCallback(
+    (which: "start" | "end", e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = waveformRef.current?.getBoundingClientRect();
+      if (!rect || duration <= 0) return;
+      const startX = e.clientX;
+      const startLoopStart = loopStart;
+      const startLoopEnd = loopEnd > 0 ? loopEnd : duration;
+      const initialLen = Math.max(0.001, startLoopEnd - startLoopStart);
+      const quantize = timeDisplayMode === "bars";
+      const nudgeMode = e.shiftKey;
+
+      const onMove = (moveE: MouseEvent) => {
+        const dx = moveE.clientX - startX;
+        const delta = (dx / rect.width) * duration;
+        if (which === "start") {
+          if (nudgeMode) {
+            let nextStart = clampToDuration(startLoopStart + delta);
+            let nextEnd = clampToDuration(nextStart + initialLen);
+            if (nextEnd >= duration) {
+              nextEnd = duration;
+              nextStart = Math.max(0, nextEnd - initialLen);
+            }
+            if (quantize) {
+              const qStart = clampToDuration(snapToSixteenth(nextStart));
+              const qEnd = clampToDuration(snapToSixteenth(nextEnd));
+              if (qEnd > qStart) {
+                nextStart = qStart;
+                nextEnd = qEnd;
+              }
+            }
+            setLoopStart(nextStart);
+            setLoopEnd(Math.max(nextStart + 0.001, nextEnd));
+            return;
+          }
+          let nextStart = clampToDuration(startLoopStart + delta);
+          if (quantize) nextStart = clampToDuration(snapToSixteenth(nextStart));
+          nextStart = Math.min(nextStart, startLoopEnd - 0.001);
+          setLoopStart(nextStart);
+        } else {
+          if (nudgeMode) {
+            let nextEnd = clampToDuration(startLoopEnd + delta);
+            let nextStart = clampToDuration(nextEnd - initialLen);
+            if (nextStart <= 0) {
+              nextStart = 0;
+              nextEnd = Math.min(duration, initialLen);
+            }
+            if (quantize) {
+              const qStart = clampToDuration(snapToSixteenth(nextStart));
+              const qEnd = clampToDuration(snapToSixteenth(nextEnd));
+              if (qEnd > qStart) {
+                nextStart = qStart;
+                nextEnd = qEnd;
+              }
+            }
+            setLoopStart(nextStart);
+            setLoopEnd(Math.max(nextStart + 0.001, nextEnd));
+            return;
+          }
+          let nextEnd = clampToDuration(startLoopEnd + delta);
+          if (quantize) nextEnd = clampToDuration(snapToSixteenth(nextEnd));
+          nextEnd = Math.max(nextEnd, loopStart + 0.001);
+          setLoopEnd(nextEnd);
+        }
+      };
+
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [clampToDuration, duration, loopEnd, loopStart, snapToSixteenth, timeDisplayMode],
+  );
+
+  const handleLoopPartDragStart = useCallback(
+    (part: "bars" | "beats" | "sixteenths", e: React.MouseEvent) => {
+      e.preventDefault();
+      const loopParts = getLoopLengthParts();
+      const startValue = part === "bars" ? loopParts.bars : part === "beats" ? loopParts.beats : loopParts.sixteenths;
+      loopPartDragRef.current = { startY: e.clientY, startX: e.clientX, startValue };
+
+      const onMove = (moveE: MouseEvent) => {
+        if (!loopPartDragRef.current) return;
+        const dy = loopPartDragRef.current.startY - moveE.clientY;
+        const dx = moveE.clientX - loopPartDragRef.current.startX;
+        const steps = Math.round((dy + dx) / 8);
+        const raw = Math.max(0, loopPartDragRef.current.startValue + steps);
+        const next = { ...getLoopLengthParts() };
+        if (part === "bars") next.bars = raw;
+        if (part === "beats") next.beats = raw;
+        if (part === "sixteenths") next.sixteenths = raw;
+        applyLoopLengthParts(next);
+      };
+      const onUp = () => {
+        loopPartDragRef.current = null;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [applyLoopLengthParts, getLoopLengthParts],
+  );
 
   const performExport = useCallback(
     async (markerOptions: ExportMarkerOptions | null) => {
@@ -1291,7 +1535,12 @@ export const AudioPreview = ({
       setIsExporting(true);
       try {
         const bpmResult = parseBpmFromString(fileName ?? "");
-        const tempo = bpmResult?.bpm;
+        const tempo = Number.isFinite(tempoBpm) ? tempoBpm : bpmResult?.bpm;
+        const parsedRootKey = Number.parseInt(rootKey.trim(), 10);
+        const rootKeyValue =
+          Number.isFinite(parsedRootKey) && parsedRootKey >= 0 && parsedRootKey <= 127 ? parsedRootKey : undefined;
+        const clampedLoopStart = Math.max(0, Math.min(duration, loopStart));
+        const clampedLoopEnd = Math.max(clampedLoopStart + 0.001, Math.min(duration, loopEnd || duration));
 
         const params = {
           regionStart,
@@ -1302,7 +1551,11 @@ export const AudioPreview = ({
           ixmlMetadata: markerOptions?.ixmlMetadata ?? true,
           exportSliceFiles: hasSlices && (markerOptions?.sliceFiles ?? false),
           tempo,
-          timeSignature: undefined,
+          timeSignature: timeSignature.trim() || undefined,
+          sampleStart: clampedLoopStart,
+          sampleEnd: clampedLoopEnd,
+          rootKey: rootKeyValue,
+          tuningCents,
         };
 
         const { mainBlob, sliceBlobs } = await exportAudioWithEdits(blob, params, duration);
@@ -1353,7 +1606,13 @@ export const AudioPreview = ({
       duration,
       fileName,
       displayedSlices,
+      loopEnd,
+      loopStart,
       onFileSaved,
+      rootKey,
+      tempoBpm,
+      timeSignature,
+      tuningCents,
     ]
   );
 
@@ -1579,6 +1838,12 @@ export const AudioPreview = ({
     [waveformHeight],
   );
 
+  const loopLengthParts = getLoopLengthParts();
+  const totalBars = useMemo(() => {
+    if (secondsPerBar <= 0 || duration <= 0) return 0;
+    return Math.min(512, Math.ceil(duration / secondsPerBar));
+  }, [duration, secondsPerBar]);
+
   return (
     <div className="border-t border-border bg-card p-4 space-y-3 shrink-0" data-testid={`audio-preview-${paneType}`}>
       {/* Resize handle - top border of filename row, drag to adjust waveform height */}
@@ -1598,10 +1863,78 @@ export const AudioPreview = ({
             title={fileName ?? "Waveform Editor"}
             className="block max-w-full text-sm font-semibold uppercase tracking-wide text-muted-foreground truncate"
           >
-            {fileName ? `Preview: ${fileName}` : "Waveform Editor"}
+            {fileName ? `${fileName}` : "Waveform Editor"}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {!isEmptyState && duration > 0 && (
+            <>
+              <div className="text-[10px] uppercase text-muted-foreground">Len</div>
+              <div
+                role="spinbutton"
+                tabIndex={0}
+                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
+                onMouseDown={(e) => handleLoopPartDragStart("bars", e)}
+                title="Drag to adjust loop bars"
+              >
+                {loopLengthParts.bars}b
+              </div>
+              <div
+                role="spinbutton"
+                tabIndex={0}
+                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
+                onMouseDown={(e) => handleLoopPartDragStart("beats", e)}
+                title="Drag to adjust loop beats"
+              >
+                {loopLengthParts.beats}bt
+              </div>
+              <div
+                role="spinbutton"
+                tabIndex={0}
+                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
+                onMouseDown={(e) => handleLoopPartDragStart("sixteenths", e)}
+                title="Drag to adjust loop sixteenths"
+              >
+                {loopLengthParts.sixteenths}x16
+              </div>
+              <Input
+                className="h-7 w-[78px] text-xs font-mono"
+                value={timeSignature}
+                onChange={(e) => setTimeSignature(e.target.value)}
+                disabled={isLoading}
+                title="Time signature"
+              />
+              <Input
+                className="h-7 w-[68px] text-xs font-mono"
+                value={String(Math.round(tempoBpm))}
+                onChange={(e) => {
+                  const v = Number.parseFloat(e.target.value);
+                  if (Number.isFinite(v)) setTempoBpm(Math.max(1, v));
+                }}
+                disabled={isLoading}
+                title="Tempo BPM"
+              />
+              <Input
+                className="h-7 w-[60px] text-xs font-mono"
+                value={rootKey}
+                onChange={(e) => setRootKey(e.target.value)}
+                disabled={isLoading}
+                title="Root key (MIDI 0-127)"
+                placeholder="Root"
+              />
+              <Input
+                className="h-7 w-[70px] text-xs font-mono"
+                value={Number.isFinite(tuningCents) ? tuningCents.toFixed(2) : "0.00"}
+                onChange={(e) => {
+                  const v = Number.parseFloat(e.target.value);
+                  if (Number.isFinite(v)) setTuningCents(v);
+                }}
+                disabled={isLoading}
+                title="Tuning cents"
+                placeholder="Tune"
+              />
+            </>
+          )}
           {slicingOpen && !isEmptyState && duration > 0 && (
             <>
               <div
@@ -1692,6 +2025,45 @@ export const AudioPreview = ({
         {isEmptyState && !audioUrl && (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
             Record or load a file to get started
+          </div>
+        )}
+        {!isEmptyState && duration > 0 && timeDisplayMode === "bars" && totalBars > 0 && (
+          <div className="absolute top-0 left-0 right-0 z-[2] pointer-events-none" style={{ height: debouncedWaveformHeight }}>
+            {Array.from({ length: totalBars }).map((_, i) => (
+              <div
+                key={`bar-bg-${i}`}
+                className="absolute top-0 h-full"
+                style={{
+                  left: `${(i / totalBars) * 100}%`,
+                  width: `${100 / totalBars}%`,
+                  backgroundColor: i % 2 === 0 ? "rgba(90,90,90,0.07)" : "rgba(120,120,120,0.11)",
+                }}
+              />
+            ))}
+          </div>
+        )}
+        {!isEmptyState && duration > 0 && (
+          <div className="absolute top-0 left-0 right-0 z-[6] pointer-events-none" style={{ height: debouncedWaveformHeight }}>
+            <div
+              className="absolute top-0 left-0 h-full"
+              style={{ width: `${(Math.max(0, loopStart) / duration) * 100}%`, backgroundColor: "rgba(0,0,0,0.20)" }}
+            />
+            <div
+              className="absolute top-0 right-0 h-full"
+              style={{ width: `${((duration - Math.min(duration, loopEnd || duration)) / duration) * 100}%`, backgroundColor: "rgba(0,0,0,0.20)" }}
+            />
+            <div
+              className="absolute top-0 h-full w-[2px] bg-[#FF764D] pointer-events-auto cursor-ew-resize"
+              style={{ left: `${(Math.max(0, loopStart) / duration) * 100}%` }}
+              onMouseDown={(e) => handleLoopBoundaryDrag("start", e)}
+              title="Loop start (hold Shift to nudge loop)"
+            />
+            <div
+              className="absolute top-0 h-full w-[2px] bg-[#FF764D] pointer-events-auto cursor-ew-resize"
+              style={{ left: `${(Math.min(duration, loopEnd || duration) / duration) * 100}%` }}
+              onMouseDown={(e) => handleLoopBoundaryDrag("end", e)}
+              title="Loop end (hold Shift to nudge loop)"
+            />
           </div>
         )}
         {/* Playhead overlay with dragger handle - only when we have audio */}
@@ -1882,11 +2254,24 @@ export const AudioPreview = ({
         {/* Time Display */}
         <div
           className="flex items-center gap-2 text-xs text-muted-foreground font-mono shrink-0"
-          style={{ minWidth: "100px" }}
+          style={{ minWidth: "130px" }}
         >
-          <span>{formatTime(currentTime)}</span>
+          <span data-testid="audio-preview-current-time">
+            {timeDisplayMode === "bars" ? formatBarsBeats(currentTime) : formatTime(currentTime)}
+          </span>
           <span>/</span>
-          <span>{formatTime(duration)}</span>
+          <span data-testid="audio-preview-total-time">
+            {timeDisplayMode === "bars" ? formatBarsBeats(duration) : formatTime(duration)}
+          </span>
+          <Select value={timeDisplayMode} onValueChange={(v) => setTimeDisplayMode(v as "clock" | "bars")}>
+            <SelectTrigger data-testid="audio-preview-time-mode" className="h-7 w-[84px] text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="clock">Clock</SelectItem>
+              <SelectItem value="bars">Bars/Beats</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Volume Control */}
