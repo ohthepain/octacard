@@ -31,6 +31,7 @@ import { assertFilePaneKeyboardNavigation } from "../../tests/filepane-keyboard-
 import { assertSearchModesAllFoldersFiles } from "../../tests/search-modes-all-folders-files.mjs";
 import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-folder-does-not-auto-select-dest.mjs";
 import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils.mjs";
+import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -444,6 +445,7 @@ try {
   });
   await page.getByTestId("breadcrumb-favorite-source").waitFor({ state: "visible" });
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
+  await assertBarsBeatsSupport(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(
