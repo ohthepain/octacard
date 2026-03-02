@@ -3,53 +3,171 @@
  * Uses OfflineAudioContext for non-realtime processing.
  */
 
+function readAscii(view: DataView, at: number, len: number): string {
+  let s = "";
+  for (let i = 0; i < len; i++) s += String.fromCharCode(view.getUint8(at + i));
+  return s;
+}
+
+function padToWord(byteLength: number): number {
+  return (byteLength + 1) & ~1;
+}
+
+function parseTagNumber(xml: string, tag: string): number | undefined {
+  const re = new RegExp(`<${tag}>([^<]+)</${tag}>`, "i");
+  const m = xml.match(re);
+  if (!m) return undefined;
+  const n = Number.parseFloat(m[1].trim());
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function parseTagText(xml: string, tag: string): string | undefined {
+  const re = new RegExp(`<${tag}>([^<]+)</${tag}>`, "i");
+  const m = xml.match(re);
+  if (!m) return undefined;
+  const text = m[1].trim();
+  return text.length > 0 ? text : undefined;
+}
+
+export interface WavMetadata {
+  sampleRate: number;
+  totalFrames: number;
+  sampleStartFrame?: number;
+  sampleEndFrame?: number;
+  sliceFrames: number[];
+  tempo?: number;
+  timeSignature?: string;
+  rootKey?: number;
+  tuningCents?: number;
+}
+
+/**
+ * Parse WAV metadata used by the sample editor:
+ * cue markers, iXML tags, and common values from smpl.
+ */
+export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
+  const view = new DataView(arrayBuffer);
+  if (arrayBuffer.byteLength < 44) return null;
+  if (readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WAVE") return null;
+
+  let sampleRate = 0;
+  let dataBytes = 0;
+  let blockAlign = 0;
+  const cueById = new Map<number, number>();
+  let tempo: number | undefined;
+  let timeSignature: string | undefined;
+  let sampleStartFrame: number | undefined;
+  let sampleEndFrame: number | undefined;
+  let rootKey: number | undefined;
+  let tuningCents: number | undefined;
+
+  let pos = 12;
+  while (pos + 8 <= arrayBuffer.byteLength) {
+    const chunkId = readAscii(view, pos, 4);
+    const chunkSize = view.getUint32(pos + 4, true);
+    const chunkDataStart = pos + 8;
+    const chunkDataEnd = chunkDataStart + chunkSize;
+    if (chunkDataEnd > arrayBuffer.byteLength) break;
+
+    if (chunkId === "fmt " && chunkSize >= 16) {
+      sampleRate = view.getUint32(chunkDataStart + 4, true);
+      blockAlign = view.getUint16(chunkDataStart + 12, true);
+    } else if (chunkId === "data") {
+      dataBytes = chunkSize;
+    } else if (chunkId === "cue " && chunkSize >= 4) {
+      const count = view.getUint32(chunkDataStart, true);
+      let cuePos = chunkDataStart + 4;
+      for (let i = 0; i < count; i++) {
+        if (cuePos + 24 > chunkDataEnd) break;
+        const id = view.getUint32(cuePos, true);
+        const sampleOffset = view.getUint32(cuePos + 20, true);
+        cueById.set(id, sampleOffset);
+        cuePos += 24;
+      }
+    } else if (chunkId === "iXML" && chunkSize > 0) {
+      const bytes = new Uint8Array(arrayBuffer, chunkDataStart, chunkSize);
+      const xml = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+      tempo = parseTagNumber(xml, "TEMPO") ?? tempo;
+      timeSignature = parseTagText(xml, "TIMESIG") ?? parseTagText(xml, "TIME_SIGNATURE") ?? timeSignature;
+      sampleStartFrame = parseTagNumber(xml, "SAMPLE_START") ?? sampleStartFrame;
+      sampleEndFrame = parseTagNumber(xml, "SAMPLE_END") ?? sampleEndFrame;
+
+      const sliceMatches = xml.matchAll(/<SLICE\s+[^>]*position="(\d+)"[^>]*>/gi);
+      for (const m of sliceMatches) {
+        const frame = Number.parseInt(m[1], 10);
+        if (Number.isFinite(frame)) {
+          const id = 100 + cueById.size + 1;
+          cueById.set(id, frame);
+        }
+      }
+    } else if (chunkId === "smpl" && chunkSize >= 36) {
+      const midiUnity = view.getUint32(chunkDataStart + 12, true);
+      const midiPitchFraction = view.getUint32(chunkDataStart + 16, true);
+      if (midiUnity <= 127) rootKey = midiUnity;
+      // midiPitchFraction uses 0x80000000 == +50 cents
+      if (midiPitchFraction > 0) {
+        tuningCents = (midiPitchFraction / 0x100000000) * 100;
+      }
+
+      const loops = view.getUint32(chunkDataStart + 28, true);
+      if (loops > 0 && chunkSize >= 36 + 24) {
+        const loopStart = view.getUint32(chunkDataStart + 36 + 8, true);
+        const loopEnd = view.getUint32(chunkDataStart + 36 + 12, true);
+        sampleStartFrame = sampleStartFrame ?? loopStart;
+        sampleEndFrame = sampleEndFrame ?? loopEnd;
+      }
+    }
+
+    pos = chunkDataEnd + (chunkSize % 2);
+  }
+
+  if (sampleRate <= 0) return null;
+  const totalFrames = blockAlign > 0 ? Math.floor(dataBytes / blockAlign) : 0;
+
+  const sampleStartCue = cueById.get(1);
+  const sampleEndCue = cueById.get(2);
+  sampleStartFrame = sampleStartFrame ?? sampleStartCue;
+  sampleEndFrame = sampleEndFrame ?? sampleEndCue;
+
+  let sliceFrames: number[] = [];
+  const cueSliceFrames = Array.from(cueById.entries())
+    .filter(([id]) => id >= 100)
+    .map(([, frame]) => frame)
+    .filter((f) => f >= 0)
+    .sort((a, b) => a - b);
+
+  if (cueSliceFrames.length > 0) {
+    sliceFrames = cueSliceFrames;
+  } else {
+    // Backward compatibility with older exports that used cue ids 1..N for slices.
+    sliceFrames = Array.from(cueById.values())
+      .filter((f) => f >= 0)
+      .sort((a, b) => a - b);
+  }
+
+  return {
+    sampleRate,
+    totalFrames,
+    sampleStartFrame,
+    sampleEndFrame,
+    sliceFrames,
+    tempo,
+    timeSignature,
+    rootKey,
+    tuningCents,
+  };
+}
+
 /**
  * Parse WAV file for embedded cue markers.
- * Returns sample frame positions and sample rate, or null if no cue chunk or invalid WAV.
+ * Returns slice sample frame positions and sample rate, or null if no cue chunk.
  */
 export function parseWavCueMarkers(
   arrayBuffer: ArrayBuffer
 ): { sampleFrames: number[]; sampleRate: number } | null {
-  const view = new DataView(arrayBuffer);
-  if (arrayBuffer.byteLength < 44) return null;
-
-  const readStr = (at: number, len: number) => {
-    let s = "";
-    for (let i = 0; i < len; i++) s += String.fromCharCode(view.getUint8(at + i));
-    return s;
-  };
-
-  if (readStr(0, 4) !== "RIFF" || readStr(8, 4) !== "WAVE") return null;
-
-  let sampleRate = 0;
-  const sampleFrames: number[] = [];
-  let pos = 12;
-
-  while (pos + 8 <= arrayBuffer.byteLength) {
-    const chunkId = readStr(pos, 4);
-    const chunkSize = view.getUint32(pos + 4, true);
-    pos += 8;
-
-    if (chunkId === "fmt " && chunkSize >= 4 && pos + 4 <= arrayBuffer.byteLength) {
-      sampleRate = view.getUint32(pos + 4, true);
-    } else if (chunkId === "cue " && chunkSize >= 4 && pos + 4 <= arrayBuffer.byteLength) {
-      const count = view.getUint32(pos, true);
-      pos += 4;
-      for (let i = 0; i < count && pos + 24 <= arrayBuffer.byteLength; i++) {
-        const position = view.getUint32(pos + 4, true);
-        sampleFrames.push(position);
-        pos += 24;
-      }
-      pos += chunkSize - 4 - 24 * count;
-      if (pos < 0) pos = 0;
-    }
-
-    pos += chunkSize;
-    if (pos > arrayBuffer.byteLength) break;
-  }
-
-  if (sampleFrames.length === 0 || sampleRate <= 0) return null;
-  return { sampleFrames, sampleRate };
+  const parsed = parseWavMetadata(arrayBuffer);
+  if (!parsed || parsed.sampleRate <= 0 || parsed.sliceFrames.length === 0) return null;
+  return { sampleFrames: parsed.sliceFrames, sampleRate: parsed.sampleRate };
 }
 
 export interface EnvelopePoint {
@@ -63,9 +181,9 @@ export interface ExportParams {
   envelopePoints?: EnvelopePoint[];
   /** Slice start times in seconds (relative to full file). Used for cue chunk and slice file export. */
   slices?: { time: number }[];
-  /** Write cue chunk and LIST adtl labl for slice markers. Default true when slices exist. */
+  /** Write cue chunk and LIST adtl markers. Default true when slices exist. */
   embeddedMarkers?: boolean;
-  /** Write iXML chunk with tempo and time signature. Default true. */
+  /** Write iXML chunk. Default true. */
   ixmlMetadata?: boolean;
   /** Export individual slice files to a folder. Default false. */
   exportSliceFiles?: boolean;
@@ -73,6 +191,14 @@ export interface ExportParams {
   tempo?: number;
   /** Time signature for iXML (e.g. "4/4"). Omit if unknown. */
   timeSignature?: string;
+  /** Sample start time in seconds relative to full file. Defaults to regionStart. */
+  sampleStart?: number;
+  /** Sample end time in seconds relative to full file. Defaults to regionEnd. */
+  sampleEnd?: number;
+  /** MIDI root key (0-127). */
+  rootKey?: number;
+  /** Tuning in cents. */
+  tuningCents?: number;
 }
 
 /**
@@ -83,9 +209,7 @@ function getGainAtTime(points: EnvelopePoint[], time: number): number {
   if (!points.length) return 1;
   if (points.length === 1) return points[0].volume;
 
-  // Before first point
   if (time <= points[0].time) return points[0].volume;
-  // After last point
   if (time >= points[points.length - 1].time) return points[points.length - 1].volume;
 
   for (let i = 0; i < points.length - 1; i++) {
@@ -100,24 +224,23 @@ function getGainAtTime(points: EnvelopePoint[], time: number): number {
 }
 
 interface EncodeWavOptions {
-  /** Slice start times in seconds (relative to buffer start at 0). Sample frame offsets computed from these. */
+  /** Slice start times in seconds (relative to buffer start at 0). */
   sliceTimes?: number[];
-  /** Write cue + LIST adtl labl. Only if sliceTimes has entries. */
+  /** Write cue/LIST markers. */
   embeddedMarkers?: boolean;
   /** Write iXML chunk. */
   ixmlMetadata?: boolean;
   tempo?: number;
   timeSignature?: string;
-}
-
-function padToWord(byteLength: number): number {
-  return (byteLength + 1) & ~1;
+  sampleStartFrame?: number;
+  sampleEndFrame?: number;
+  rootKey?: number;
+  tuningCents?: number;
 }
 
 /**
- * Encode AudioBuffer to WAV format.
- * Supports optional cue chunk, LIST adtl labl, and iXML metadata.
- * Chunk order: RIFF → fmt → data → cue → LIST (adtl) → iXML
+ * Encode AudioBuffer to WAV PCM (little-endian).
+ * Chunk order: RIFF -> fmt -> data -> cue -> LIST(adtl) -> iXML
  */
 function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
   const numChannels = buffer.numberOfChannels;
@@ -130,53 +253,93 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
   const dataLength = buffer.length * blockAlign;
 
   const slices = options?.sliceTimes ?? [];
-  const hasSlices = slices.length > 0;
-  const embeddedMarkers = (options?.embeddedMarkers ?? true) && hasSlices;
-  const ixmlMetadata = options?.ixmlMetadata ?? false;
-  const tempo = options?.tempo;
-  const timeSignature = options?.timeSignature;
-
-  // Filter slices to those within buffer bounds and convert to sample frame offsets
   const sliceFrames = slices
     .map((t) => Math.floor(t * sampleRate))
     .filter((f) => f >= 0 && f < buffer.length)
-    .sort((a, b) => a - b);
+    .sort((a, b) => a - b)
+    .filter((f, i, arr) => i === 0 || f !== arr[i - 1]);
 
-  // Cue chunk: 4 (id) + 4 (size) + 4 (count) + 24 * count
-  let cueChunkSize = 0;
-  if (embeddedMarkers && sliceFrames.length > 0) {
-    cueChunkSize = 4 + 4 + 4 + 24 * sliceFrames.length;
-  }
+  const sampleStartFrame = Math.max(0, Math.min(buffer.length - 1, Math.floor(options?.sampleStartFrame ?? 0)));
+  const sampleEndFrame = Math.max(
+    sampleStartFrame + 1,
+    Math.min(buffer.length, Math.floor(options?.sampleEndFrame ?? buffer.length)),
+  );
 
-  // LIST adtl: 4 (LIST) + 4 (size) + 4 (adtl) + labl chunks
-  let listChunkSize = 0;
-  if (embeddedMarkers && sliceFrames.length > 0) {
-    const lablLabels = sliceFrames.map((_, i) => `Slice ${String(i + 1).padStart(2, "0")}`);
-    let adtlDataSize = 0;
-    for (let i = 0; i < lablLabels.length; i++) {
-      const text = lablLabels[i] + "\0";
-      const lablSize = 4 + 4 + 4 + padToWord(text.length); // labl id + size + cue id + text
-      adtlDataSize += lablSize;
+  const embeddedMarkers = options?.embeddedMarkers ?? true;
+  const ixmlMetadata = options?.ixmlMetadata ?? false;
+
+  const cueEntries: { id: number; frame: number }[] = [];
+  if (embeddedMarkers) {
+    cueEntries.push({ id: 1, frame: sampleStartFrame });
+    cueEntries.push({ id: 2, frame: sampleEndFrame });
+    for (let i = 0; i < sliceFrames.length; i++) {
+      cueEntries.push({ id: 100 + i, frame: sliceFrames[i] });
     }
-    listChunkSize = 4 + 4 + 4 + adtlDataSize; // LIST id + size + adtl + labls
   }
 
-  // iXML chunk
-  let ixmlChunkSize = 0;
-  if (ixmlMetadata && (tempo != null || timeSignature != null)) {
+  // cue chunk payload: 4 (count) + 24 * n
+  const cueChunkPayloadSize = cueEntries.length > 0 ? 4 + cueEntries.length * 24 : 0;
+  const cueChunkBytes = cueChunkPayloadSize > 0 ? 8 + cueChunkPayloadSize : 0;
+
+  // LIST adtl with ltxt + labl for slices only
+  let listChunkBytes = 0;
+  if (embeddedMarkers && sliceFrames.length > 0) {
+    let subchunksBytes = 0;
+    for (let i = 0; i < sliceFrames.length; i++) {
+      const thisStart = sliceFrames[i];
+      const nextStart = i < sliceFrames.length - 1 ? sliceFrames[i + 1] : sampleEndFrame;
+      const sampleLength = Math.max(0, nextStart - thisStart);
+      void sampleLength;
+
+      // ltxt: size=20 bytes payload
+      subchunksBytes += 8 + 20;
+
+      // labl: payload=4(cue id)+text+NUL, padded to even
+      const label = `Slice_${String(i + 1).padStart(2, "0")}`;
+      const textBytes = new TextEncoder().encode(label + "\0");
+      const paddedTextLen = padToWord(textBytes.length);
+      subchunksBytes += 8 + 4 + paddedTextLen;
+    }
+
+    // LIST payload is 4-byte type + subchunks
+    listChunkBytes = 8 + 4 + subchunksBytes;
+  }
+
+  // iXML payload
+  let ixmlChunkBytes = 0;
+  let ixmlXmlBytes: Uint8Array | null = null;
+  if (ixmlMetadata) {
     const parts: string[] = [];
-    if (tempo != null && Number.isFinite(tempo)) parts.push(`  <TEMPO>${tempo.toFixed(3)}</TEMPO>`);
-    if (timeSignature != null && timeSignature.length > 0)
-      parts.push(`  <TIME_SIGNATURE>${timeSignature}</TIME_SIGNATURE>`);
-    if (parts.length > 0) {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<BWFXML>\n${parts.join("\n")}\n</BWFXML>`;
-      ixmlChunkSize = 4 + 4 + padToWord(xml.length); // iXML id + size + padding
+    parts.push(`<SAMPLE_START>${sampleStartFrame}</SAMPLE_START>`);
+    parts.push(`<SAMPLE_END>${sampleEndFrame}</SAMPLE_END>`);
+    parts.push(`<SLICE_COUNT>${sliceFrames.length}</SLICE_COUNT>`);
+    parts.push("<SLICES>");
+    for (let i = 0; i < sliceFrames.length; i++) {
+      parts.push(`  <SLICE index=\"${i}\" position=\"${sliceFrames[i]}\" />`);
     }
+    parts.push("</SLICES>");
+    if (options?.tempo != null && Number.isFinite(options.tempo)) {
+      parts.push(`<TEMPO>${options.tempo.toFixed(3)}</TEMPO>`);
+    }
+    if (options?.timeSignature && options.timeSignature.length > 0) {
+      parts.push(`<TIMESIG>${options.timeSignature}</TIMESIG>`);
+    }
+    if (options?.rootKey != null && Number.isFinite(options.rootKey)) {
+      parts.push(`<ROOT_KEY>${Math.max(0, Math.min(127, Math.round(options.rootKey)))}</ROOT_KEY>`);
+    }
+    if (options?.tuningCents != null && Number.isFinite(options.tuningCents)) {
+      parts.push(`<TUNING_CENTS>${options.tuningCents.toFixed(3)}</TUNING_CENTS>`);
+    }
+
+    const xml = `<IXML>\n  ${parts.join("\n  ")}\n</IXML>`;
+    const raw = new TextEncoder().encode(xml);
+    ixmlXmlBytes = raw;
+    ixmlChunkBytes = 8 + padToWord(raw.length);
   }
 
-  const dataChunkSize = 8 + dataLength; // data id + size + payload
-  const fmtChunkSize = 8 + 16;
-  const totalSize = 12 + fmtChunkSize + dataChunkSize + cueChunkSize + listChunkSize + ixmlChunkSize;
+  const dataChunkBytes = 8 + dataLength;
+  const fmtChunkBytes = 8 + 16;
+  const totalSize = 12 + fmtChunkBytes + dataChunkBytes + cueChunkBytes + listChunkBytes + ixmlChunkBytes;
   const riffSize = totalSize - 8;
 
   const arrayBuffer = new ArrayBuffer(totalSize);
@@ -210,7 +373,6 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
   const channels: Float32Array[] = [];
   for (let c = 0; c < numChannels; c++) channels.push(buffer.getChannelData(c));
 
-  const dataStart = pos;
   for (let i = 0; i < buffer.length; i++) {
     for (let c = 0; c < numChannels; c++) {
       const sample = Math.max(-1, Math.min(1, channels[c][i]));
@@ -220,61 +382,74 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
     }
   }
 
-  // Cue chunk
-  if (embeddedMarkers && sliceFrames.length > 0) {
+  if (cueEntries.length > 0) {
     writeString("cue ", pos);
-    view.setUint32(pos + 4, 4 + 24 * sliceFrames.length, true);
-    view.setUint32(pos + 8, sliceFrames.length, true);
+    view.setUint32(pos + 4, cueChunkPayloadSize, true);
+    view.setUint32(pos + 8, cueEntries.length, true);
     pos += 12;
-    for (let i = 0; i < sliceFrames.length; i++) {
-      const frame = sliceFrames[i];
-      const bytePos = dataStart + frame * blockAlign;
-      view.setUint32(pos, i + 1, true); // cue point id (1-based)
-      view.setUint32(pos + 4, frame, true); // position (sample frame)
-      writeString("data", pos + 8);
-      view.setUint32(pos + 12, 0, true); // chunk_start (no wavl)
-      view.setUint32(pos + 16, bytePos, true); // block_start
-      view.setUint32(pos + 20, 0, true); // sample_offset
+
+    for (const entry of cueEntries) {
+      view.setUint32(pos, entry.id, true); // dwName
+      view.setUint32(pos + 4, 0, true); // dwPosition
+      writeString("data", pos + 8); // fccChunk
+      view.setUint32(pos + 12, 0, true); // dwChunkStart
+      view.setUint32(pos + 16, 0, true); // dwBlockStart
+      view.setUint32(pos + 20, entry.frame, true); // dwSampleOffset
       pos += 24;
     }
   }
 
-  // LIST adtl with labl subchunks
   if (embeddedMarkers && sliceFrames.length > 0) {
     const listStart = pos;
     writeString("LIST", pos);
-    pos += 8; // placeholder for size
+    pos += 8;
     writeString("adtl", pos);
     pos += 4;
+
     for (let i = 0; i < sliceFrames.length; i++) {
-      const label = `Slice ${String(i + 1).padStart(2, "0")}`;
-      const text = label + "\0";
-      const textPadded = padToWord(text.length);
+      const cueId = 100 + i;
+      const thisStart = sliceFrames[i];
+      const nextStart = i < sliceFrames.length - 1 ? sliceFrames[i + 1] : sampleEndFrame;
+      const sampleLength = Math.max(0, nextStart - thisStart);
+
+      // ltxt (slices only)
+      writeString("ltxt", pos);
+      view.setUint32(pos + 4, 20, true);
+      view.setUint32(pos + 8, cueId, true); // dwName
+      view.setUint32(pos + 12, sampleLength, true); // dwSampleLength
+      view.setUint32(pos + 16, 0, true); // dwPurposeID
+      view.setUint16(pos + 20, 0, true); // wCountry
+      view.setUint16(pos + 22, 0, true); // wLanguage
+      view.setUint16(pos + 24, 0, true); // wDialect
+      view.setUint16(pos + 26, 0, true); // wCodePage
+      pos += 28;
+
+      // Optional label: Slice_01
+      const label = `Slice_${String(i + 1).padStart(2, "0")}`;
+      const labelBytes = new TextEncoder().encode(label + "\0");
+      const paddedLabelBytes = padToWord(labelBytes.length);
       writeString("labl", pos);
-      view.setUint32(pos + 4, 4 + textPadded, true); // cue id + text
-      view.setUint32(pos + 8, i + 1, true); // cue point id
-      const enc = new TextEncoder();
-      const bytes = enc.encode(text);
-      for (let j = 0; j < bytes.length; j++) view.setUint8(pos + 12 + j, bytes[j]);
-      pos += 12 + textPadded;
+      view.setUint32(pos + 4, 4 + labelBytes.length, true);
+      view.setUint32(pos + 8, cueId, true);
+      for (let j = 0; j < labelBytes.length; j++) view.setUint8(pos + 12 + j, labelBytes[j]);
+      if (paddedLabelBytes > labelBytes.length) {
+        view.setUint8(pos + 12 + labelBytes.length, 0);
+      }
+      pos += 12 + paddedLabelBytes;
     }
+
     view.setUint32(listStart + 4, pos - listStart - 8, true);
   }
 
-  // iXML chunk
-  if (ixmlMetadata && (tempo != null || timeSignature != null)) {
-    const parts: string[] = [];
-    if (tempo != null && Number.isFinite(tempo)) parts.push(`  <TEMPO>${tempo.toFixed(3)}</TEMPO>`);
-    if (timeSignature != null && timeSignature.length > 0)
-      parts.push(`  <TIME_SIGNATURE>${timeSignature}</TIME_SIGNATURE>`);
-    if (parts.length > 0) {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<BWFXML>\n${parts.join("\n")}\n</BWFXML>`;
-      writeString("iXML", pos);
-      const xmlBytes = new TextEncoder().encode(xml);
-      const paddedLen = padToWord(xmlBytes.length);
-      view.setUint32(pos + 4, paddedLen, true);
-      for (let i = 0; i < xmlBytes.length; i++) view.setUint8(pos + 8 + i, xmlBytes[i]);
-      pos += 8 + paddedLen;
+  if (ixmlXmlBytes) {
+    writeString("iXML", pos);
+    view.setUint32(pos + 4, ixmlXmlBytes.length, true);
+    pos += 8;
+    for (let i = 0; i < ixmlXmlBytes.length; i++) view.setUint8(pos + i, ixmlXmlBytes[i]);
+    pos += ixmlXmlBytes.length;
+    if (ixmlXmlBytes.length % 2 === 1) {
+      view.setUint8(pos, 0);
+      pos += 1;
     }
   }
 
@@ -295,7 +470,7 @@ export interface ExportResult {
 export async function exportAudioWithEdits(
   audioBlob: Blob,
   params: ExportParams,
-  duration: number = 0
+  duration: number = 0,
 ): Promise<ExportResult> {
   const arrayBuffer = await audioBlob.arrayBuffer();
   const decodeCtx = new AudioContext();
@@ -311,11 +486,7 @@ export async function exportAudioWithEdits(
   const hasEnvelope = envelopePoints.length > 0;
 
   const outputLength = Math.ceil(regionDuration * decoded.sampleRate);
-  const offlineCtx = new OfflineAudioContext(
-    decoded.numberOfChannels,
-    outputLength,
-    decoded.sampleRate
-  );
+  const offlineCtx = new OfflineAudioContext(decoded.numberOfChannels, outputLength, decoded.sampleRate);
 
   const source = offlineCtx.createBufferSource();
   source.buffer = decoded;
@@ -327,7 +498,7 @@ export async function exportAudioWithEdits(
     source.connect(gainNode);
     gainNode.connect(offlineCtx.destination);
 
-    const envelopeInterval = 0.01; // 10ms steps for gain automation
+    const envelopeInterval = 0.01;
     let lastGain = getGainAtTime(envelopePoints, regionStart);
 
     gainNode.gain.setValueAtTime(lastGain, 0);
@@ -346,22 +517,33 @@ export async function exportAudioWithEdits(
 
   const slices = params.slices ?? [];
   const hasSlices = slices.length > 0;
-  const embeddedMarkers = (params.embeddedMarkers ?? true) && hasSlices;
+  const embeddedMarkers = params.embeddedMarkers ?? hasSlices;
   const ixmlMetadata = params.ixmlMetadata ?? true;
   const exportSliceFiles = (params.exportSliceFiles ?? false) && hasSlices;
 
-  // Slice times relative to exported buffer (0 = start of region)
+  const sampleStart = params.sampleStart ?? regionStart;
+  const sampleEnd = params.sampleEnd ?? regionEnd;
+
+  const sampleStartInBuffer = Math.max(0, Math.min(regionDuration, sampleStart - regionStart));
+  const sampleEndInBuffer = Math.max(sampleStartInBuffer + 1 / rendered.sampleRate, Math.min(regionDuration, sampleEnd - regionStart));
+  const sampleStartFrame = Math.floor(sampleStartInBuffer * rendered.sampleRate);
+  const sampleEndFrame = Math.floor(sampleEndInBuffer * rendered.sampleRate);
+
   const sliceTimesInBuffer = slices
     .map((s) => s.time - regionStart)
-    .filter((t) => t >= 0 && t < regionDuration)
+    .filter((t) => t >= sampleStartInBuffer && t < sampleEndInBuffer)
     .sort((a, b) => a - b);
 
   const encodeOpts: EncodeWavOptions = {
-    embeddedMarkers: embeddedMarkers && sliceTimesInBuffer.length > 0,
-    ixmlMetadata: ixmlMetadata && (params.tempo != null || params.timeSignature != null),
+    embeddedMarkers,
+    ixmlMetadata,
     sliceTimes: sliceTimesInBuffer,
     tempo: params.tempo,
     timeSignature: params.timeSignature,
+    sampleStartFrame,
+    sampleEndFrame,
+    rootKey: params.rootKey,
+    tuningCents: params.tuningCents,
   };
 
   const mainBlob = encodeWav(rendered, encodeOpts);
@@ -373,7 +555,7 @@ export async function exportAudioWithEdits(
     sliceBlobs = [];
     for (let i = 0; i < sliceTimesInBuffer.length; i++) {
       const startTime = sliceTimesInBuffer[i];
-      const endTime = i < sliceTimesInBuffer.length - 1 ? sliceTimesInBuffer[i + 1] : regionDuration;
+      const endTime = i < sliceTimesInBuffer.length - 1 ? sliceTimesInBuffer[i + 1] : sampleEndInBuffer;
       const startFrame = Math.floor(startTime * sampleRate);
       const endFrame = Math.floor(endTime * sampleRate);
       const sliceLength = Math.max(1, endFrame - startFrame);
@@ -396,7 +578,7 @@ export async function exportAudioWithEdits(
 export async function replaceSegment(
   existingBlob: Blob,
   recordedBlob: Blob,
-  startTimeSeconds: number
+  startTimeSeconds: number,
 ): Promise<Blob> {
   const ctx = new AudioContext();
   const [existing, recorded] = await Promise.all([
@@ -443,7 +625,7 @@ export async function replaceSegment(
 export async function mixOverdub(
   existingBlob: Blob,
   overdubBlob: Blob,
-  startTimeSeconds: number
+  startTimeSeconds: number,
 ): Promise<Blob> {
   const ctx = new AudioContext();
   const [existing, overdub] = await Promise.all([
