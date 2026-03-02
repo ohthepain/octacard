@@ -54,6 +54,7 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
   let dataBytes = 0;
   let blockAlign = 0;
   const cueById = new Map<number, number>();
+  const ixmlSliceFrames: number[] = [];
   let tempo: number | undefined;
   let timeSignature: string | undefined;
   let sampleStartFrame: number | undefined;
@@ -96,8 +97,7 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
       for (const m of sliceMatches) {
         const frame = Number.parseInt(m[1], 10);
         if (Number.isFinite(frame)) {
-          const id = 100 + cueById.size + 1;
-          cueById.set(id, frame);
+          ixmlSliceFrames.push(frame);
         }
       }
     } else if (chunkId === "smpl" && chunkSize >= 36) {
@@ -138,6 +138,10 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
 
   if (cueSliceFrames.length > 0) {
     sliceFrames = cueSliceFrames;
+  } else if (ixmlSliceFrames.length > 0) {
+    // Only use iXML slice positions when no cue chunk slice markers are present,
+    // to avoid duplicating frames when both sources exist.
+    sliceFrames = [...ixmlSliceFrames].sort((a, b) => a - b);
   } else {
     // Backward compatibility with older exports that used cue ids 1..N for slices.
     sliceFrames = Array.from(cueById.values())
