@@ -192,8 +192,16 @@ export async function convertAudio(
   const outputFileName = 'output.wav';
 
   try {
+    const fileData = await fetchFile(fileToConvert);
+    const dataLength = fileData?.byteLength ?? 0;
+    if (dataLength === 0) {
+      throw new Error(
+        `File "${fileToConvert?.name ?? "unknown"}" is empty or could not be read. ` +
+          "Please ensure the file contains data and you have access to read it."
+      );
+    }
     // Write input file to FFmpeg virtual filesystem
-    await ffmpeg.writeFile(inputFileName, await fetchFile(fileToConvert));
+    await ffmpeg.writeFile(inputFileName, fileData);
 
     // Detect silence at start if needed
     let silenceStartTime = 0;
@@ -243,6 +251,12 @@ export async function convertAudio(
       audioFilters.push('loudnorm=I=-16:TP=-1.5:LRA=11');
     }
 
+    // When we have filters and want a specific sample rate, add aresample to the filter chain.
+    // Some filters (e.g. loudnorm) can change output sample rate; -ar alone may not reliably set it.
+    if (options.sampleRate && pitchRatio === null && audioFilters.length > 0) {
+      audioFilters.push(`aresample=${options.sampleRate}`);
+    }
+
     // Add audio filters if any
     if (audioFilters.length > 0) {
       args.push('-af', audioFilters.join(','));
@@ -277,7 +291,7 @@ export async function convertAudio(
 
     // Read output file
     const data = await ffmpeg.readFile(outputFileName);
-    
+
     // Clean up virtual files
     await ffmpeg.deleteFile(inputFileName);
     await ffmpeg.deleteFile(outputFileName);
@@ -289,6 +303,10 @@ export async function convertAudio(
       throw new Error('Unexpected output format from FFmpeg');
     }
   } catch (error) {
+    // Reset FFmpeg instance on FS errors so next conversion gets a fresh virtual filesystem
+    if ((error as Error)?.name === 'ErrnoError' || (error as Error)?.message?.includes('FS error')) {
+      cancelActiveConversion();
+    }
     // Clean up on error
     try {
       await ffmpeg.deleteFile(inputFileName);
