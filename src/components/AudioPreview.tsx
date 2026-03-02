@@ -1503,6 +1503,23 @@ export const AudioPreview = ({
     [applyLoopLengthParts, getLoopLengthParts],
   );
 
+  const handleLoopPartKeyDown = useCallback(
+    (part: "bars" | "beats" | "sixteenths", e: React.KeyboardEvent) => {
+      let delta = 0;
+      if (e.key === "ArrowUp" || e.key === "ArrowRight") delta = 1;
+      else if (e.key === "ArrowDown" || e.key === "ArrowLeft") delta = -1;
+      else return;
+      e.preventDefault();
+      const next = { ...getLoopLengthParts() };
+      const maxBars = secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999;
+      if (part === "bars") next.bars = Math.min(maxBars, Math.max(0, next.bars + delta));
+      else if (part === "beats") next.beats = Math.min(parsedTimeSignature.beatsPerBar - 1, Math.max(0, next.beats + delta));
+      else if (part === "sixteenths") next.sixteenths = Math.min(3, Math.max(0, next.sixteenths + delta));
+      applyLoopLengthParts(next);
+    },
+    [applyLoopLengthParts, duration, getLoopLengthParts, parsedTimeSignature.beatsPerBar, secondsPerBar],
+  );
+
   const performExport = useCallback(
     async (markerOptions: ExportMarkerOptions | null) => {
       if (!filePath || !paneType) return;
@@ -1873,27 +1890,42 @@ export const AudioPreview = ({
               <div
                 role="spinbutton"
                 tabIndex={0}
+                aria-label="Loop length bars"
+                aria-valuenow={loopLengthParts.bars}
+                aria-valuemin={0}
+                aria-valuemax={secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999}
                 className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
                 onMouseDown={(e) => handleLoopPartDragStart("bars", e)}
-                title="Drag to adjust loop bars"
+                onKeyDown={(e) => handleLoopPartKeyDown("bars", e)}
+                title="Drag or use arrow keys to adjust loop bars"
               >
                 {loopLengthParts.bars}b
               </div>
               <div
                 role="spinbutton"
                 tabIndex={0}
+                aria-label="Loop length beats"
+                aria-valuenow={loopLengthParts.beats}
+                aria-valuemin={0}
+                aria-valuemax={parsedTimeSignature.beatsPerBar - 1}
                 className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
                 onMouseDown={(e) => handleLoopPartDragStart("beats", e)}
-                title="Drag to adjust loop beats"
+                onKeyDown={(e) => handleLoopPartKeyDown("beats", e)}
+                title="Drag or use arrow keys to adjust loop beats"
               >
                 {loopLengthParts.beats}bt
               </div>
               <div
                 role="spinbutton"
                 tabIndex={0}
+                aria-label="Loop length sixteenths"
+                aria-valuenow={loopLengthParts.sixteenths}
+                aria-valuemin={0}
+                aria-valuemax={3}
                 className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
                 onMouseDown={(e) => handleLoopPartDragStart("sixteenths", e)}
-                title="Drag to adjust loop sixteenths"
+                onKeyDown={(e) => handleLoopPartKeyDown("sixteenths", e)}
+                title="Drag or use arrow keys to adjust loop sixteenths"
               >
                 {loopLengthParts.sixteenths}x16
               </div>
