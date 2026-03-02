@@ -80,13 +80,8 @@ importers:
         specifier: ^1.163.2
         version: 1.163.2(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
       '@tanstack/router-vite-plugin':
-<<<<<<< HEAD
-        specifier: ^1.163.2
-        version: 1.163.2(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
-=======
         specifier: ^1.164.0
-        version: 1.164.0(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
->>>>>>> ec2f671cd821deaf025eb3114535999a3bda65ca
+        version: 1.164.0(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
       '@tanstack/start':
         specifier: ^1.120.20
         version: 1.120.20(@types/node@22.19.13)(db0@0.3.4)(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(terser@5.46.0)(tsx@4.21.0)(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))(yaml@2.8.2)
@@ -7684,9 +7679,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-<<<<<<< HEAD
-  '@tanstack/router-plugin@1.131.50(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
-=======
   '@tanstack/router-generator@1.164.0':
     dependencies:
       '@tanstack/router-core': 1.163.3
@@ -7700,8 +7692,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@tanstack/router-plugin@1.131.50(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
->>>>>>> ec2f671cd821deaf025eb3114535999a3bda65ca
+  '@tanstack/router-plugin@1.131.50(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-syntax-jsx': 7.28.6(@babel/core@7.29.0)
@@ -7744,7 +7735,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@tanstack/router-plugin@1.164.0(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
+  '@tanstack/router-plugin@1.164.0(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-syntax-jsx': 7.28.6(@babel/core@7.29.0)
@@ -7760,7 +7751,7 @@ snapshots:
       unplugin: 2.3.11
       zod: 3.25.76
     optionalDependencies:
-      '@tanstack/react-router': 1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tanstack/react-router': 1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       vite: 5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0)
     transitivePeerDependencies:
       - supports-color
@@ -7803,15 +7794,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-<<<<<<< HEAD
-  '@tanstack/router-vite-plugin@1.163.2(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
+  '@tanstack/router-vite-plugin@1.164.0(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
     dependencies:
-      '@tanstack/router-plugin': 1.163.2(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
-=======
-  '@tanstack/router-vite-plugin@1.164.0(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))':
-    dependencies:
-      '@tanstack/router-plugin': 1.164.0(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
->>>>>>> ec2f671cd821deaf025eb3114535999a3bda65ca
+      '@tanstack/router-plugin': 1.164.0(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
     transitivePeerDependencies:
       - '@rsbuild/core'
       - '@tanstack/react-router'
@@ -7925,11 +7910,7 @@ snapshots:
       '@tanstack/react-router': 1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tanstack/react-start-plugin': 1.131.50(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0)))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
       '@tanstack/router-generator': 1.163.2
-<<<<<<< HEAD
-      '@tanstack/router-plugin': 1.163.2(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
-=======
-      '@tanstack/router-plugin': 1.164.0(@tanstack/react-router@1.163.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
->>>>>>> ec2f671cd821deaf025eb3114535999a3bda65ca
+      '@tanstack/router-plugin': 1.164.0(@tanstack/react-router@1.163.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
       '@tanstack/server-functions-plugin': 1.142.1(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
       '@tanstack/start-server-functions-handler': 1.120.19
       '@vitejs/plugin-react': 4.7.0(vite@5.4.21(@types/node@22.19.13)(lightningcss@1.31.1)(terser@5.46.0))
