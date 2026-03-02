@@ -19,6 +19,13 @@ export async function assertBarsBeatsSupport(page) {
   await page.getByRole("option", { name: "Bars/Beats" }).click();
 
   const currentTime = page.getByTestId("audio-preview-current-time");
-  const timeText = (await currentTime.textContent())?.trim() || "";
+  let timeText = "";
+  for (let i = 0; i < 10; i++) {
+    timeText = (await currentTime.textContent())?.trim() || "";
+    if (timeText.includes(".")) {
+      break;
+    }
+    await page.waitForTimeout(100);
+  }
   assert.ok(timeText.includes("."), "Expected bars/beats time display format.");
 }
