@@ -288,8 +288,6 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
     for (let i = 0; i < sliceFrames.length; i++) {
       const thisStart = sliceFrames[i];
       const nextStart = i < sliceFrames.length - 1 ? sliceFrames[i + 1] : sampleEndFrame;
-      const sampleLength = Math.max(0, nextStart - thisStart);
-      void sampleLength;
 
       // ltxt: size=20 bytes payload
       subchunksBytes += 8 + 20;
