@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertConvertDialogEllipsis(page) {
   await page.evaluate(() => {
@@ -34,12 +35,9 @@ export async function assertConvertDialogEllipsis(page) {
 
   if (labelVisible) {
     const dialog = page.getByRole("dialog").filter({ hasText: "Converting" });
-    await page.waitForFunction(
-      () => {
-        const el = document.querySelector('[data-testid="conversion-current-file"]');
-        const lastSpan = el?.querySelector("span:last-of-type");
-        return lastSpan?.textContent?.endsWith(".wav") ?? false;
-      },
+    await waitForPageCondition(
+      page,
+      "document.querySelector('[data-testid=\"conversion-current-file\"]')?.querySelector('span:last-of-type')?.textContent?.endsWith('.wav') ?? false",
       { timeout: 5000 },
     );
 
@@ -63,7 +61,7 @@ export async function assertConvertDialogEllipsis(page) {
 
     await fileLabel.waitFor({ state: "hidden" });
   } else {
-    await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length >= 1);
+    await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length >= 1");
     const latestCall = await page.evaluate(() => (window.__convertCalls ?? []).at(-1));
     const latestListCall = await page.evaluate(() => (window.__listCalls ?? []).at(-1));
     assert.equal(latestListCall?.startPath, "/LongNames", "Expected conversion list call to use /LongNames.");

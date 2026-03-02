@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertDragDropConvertsWithFormat(page) {
   const formatButton = page.getByTestId("format-settings-button");
@@ -37,7 +38,7 @@ export async function assertDragDropConvertsWithFormat(page) {
     destFolder.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
   });
 
-  await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+  await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1");
   const convertCalls = await page.evaluate(() => window.__convertCalls);
   assert.equal(convertCalls[0].sourceVirtualPath, "/Alpha/inside-alpha.wav");
   assert.equal(convertCalls[0].destVirtualPath, "/Beta");

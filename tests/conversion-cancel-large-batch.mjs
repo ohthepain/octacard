@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertLargeBatchConversionCanBeCancelledQuickly(page) {
   const formatButton = page.getByTestId("format-settings-button");
@@ -22,7 +23,7 @@ export async function assertLargeBatchConversionCanBeCancelledQuickly(page) {
 
   const progressDialog = page.getByRole("dialog").filter({ hasText: "Converting Files" });
   await progressDialog.waitFor({ state: "visible" });
-  await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length >= 1);
+  await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length >= 1");
 
   await progressDialog.getByRole("button", { name: "Close" }).click();
   const cancelPrompt = page.getByRole("dialog").filter({ hasText: "Cancel conversion?" });

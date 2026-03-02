@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertDragFolderDropConvertsWithoutConfirmation(page) {
   const formatButton = page.getByTestId("format-settings-button");
@@ -73,7 +74,7 @@ export async function assertDragFolderDropConvertsWithoutConfirmation(page) {
     }
   });
 
-  await page.waitForFunction(() => Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1);
+  await waitForPageCondition(page, "Array.isArray(window.__convertCalls) && window.__convertCalls.length === 1");
 
   const confirmDialogVisible = await page
     .getByRole("heading", { name: /Convert Files\?|Copy Files\?/ })

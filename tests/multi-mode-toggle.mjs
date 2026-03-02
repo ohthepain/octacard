@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { waitForAriaPressed } from "./wait-utils.mjs";
 
 export async function assertMultiModeToggle(page) {
   const multiToggle = page.getByTestId("multi-mode-toggle");
   await multiToggle.waitFor({ state: "visible" });
 
-  await expectAriaPressed(page, multiToggle, "false");
+  await waitForAriaPressed(multiToggle, "false");
   const initialClassName = await multiToggle.getAttribute("class");
   assert.ok(
     initialClassName?.includes("border-input"),
@@ -12,7 +13,7 @@ export async function assertMultiModeToggle(page) {
   );
 
   await multiToggle.click();
-  await expectAriaPressed(page, multiToggle, "true");
+  await waitForAriaPressed(multiToggle, "true");
   const enabledClassName = await multiToggle.getAttribute("class");
   assert.ok(
     enabledClassName?.includes("bg-primary"),
@@ -24,13 +25,6 @@ export async function assertMultiModeToggle(page) {
   );
 
   await multiToggle.click();
-  await expectAriaPressed(page, multiToggle, "false");
+  await waitForAriaPressed(multiToggle, "false");
 }
 
-async function expectAriaPressed(page, locator, value) {
-  await locator.waitFor({ state: "visible" });
-  await page.waitForFunction(
-    ([element, expectedValue]) => element?.getAttribute("aria-pressed") === expectedValue,
-    [await locator.elementHandle(), value],
-  );
-}
