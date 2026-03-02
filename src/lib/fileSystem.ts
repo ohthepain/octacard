@@ -1,6 +1,6 @@
 // Web-based file system API wrapper
 // Uses File System Access API (showDirectoryPicker) for folder selection in the browser
-import { sanitizeFilename } from "./filename";
+import { sanitizeFilename, sanitizeFilenameMinimal } from "./filename";
 import { shortenFilename, shortenFilenames } from "./filename-shortener";
 import { hasDirectoryPickerSupport } from "./browserSupport";
 
@@ -1183,9 +1183,11 @@ class FileSystemService {
         });
       }
 
-      if (sanitizeTargetFilename) {
-        finalFileName = sanitizeFilename(finalFileName);
-      }
+      // Always apply minimal sanitization (path separators, control chars) for security.
+      // When preset enables strict mode, also transliterate for device compatibility (e.g. SP-404).
+      finalFileName = sanitizeTargetFilename
+        ? sanitizeFilename(finalFileName)
+        : sanitizeFilenameMinimal(finalFileName);
 
       if (signal?.aborted) {
         return {
