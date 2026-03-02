@@ -140,8 +140,10 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
     sliceFrames = cueSliceFrames;
   } else {
     // Backward compatibility with older exports that used cue ids 1..N for slices.
-    sliceFrames = Array.from(cueById.values())
-      .filter((f) => f >= 0)
+    // Do not treat sampleStart/sampleEnd cues (ids 1 and 2) as slice markers.
+    sliceFrames = Array.from(cueById.entries())
+      .filter(([id, frame]) => id !== 1 && id !== 2 && frame >= 0)
+      .map(([, frame]) => frame)
       .sort((a, b) => a - b);
   }
 
