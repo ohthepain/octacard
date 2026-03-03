@@ -2145,7 +2145,7 @@ export const AudioPreview = ({
             ))}
           </div>
         )}
-        {!isEmptyState && (
+        {!isEmptyState && !isLoading && duration > 0 && (
           <div
             className="absolute left-0 right-0 top-0 z-[12] pointer-events-none"
             style={{ height: debouncedWaveformHeight }}
