@@ -1,5 +1,33 @@
 /* Injected into browser before app loads - sets up mock File System API */
 (function () {
+  /** Returns a minimal valid WAV file (1s silence, 44.1kHz stereo) for mock audio playback */
+  function createMinimalWavBlob() {
+    const sampleRate = 44100;
+    const durationSeconds = 1;
+    const numSamples = sampleRate * durationSeconds * 2;
+    const buffer = new ArrayBuffer(44 + numSamples);
+    const view = new DataView(buffer);
+    const writeStr = (offset, str) => {
+      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    };
+    writeStr(0, "RIFF");
+    view.setUint32(4, 36 + numSamples, true);
+    writeStr(8, "WAVE");
+    writeStr(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 2, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 4, true);
+    view.setUint16(32, 4, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, "data");
+    view.setUint32(40, numSamples, true);
+    return new Blob([buffer], { type: "audio/wav" });
+  }
+
+  const minimalWavBlob = createMinimalWavBlob();
+
   class MockFileHandle {
     constructor(name, size = 64) {
       this.kind = "file";
@@ -7,7 +35,15 @@
       this._size = size;
     }
     async getFile() {
-      return { size: this._size, lastModified: Date.now() };
+      if (/\.wav$/i.test(this.name)) {
+        return new File([minimalWavBlob], this.name, {
+          type: "audio/wav",
+          lastModified: Date.now(),
+        });
+      }
+      return new File([new Uint8Array(this._size)], this.name, {
+        lastModified: Date.now(),
+      });
     }
     async isSameEntry(other) {
       return other === this;
