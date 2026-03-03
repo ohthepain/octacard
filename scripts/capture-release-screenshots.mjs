@@ -23,6 +23,19 @@ const outputDir = path.resolve(projectRoot, "output/release-notes-screenshots");
 // Minimal mock for file system - same structure as smoke.mjs
 const initScript = `
 (function() {
+  function createMinimalWavBlob() {
+    const sampleRate = 44100, durationSeconds = 1, numSamples = sampleRate * durationSeconds * 2;
+    const buffer = new ArrayBuffer(44 + numSamples);
+    const view = new DataView(buffer);
+    const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+    writeStr(0, "RIFF"); view.setUint32(4, 36 + numSamples, true); writeStr(8, "WAVE");
+    writeStr(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, 2, true); view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 4, true); view.setUint16(32, 4, true);
+    view.setUint16(34, 16, true); writeStr(36, "data"); view.setUint32(40, numSamples, true);
+    return new Blob([buffer], { type: "audio/wav" });
+  }
+  const minimalWavBlob = createMinimalWavBlob();
   class MockFileHandle {
     constructor(name, size = 64) {
       this.kind = "file";
@@ -30,7 +43,10 @@ const initScript = `
       this._size = size;
     }
     async getFile() {
-      return { size: this._size, lastModified: Date.now() };
+      if (/\\.wav$/i.test(this.name)) {
+        return new File([minimalWavBlob], this.name, { type: "audio/wav", lastModified: Date.now() });
+      }
+      return new File([new Uint8Array(this._size)], this.name, { lastModified: Date.now() });
     }
     async isSameEntry(other) { return other === this; }
   }

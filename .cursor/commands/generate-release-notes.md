@@ -4,6 +4,11 @@ Generate release notes from git history by reviewing commits and their diffs. Pr
 
 **COMMIT_LIMIT: 10** — Use this value everywhere "N commits" or "commit limit" is referenced below. If the user provides a number after the command (e.g. `/generate-release-notes 5`), use that instead.
 
+## Modes
+
+- **Normal**: Process the next N commits, advance the hash, persist progress.
+- **Regenerate**: Re-run the **same** commits as the last run. Use when screenshots have errors, JSON needs fixes, or you want to retry. Does **not** advance the hash. Invoke with `/generate-release-notes regenerate` or `/generate-release-notes --regenerate`.
+
 ## Pipeline
 
 ```
@@ -14,15 +19,23 @@ The **primary output** is structured JSON (`releasenotes-<date>.json`) for the i
 
 ## Steps
 
-### 1. Get the starting commit hash
+### 1. Get the starting and ending commit hashes
 
+**Normal mode:**
 - Read `.cursor/release-notes-last-hash.txt` if it exists. Its contents are the last processed commit hash.
 - If the file is missing or empty, use `git rev-list --max-parents=0 HEAD` to get the first commit hash.
 - This hash is your **start** (exclusive). You will process commits _after_ this one.
+- **End** = HEAD (process up to HEAD).
+
+**Regenerate mode:**
+- Read `.cursor/release-notes-prev-batch-start.txt`. If missing, report "Cannot regenerate: no previous batch. Run a normal generate first." and stop.
+- **Start** = contents of that file.
+- Read `.cursor/release-notes-last-hash.txt`. **End** = that hash (process commits up to and including it).
+- You will re-run the same batch; do **not** update any hash files at the end.
 
 ### 2. Get up to N commits to process
 
-- Run: `git log --oneline <start-hash>..HEAD` to list commits after the start hash.
+- Run: `git log --oneline <start-hash>..<end-hash>` (in regenerate mode) or `git log --oneline <start-hash>..HEAD` (normal mode).
 - Take only the **oldest** N commits (process in chronological order, oldest first), where N = COMMIT_LIMIT.
 - For each commit, run `git show <hash> --stat` and `git show <hash>` to inspect the diff.
 - If there are no commits, report "No new commits to process" and stop.
@@ -34,13 +47,12 @@ The **primary output** is structured JSON (`releasenotes-<date>.json`) for the i
 - Collect and Report only USER-FACING FEATURES. Ignore refactors and changes to development scripts and CI jobs
 - Group by commit if helpful, or flatten into a single list.
 
-### 4. Append to releasenotes.txt
+### 4. Update releasenotes.txt
 
 - Create `releasenotes.txt` if it does not exist.
 - Get the **commit date** of the last processed hash: `git log -1 --format=%cd --date=short <last-hash>`.
-- Add a section header using that date: `## YYYY-MM-DD`.
-- Prepend the release note bullets under that header.
-- Use a blank line between sections.
+- **Normal mode**: Add a section header `## YYYY-MM-DD` and prepend the release note bullets under it. Use a blank line between sections.
+- **Regenerate mode**: Replace the existing section for that date if it exists; otherwise add it as in normal mode.
 
 ### 5. Create structured JSON (primary output)
 
@@ -95,11 +107,13 @@ The **primary output** is structured JSON (`releasenotes-<date>.json`) for the i
 - If a PDF is needed for external distribution, run: `node scripts/generate-release-notes-pdf.mjs --notes releasenotes.txt --screenshots output/release-notes-screenshots/ --output ReleaseNotes<date>-<githash>.pdf`
 - Use the same **commit date** and **last processed hash** for the filename, e.g. `ReleaseNotes2026-03-03-abc1234.pdf`.
 
-### 8. Persist the last processed hash
+### 8. Persist state (normal mode only)
 
-- Determine the hash of the **last** commit you processed (the newest of the N commits you processed).
-- Write that hash to `.cursor/release-notes-last-hash.txt` (overwrite the file).
-- This becomes the new "start" for the next run.
+- **Regenerate mode**: Skip this step. Do not update any hash files.
+- **Normal mode**:
+  - Write the **start** hash you used at the beginning of this run to `.cursor/release-notes-prev-batch-start.txt`. This enables regenerate for the next batch.
+  - Write the hash of the **last** commit you processed to `.cursor/release-notes-last-hash.txt` (overwrite the file).
+  - This becomes the new "start" for the next run.
 
 ## Output format for releasenotes.txt
 
@@ -118,6 +132,20 @@ The PDF contains:
 - A title: "Release Notes" with the date and git hash
 - The release note bullets from the latest section of releasenotes.txt
 - Each screenshot embedded below its corresponding feature bullet (screenshots are matched by order: first bullet → first screenshot, etc.)
+
+## Regenerate command
+
+To regenerate the last batch (e.g. after fixing screenshot errors or JSON):
+
+```
+/generate-release-notes regenerate
+```
+
+or
+
+```
+/generate-release-notes --regenerate
+```
 
 ## Notes
 
