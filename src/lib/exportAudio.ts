@@ -43,7 +43,10 @@ export interface WavMetadata {
 
 function centsToSmplPitchFraction(cents: number): number {
   if (!Number.isFinite(cents)) return 0;
-  const normalized = (((cents % 100) + 100) % 100) / 100;
+  // Clamp cents to a supported range to avoid modulo wrapping, which would
+  // incorrectly turn negative values into large positive offsets and 100 into 0.
+  const clamped = Math.min(Math.max(cents, 0), 99.999);
+  const normalized = clamped / 100;
   return Math.floor(normalized * 0x100000000) >>> 0;
 }
 
