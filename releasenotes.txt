@@ -1,0 +1,16 @@
+## 2025-03-02
+
+- Auto-detect CF card insertion and removal
+- Drag window by header bar (Electron)
+- Auto-navigate to CF card when inserted
+- Sample format dialog with conversion options (sample rate, depth, mono, normalize)
+- Sample depth option (16-bit, 24-bit, preserve original)
+- Sample conversion via ffmpeg (WAV, rate, depth, mono, normalize)
+- Create new folders in file browser and CF card view
+- Reveal file in Finder/Explorer
+- Eject CF card with state persistence
+- Save and restore navigation state (paths) when reopening app
+- Navigate to parent folder
+- Unified file pane for both local and CF card (browse any path in either pane)
+- Drag-and-drop file and folder copy/convert
+- Delete
