@@ -1171,7 +1171,6 @@ export const AudioPreview = ({
     } else if (isRecordArmed) {
       startRecordingFromHere(recordArmedModeRef.current);
     } else {
-      playStartTimeRef.current = clampedPlayStart;
       playSliceEndRef.current = loopEnd || duration;
       wavesurferRef.current.seekTo(clampedPlayStart / duration);
       wavesurferRef.current.play();
