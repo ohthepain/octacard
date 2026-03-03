@@ -188,6 +188,7 @@ export const AudioPreview = ({
   const [timeSignature, setTimeSignature] = useState("4/4");
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(0);
+  const [playStart, setPlayStart] = useState(0);
   const [rootKey, setRootKey] = useState("");
   const [tuningCents, setTuningCents] = useState(0);
   const loopPartDragRef = useRef<{ startY: number; startX: number; startValue: number } | null>(null);
@@ -438,6 +439,7 @@ export const AudioPreview = ({
             parsed.sampleEndFrame != null ? parsed.sampleEndFrame / parsed.sampleRate : Math.max(metadataStart, duration);
           setLoopStart(Math.max(0, metadataStart));
           setLoopEnd(Math.max(metadataStart + 0.001, metadataEnd));
+          setPlayStart(Math.max(0, metadataStart));
 
           if (parsed.sliceFrames.length > 0) {
             const markers: SliceMarker[] = parsed.sliceFrames.map((frame) => ({
@@ -528,7 +530,13 @@ export const AudioPreview = ({
   useEffect(() => {
     if (duration <= 0) return;
     setLoopEnd((prev) => (prev > 0 ? Math.min(duration, prev) : duration));
+    setLoopStart((prev) => Math.max(0, Math.min(duration, prev)));
+    setPlayStart((prev) => Math.max(0, Math.min(duration, prev)));
   }, [duration]);
+
+  useEffect(() => {
+    setPlayStart((prev) => Math.max(loopStart, Math.min(loopEnd || duration, prev)));
+  }, [duration, loopEnd, loopStart]);
 
   useEffect(() => {
     if (!filePath) {
@@ -537,6 +545,7 @@ export const AudioPreview = ({
       setTempoBpm(120);
       setLoopStart(0);
       setLoopEnd(0);
+      setPlayStart(0);
       setRootKey("");
       setTuningCents(0);
       return;
@@ -1153,18 +1162,22 @@ export const AudioPreview = ({
       recordPluginRef.current?.stopRecording();
       return;
     }
+    const clampedPlayStart = Math.max(loopStart, Math.min(loopEnd || duration, playStart));
     if (isPlaying) {
       wavesurferRef.current.pause();
       if (duration > 0) {
-        wavesurferRef.current.seekTo(playStartTimeRef.current / duration);
+        wavesurferRef.current.seekTo(clampedPlayStart / duration);
       }
     } else if (isRecordArmed) {
       startRecordingFromHere(recordArmedModeRef.current);
     } else {
-      playStartTimeRef.current = wavesurferRef.current.getCurrentTime();
-      wavesurferRef.current.play();
+      playSliceEndRef.current = loopEnd || duration;
+      if (duration > 0) {
+        wavesurferRef.current.seekTo(clampedPlayStart / duration);
+        wavesurferRef.current.play();
+      }
     }
-  }, [isPlaying, isRecording, isRecordArmed, isLoading, duration, startRecordingFromHere]);
+  }, [isPlaying, isRecording, isRecordArmed, isLoading, duration, loopEnd, loopStart, playStart, startRecordingFromHere]);
 
   const handleRecordClick = useCallback(() => {
     if (isRecording) {
@@ -1471,6 +1484,49 @@ export const AudioPreview = ({
       window.addEventListener("mouseup", onUp);
     },
     [clampToDuration, duration, loopEnd, loopStart, snapToSixteenth, timeDisplayMode],
+  );
+
+  const handleSampleBoundaryDrag = useCallback(
+    (which: "start" | "end" | "play", e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = waveformRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const dragDuration = duration > 0 ? duration : 1;
+      const startX = e.clientX;
+      const startLoopStart = loopStart;
+      const startLoopEnd = loopEnd > 0 ? loopEnd : dragDuration;
+      const startPlayStart = playStart;
+      const minLength = 0.001;
+
+      const onMove = (moveE: MouseEvent) => {
+        const dx = moveE.clientX - startX;
+        const delta = (dx / rect.width) * dragDuration;
+        if (which === "start") {
+          const nextStart = Math.max(0, Math.min(startLoopEnd - minLength, startLoopStart + delta));
+          setLoopStart(nextStart);
+          setPlayStart((prev) => Math.max(nextStart, prev));
+          return;
+        }
+        if (which === "end") {
+          const nextEnd = Math.max(startLoopStart + minLength, Math.min(dragDuration, startLoopEnd + delta));
+          setLoopEnd(nextEnd);
+          setPlayStart((prev) => Math.min(nextEnd, prev));
+          return;
+        }
+        const nextPlayStart = Math.max(startLoopStart, Math.min(startLoopEnd, startPlayStart + delta));
+        setPlayStart(nextPlayStart);
+      };
+
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [duration, loopEnd, loopStart, playStart],
   );
 
   const handleLoopPartDragStart = useCallback(
@@ -1860,6 +1916,10 @@ export const AudioPreview = ({
     if (secondsPerBar <= 0 || duration <= 0) return 0;
     return Math.min(512, Math.ceil(duration / secondsPerBar));
   }, [duration, secondsPerBar]);
+  const timelineDuration = duration > 0 ? duration : 1;
+  const loopEndClamped = Math.min(timelineDuration, loopEnd > 0 ? loopEnd : timelineDuration);
+  const loopStartClamped = Math.max(0, Math.min(loopEndClamped - 0.001, loopStart));
+  const playStartClamped = Math.max(loopStartClamped, Math.min(loopEndClamped, playStart));
 
   return (
     <div className="border-t border-border bg-card p-4 space-y-3 shrink-0" data-testid={`audio-preview-${paneType}`}>
@@ -1890,6 +1950,7 @@ export const AudioPreview = ({
               <div
                 role="spinbutton"
                 tabIndex={0}
+                data-testid="loop-length-bars"
                 aria-label="Loop length bars"
                 aria-valuenow={loopLengthParts.bars}
                 aria-valuemin={0}
@@ -1904,6 +1965,7 @@ export const AudioPreview = ({
               <div
                 role="spinbutton"
                 tabIndex={0}
+                data-testid="loop-length-beats"
                 aria-label="Loop length beats"
                 aria-valuenow={loopLengthParts.beats}
                 aria-valuemin={0}
@@ -1918,6 +1980,7 @@ export const AudioPreview = ({
               <div
                 role="spinbutton"
                 tabIndex={0}
+                data-testid="loop-length-sixteenths"
                 aria-label="Loop length sixteenths"
                 aria-valuenow={loopLengthParts.sixteenths}
                 aria-valuemin={0}
@@ -1930,6 +1993,7 @@ export const AudioPreview = ({
                 {loopLengthParts.sixteenths}x16
               </div>
               <Input
+                data-testid="audio-preview-time-signature"
                 className="h-7 w-[78px] text-xs font-mono"
                 value={timeSignature}
                 onChange={(e) => setTimeSignature(e.target.value)}
@@ -1937,6 +2001,7 @@ export const AudioPreview = ({
                 title="Time signature"
               />
               <Input
+                data-testid="audio-preview-tempo"
                 className="h-7 w-[68px] text-xs font-mono"
                 value={String(Math.round(tempoBpm))}
                 onChange={(e) => {
@@ -1947,6 +2012,7 @@ export const AudioPreview = ({
                 title="Tempo BPM"
               />
               <Input
+                data-testid="audio-preview-root-key"
                 className="h-7 w-[60px] text-xs font-mono"
                 value={rootKey}
                 onChange={(e) => setRootKey(e.target.value)}
@@ -1955,6 +2021,7 @@ export const AudioPreview = ({
                 placeholder="Root"
               />
               <Input
+                data-testid="audio-preview-tuning-cents"
                 className="h-7 w-[70px] text-xs font-mono"
                 value={Number.isFinite(tuningCents) ? tuningCents.toFixed(2) : "0.00"}
                 onChange={(e) => {
@@ -2060,7 +2127,11 @@ export const AudioPreview = ({
           </div>
         )}
         {!isEmptyState && duration > 0 && timeDisplayMode === "bars" && totalBars > 0 && (
-          <div className="absolute top-0 left-0 right-0 z-[2] pointer-events-none" style={{ height: debouncedWaveformHeight }}>
+          <div
+            data-testid="audio-preview-bar-background"
+            className="absolute top-0 left-0 right-0 z-[2] pointer-events-none"
+            style={{ height: debouncedWaveformHeight }}
+          >
             {Array.from({ length: totalBars }).map((_, i) => (
               <div
                 key={`bar-bg-${i}`}
@@ -2074,6 +2145,61 @@ export const AudioPreview = ({
             ))}
           </div>
         )}
+        {!isEmptyState && (
+          <div
+            className="absolute left-0 right-0 top-0 z-[12] pointer-events-none"
+            style={{ height: debouncedWaveformHeight }}
+            data-testid="sample-range-overlay"
+          >
+            <div
+              className="absolute top-1 h-2 rounded-sm bg-[#2D193E]"
+              style={{
+                left: `${(loopStartClamped / timelineDuration) * 100}%`,
+                width: `${(Math.max(0.001, loopEndClamped - loopStartClamped) / timelineDuration) * 100}%`,
+              }}
+              data-testid="sample-range-bar"
+            />
+            <button
+              type="button"
+              aria-label="Sample range start"
+              className="absolute top-0 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0"
+              style={{ left: `${(loopStartClamped / timelineDuration) * 100}%` }}
+              onMouseDown={(e) => handleSampleBoundaryDrag("start", e)}
+              data-testid="sample-range-start-handle"
+            >
+              <span
+                className="block w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#D3D3D3]"
+                title="Sample start"
+              />
+            </button>
+            <button
+              type="button"
+              aria-label="Play start"
+              className="absolute top-3 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0"
+              style={{ left: `${(playStartClamped / timelineDuration) * 100}%` }}
+              onMouseDown={(e) => handleSampleBoundaryDrag("play", e)}
+              data-testid="sample-range-play-start-handle"
+            >
+              <span
+                className="block w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#D3D3D3]"
+                title="Play start"
+              />
+            </button>
+            <button
+              type="button"
+              aria-label="Sample range end"
+              className="absolute top-0 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0"
+              style={{ left: `${(loopEndClamped / timelineDuration) * 100}%` }}
+              onMouseDown={(e) => handleSampleBoundaryDrag("end", e)}
+              data-testid="sample-range-end-handle"
+            >
+              <span
+                className="block w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#D3D3D3]"
+                title="Sample end"
+              />
+            </button>
+          </div>
+        )}
         {!isEmptyState && duration > 0 && (
           <div className="absolute top-0 left-0 right-0 z-[6] pointer-events-none" style={{ height: debouncedWaveformHeight }}>
             <div
@@ -2085,12 +2211,14 @@ export const AudioPreview = ({
               style={{ width: `${((duration - Math.min(duration, loopEnd || duration)) / duration) * 100}%`, backgroundColor: "rgba(0,0,0,0.20)" }}
             />
             <div
+              data-testid="audio-preview-loop-start-handle"
               className="absolute top-0 h-full w-[2px] bg-[#FF764D] pointer-events-auto cursor-ew-resize"
               style={{ left: `${(Math.max(0, loopStart) / duration) * 100}%` }}
               onMouseDown={(e) => handleLoopBoundaryDrag("start", e)}
               title="Loop start (hold Shift to nudge loop)"
             />
             <div
+              data-testid="audio-preview-loop-end-handle"
               className="absolute top-0 h-full w-[2px] bg-[#FF764D] pointer-events-auto cursor-ew-resize"
               style={{ left: `${(Math.min(duration, loopEnd || duration) / duration) * 100}%` }}
               onMouseDown={(e) => handleLoopBoundaryDrag("end", e)}
