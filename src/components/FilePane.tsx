@@ -953,11 +953,18 @@ export const FilePane = ({
           setRootPath("/");
           setCurrentRootPath("/");
           setDisplayTitle(rootName);
-          setCurrentVolumeUUID(rootName || null);
+          // Use null so volumeId becomes _default; favorites and nav state are keyed by _default in web
+          setCurrentVolumeUUID(null);
           rootPathRef.current = "/";
           currentRootPathRef.current = "/";
           setLoading(false);
           hasInitializedNavStateRef.current = true;
+          // Restore expanded folders from saved state (mount effect will load tree, then restoration effect will expand)
+          // Use _default since getVolumeUUIDForPath returns null in web; state is saved under that key
+          const savedState = getNavigationState(NAV_STATE_FALLBACK_VOLUME);
+          if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
+            setPendingExpandedFolders(savedState.expandedFolders);
+          }
           return;
         }
         // Home directory not available in web - use root
@@ -3892,6 +3899,7 @@ export const FilePane = ({
                   onClick={() => navigateToFolder("/")}
                   className={`truncate hover:text-foreground transition-colors shrink-0 ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
                   title={fileSystemService.getRootDirectoryName(paneType)}
+                  data-testid={`breadcrumb-root-${paneName}`}
                 >
                   {fileSystemService.getRootDirectoryName(paneType)}
                 </button>
