@@ -1950,6 +1950,7 @@ export const AudioPreview = ({
               <div
                 role="spinbutton"
                 tabIndex={0}
+                data-testid="loop-length-bars"
                 aria-label="Loop length bars"
                 aria-valuenow={loopLengthParts.bars}
                 aria-valuemin={0}
@@ -1964,6 +1965,7 @@ export const AudioPreview = ({
               <div
                 role="spinbutton"
                 tabIndex={0}
+                data-testid="loop-length-beats"
                 aria-label="Loop length beats"
                 aria-valuenow={loopLengthParts.beats}
                 aria-valuemin={0}
@@ -1978,6 +1980,7 @@ export const AudioPreview = ({
               <div
                 role="spinbutton"
                 tabIndex={0}
+                data-testid="loop-length-sixteenths"
                 aria-label="Loop length sixteenths"
                 aria-valuenow={loopLengthParts.sixteenths}
                 aria-valuemin={0}
@@ -1990,6 +1993,7 @@ export const AudioPreview = ({
                 {loopLengthParts.sixteenths}x16
               </div>
               <Input
+                data-testid="audio-preview-time-signature"
                 className="h-7 w-[78px] text-xs font-mono"
                 value={timeSignature}
                 onChange={(e) => setTimeSignature(e.target.value)}
@@ -1997,6 +2001,7 @@ export const AudioPreview = ({
                 title="Time signature"
               />
               <Input
+                data-testid="audio-preview-tempo"
                 className="h-7 w-[68px] text-xs font-mono"
                 value={String(Math.round(tempoBpm))}
                 onChange={(e) => {
@@ -2007,6 +2012,7 @@ export const AudioPreview = ({
                 title="Tempo BPM"
               />
               <Input
+                data-testid="audio-preview-root-key"
                 className="h-7 w-[60px] text-xs font-mono"
                 value={rootKey}
                 onChange={(e) => setRootKey(e.target.value)}
@@ -2015,6 +2021,7 @@ export const AudioPreview = ({
                 placeholder="Root"
               />
               <Input
+                data-testid="audio-preview-tuning-cents"
                 className="h-7 w-[70px] text-xs font-mono"
                 value={Number.isFinite(tuningCents) ? tuningCents.toFixed(2) : "0.00"}
                 onChange={(e) => {
@@ -2120,7 +2127,11 @@ export const AudioPreview = ({
           </div>
         )}
         {!isEmptyState && duration > 0 && timeDisplayMode === "bars" && totalBars > 0 && (
-          <div className="absolute top-0 left-0 right-0 z-[2] pointer-events-none" style={{ height: debouncedWaveformHeight }}>
+          <div
+            data-testid="audio-preview-bar-background"
+            className="absolute top-0 left-0 right-0 z-[2] pointer-events-none"
+            style={{ height: debouncedWaveformHeight }}
+          >
             {Array.from({ length: totalBars }).map((_, i) => (
               <div
                 key={`bar-bg-${i}`}
@@ -2200,12 +2211,14 @@ export const AudioPreview = ({
               style={{ width: `${((duration - Math.min(duration, loopEnd || duration)) / duration) * 100}%`, backgroundColor: "rgba(0,0,0,0.20)" }}
             />
             <div
+              data-testid="audio-preview-loop-start-handle"
               className="absolute top-0 h-full w-[2px] bg-[#FF764D] pointer-events-auto cursor-ew-resize"
               style={{ left: `${(Math.max(0, loopStart) / duration) * 100}%` }}
               onMouseDown={(e) => handleLoopBoundaryDrag("start", e)}
               title="Loop start (hold Shift to nudge loop)"
             />
             <div
+              data-testid="audio-preview-loop-end-handle"
               className="absolute top-0 h-full w-[2px] bg-[#FF764D] pointer-events-auto cursor-ew-resize"
               style={{ left: `${(Math.min(duration, loopEnd || duration) / duration) * 100}%` }}
               onMouseDown={(e) => handleLoopBoundaryDrag("end", e)}
