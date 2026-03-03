@@ -220,12 +220,13 @@ export async function startUnifiedPlayback(
     for (const s of sources) {
       const startTime = startTimes.get(s.sampleId) ?? now;
       const elapsed = now - startTime;
+      const elapsedInBuffer = elapsed * s.playbackRate;
       if (!s.loopEnabled) {
         const maxElapsed = s.playDuration / s.playbackRate;
         if (elapsed >= maxElapsed) continue;
       }
       const loopDuration = s.loopEnd - s.loopStart;
-      const posInLoop = ((s.playStart - s.loopStart + elapsed) % loopDuration + loopDuration) % loopDuration;
+      const posInLoop = ((s.playStart - s.loopStart + elapsedInBuffer) % loopDuration + loopDuration) % loopDuration;
       const currentTimeSec = s.loopStart + posInLoop;
       positions[s.sampleId] = currentTimeSec;
       if (s.sampleId === currentActiveId) {

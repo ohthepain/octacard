@@ -6,6 +6,7 @@ import { fileSystemService } from "@/lib/fileSystem";
 import { toast } from "sonner";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { usePlayerStore } from "@/stores/player-store";
 import type { StackSample, PaneType } from "@/stores/multi-sample-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,10 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
   const setPlayingSamplePosition = useMultiSampleStore((s) => s.setPlayingSamplePosition);
   const playingSamplePosition = useMultiSampleStore((s) => s.playingSamplePosition);
   const playingSamplePositions = useMultiSampleStore((s) => s.playingSamplePositions);
+  const playerMode = usePlayerStore((s) => s.mode);
+  const singleFile = usePlayerStore((s) => s.singleFile);
+  const playerCurrentTime = usePlayerStore((s) => s.currentTime);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
 
   const handleBlockClick = () => {
     useMultiSampleStore.getState().setActiveSlotIndex(index);
@@ -191,8 +196,11 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
     };
   }, [sample.path, sample.paneType, sample.name, sample.id, index, updateSampleBars, setPlayingSamplePosition]);
 
-  // Sync playhead from unified player: use per-sample position from playingSamplePositions, or active from playingSamplePosition
-  const currentTime = playingSamplePositions[sample.id] ?? (playingSamplePosition?.sampleId === sample.id ? playingSamplePosition.currentTime : null);
+  // Sync playhead from unified player: multi uses playingSamplePositions/playingSamplePosition, single uses playerCurrentTime when this sample matches
+  const currentTime =
+    playerMode === "single" && isPlaying && singleFile?.path === sample.path
+      ? playerCurrentTime
+      : playingSamplePositions[sample.id] ?? (playingSamplePosition?.sampleId === sample.id ? playingSamplePosition.currentTime : null);
   useEffect(() => {
     const ws = wavesurferRef.current;
     if (!ws || currentTime == null) return;
