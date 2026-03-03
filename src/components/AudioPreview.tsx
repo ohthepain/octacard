@@ -193,15 +193,15 @@ export const AudioPreview = ({
     const ws = wavesurferRef.current;
     if (!ws || !duration) return;
     let t: number;
-    if (multiSampleId && playingSamplePosition?.sampleId === multiSampleId) {
+    if (playerMode === "multi" && multiSampleId && playingSamplePosition?.sampleId === multiSampleId) {
       t = playingSamplePosition.currentTime;
-    } else if (!multiSampleId && isPlaying) {
+    } else if (playerMode === "single" && isPlaying) {
       t = playerCurrentTime;
     } else return;
     const safeTime = Math.min(t, duration * 0.9999);
     ws.seekTo(safeTime / duration);
     setCurrentTime(safeTime);
-  }, [multiSampleId, playingSamplePosition, isPlaying, playerCurrentTime, duration]);
+  }, [playerMode, multiSampleId, playingSamplePosition, isPlaying, playerCurrentTime, duration]);
 
   const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
   const playStartTimeRef = useRef<number>(0);
@@ -252,6 +252,18 @@ export const AudioPreview = ({
   useEffect(() => {
     loopEnabledRef.current = loopEnabled;
   }, [loopEnabled]);
+
+  // When playback stops, seek waveform to play start (handles space bar stop from anywhere)
+  const prevIsPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    const wasPlaying = prevIsPlayingRef.current;
+    prevIsPlayingRef.current = isPlaying;
+    if (wasPlaying && !isPlaying && wavesurferRef.current && duration > 0) {
+      const clampedPlayStart = Math.max(loopStart, Math.min(loopEnd || duration, playStart));
+      wavesurferRef.current.seekTo(clampedPlayStart / duration);
+      setCurrentTime(clampedPlayStart);
+    }
+  }, [isPlaying, duration, loopStart, loopEnd, playStart]);
 
   const parsedTimeSignature = useMemo(() => {
     const m = timeSignature.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
@@ -474,6 +486,13 @@ export const AudioPreview = ({
 
   const sliceDetectionRunForRef = useRef<string | null>(null);
 
+  // #region agent log
+  useEffect(() => {
+    if (!filePath || isEmptyState) return;
+    fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:filePathChange',message:'filePath changed',data:{filePath,loopStart,loopEnd,duration},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+  }, [filePath, isEmptyState]);
+  // #endregion
+
   // On load: parse embedded metadata (tempo/timesig/slices/start-end).
   // Uses fileSystemService to avoid wrong buffer when audioUrl is stale during sample switch.
   useEffect(() => {
@@ -505,9 +524,19 @@ export const AudioPreview = ({
               ? parsed.sampleEndFrame / parsed.sampleRate
               : Math.max(metadataStart, duration || durationFromFile);
           const edits = getEdits(filePath);
+          // #region agent log
+          const barsFromMeta = (metadataEnd - metadataStart) * (parsed.tempo ?? 120) / 240;
+          fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:metadataEffect',message:'Metadata parsed for new file',data:{filePath,editsFromStore:edits,durationFromFile,metadataStart,metadataEnd,barsFromMeta,durationState:duration},timestamp:Date.now(),hypothesisId:'B,C'})}).catch(()=>{});
+          // #endregion
           const dur = duration || metadataEnd;
-          setLoopStart(edits?.loopStart ?? Math.max(0, metadataStart));
-          setLoopEnd(edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd));
+          const loopStartVal = edits?.loopStart ?? Math.max(0, metadataStart);
+          const loopEndVal = edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd);
+          const usedEdits = edits != null && (edits.loopStart != null || edits.loopEnd != null);
+          // #region agent log
+          fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:metadataEffect',message:'Setting loop from edits or metadata',data:{loopStartVal,loopEndVal,usedEdits,editsLoopStart:edits?.loopStart,editsLoopEnd:edits?.loopEnd},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+          setLoopStart(loopStartVal);
+          setLoopEnd(loopEndVal);
           setPlayStart(edits?.playStart ?? Math.max(0, metadataStart));
           setLoopEnabled(edits?.loopEnabled ?? true);
 
@@ -536,6 +565,9 @@ export const AudioPreview = ({
 
   // Persist loop settings to sample-edits-store when they change (after file has loaded)
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:persistEffect',message:'Persist effect ran',data:{filePath,loopStart,loopEnd,duration,willReturnEarly:!filePath||isEmptyState||duration<=0},timestamp:Date.now(),hypothesisId:'A,D'})}).catch(()=>{});
+    // #endregion
     if (!filePath || isEmptyState || duration <= 0) return;
     const existing = getEdits(filePath) ?? {};
     const prevLoopStart = existing.loopStart;
@@ -1323,7 +1355,7 @@ export const AudioPreview = ({
   );
 
   const handleStopOrPlay = useCallback(() => {
-    if (!wavesurferRef.current || isLoading) return;
+    if (isLoading) return;
     if (isRecording) {
       recordPluginRef.current?.stopRecording();
       return;
@@ -1335,13 +1367,13 @@ export const AudioPreview = ({
     }
     if (isPlaying) {
       stopPlayer();
-      if (duration > 0) {
+      if (wavesurferRef.current && duration > 0) {
         wavesurferRef.current.seekTo(clampedPlayStart / duration);
       }
       return;
     }
-    // Wave editor always plays just the one sample being edited, regardless of multi/single mode
-    if (filePath && paneType && !isEmptyState && duration > 0) {
+    // Wave editor: play the sample being edited (unified playback loads file independently)
+    if (filePath && paneType && !isEmptyState) {
       playSingle(filePath, paneType);
     }
   }, [
@@ -1398,24 +1430,6 @@ export const AudioPreview = ({
     setRecordArmedMode("overdub");
     setIsRecordArmed(true);
   }, [isRecording, isPlaying, isRecordArmed, startRecordingFromHere]);
-
-  // Spacebar to start/stop playback or recording
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || e.repeat) return;
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        (e.target as HTMLElement).isContentEditable
-      ) {
-        return;
-      }
-      e.preventDefault();
-      handleStopOrPlay();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleStopOrPlay]);
 
   const skipBackward = () => {
     if (!wavesurferRef.current) return;

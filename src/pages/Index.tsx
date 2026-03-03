@@ -39,6 +39,7 @@ import { ReleaseNotesPanel } from "@/components/ReleaseNotesPanel";
 import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
 import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
+import { usePlayerStore } from "@/stores/player-store";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -248,6 +249,69 @@ const Index = () => {
     if (!unsupportedBrowserDialogOpen) return;
     capture("octacard_dialog_opened", { dialog_name: "unsupported_browser" });
   }, [unsupportedBrowserDialogOpen]);
+
+  // Space bar: start whatever was last (multi or single) when idle, stop when playing
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      const { isPlaying, mode, singleFile, stack, playSingle, playMulti, stop } = usePlayerStore.getState();
+      if (isPlaying) {
+        stop();
+        return;
+      }
+      // Start whatever was last (use multi sample store's stack for multi - it has bars)
+      if (mode === "multi" && stack.length > 0) {
+        const multiStack = useMultiSampleStore.getState().stack;
+        const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
+        if (multiStack.length > 0 && hasValidBars) {
+          playMulti(
+            multiStack.map((s) => ({
+              id: s.id,
+              path: s.path,
+              name: s.name,
+              paneType: s.paneType,
+              bpm: s.bpm,
+              duration: s.duration,
+            }))
+          );
+        }
+      } else if (mode === "single" && singleFile) {
+        playSingle(singleFile.path, singleFile.paneType);
+      } else {
+        const we = useWaveformEditorStore.getState();
+        if (we.isOpen && we.filePath && we.paneType && !we.isEmptyState) {
+          playSingle(we.filePath, we.paneType);
+        } else {
+          const multiStack = useMultiSampleStore.getState().stack;
+          if (multiStack.length > 0) {
+            const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
+            if (hasValidBars) {
+              playMulti(
+                multiStack.map((s) => ({
+                  id: s.id,
+                  path: s.path,
+                  name: s.name,
+                  paneType: s.paneType,
+                  bpm: s.bpm,
+                  duration: s.duration,
+                }))
+              );
+            }
+          }
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (
