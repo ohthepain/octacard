@@ -80,7 +80,7 @@
     "@bgotink/playwright-coverage": "^0.3.2",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.1",
-    "@types/node": "^22.19.13",
+    "@types/node": "^25.3.3",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@types/wavesurfer.js": "^6.0.12",
