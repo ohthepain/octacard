@@ -38,6 +38,7 @@ import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
 import { ReleaseNotesPanel } from "@/components/ReleaseNotesPanel";
 import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
+import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -150,12 +151,14 @@ async function yieldToUi(): Promise<void> {
 }
 
 const Index = () => {
+  useUnifiedPlayer();
+
   const [aboutOpen, setAboutOpen] = useState(false);
   const devMode = useAppOptionsStore((s) => s.devMode);
   const setDevMode = useAppOptionsStore((s) => s.setDevMode);
   const previewMode = useMultiSampleStore((s) => s.previewMode);
   const setPreviewMode = useMultiSampleStore((s) => s.setPreviewMode);
-  const addToStack = useMultiSampleStore((s) => s.addToStack);
+  const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
   const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
   const setGlobalTempoBpm = useMultiSampleStore((s) => s.setGlobalTempoBpm);
   const bpmAuto = useMultiSampleStore((s) => s.bpmAuto);
@@ -183,6 +186,7 @@ const Index = () => {
       fileName: s.fileName,
       paneType: s.paneType,
       isEmptyState: s.isEmptyState,
+      multiSampleId: s.multiSampleId,
       close: s.close,
     }))
   );
@@ -694,25 +698,34 @@ const Index = () => {
     (value: string) => {
       if (value === "multi") {
         setPreviewMode("multi");
+        const toAdd: Array<{ path: string; name: string; paneType: "source" | "dest" }> = [];
+        // If waveform editor has a file open, put it in the first slot
+        const weState = useWaveformEditorStore.getState();
+        if (weState.isOpen && !weState.isEmptyState && weState.filePath && weState.fileName && weState.paneType) {
+          toAdd.push({ path: weState.filePath, name: weState.fileName, paneType: weState.paneType });
+        }
         if (selectedSourceItem?.type === "file" && isAudioFile(selectedSourceItem.name)) {
-          addToStack({
-            path: selectedSourceItem.path,
-            name: selectedSourceItem.name,
-            paneType: "source",
-          });
+          const alreadyAdded = toAdd.some((s) => s.path === selectedSourceItem.path);
+          if (!alreadyAdded) toAdd.push({ path: selectedSourceItem.path, name: selectedSourceItem.name, paneType: "source" });
         }
         if (selectedDestItem?.type === "file" && isAudioFile(selectedDestItem.name)) {
-          addToStack({
-            path: selectedDestItem.path,
-            name: selectedDestItem.name,
-            paneType: "dest",
-          });
+          const alreadyAdded = toAdd.some((s) => s.path === selectedDestItem.path);
+          if (!alreadyAdded) toAdd.push({ path: selectedDestItem.path, name: selectedDestItem.name, paneType: "dest" });
+        }
+        if (toAdd.length > 0) {
+          useMultiSampleStore.getState().setActiveSlotIndex(0);
+          addSamplesToStack(toAdd, 4);
+          const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+          const sample = slots[activeSlotIndex];
+          if (sample) {
+            useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+          }
         }
       } else {
         setPreviewMode("single");
       }
     },
-    [setPreviewMode, addToStack, selectedSourceItem, selectedDestItem]
+    [setPreviewMode, addSamplesToStack, selectedSourceItem, selectedDestItem]
   );
 
   const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
@@ -951,6 +964,7 @@ const Index = () => {
             fileName={waveformEditor.fileName}
             paneType={waveformEditor.paneType}
             isEmptyState={waveformEditor.isEmptyState}
+            multiSampleId={waveformEditor.multiSampleId}
             onClose={waveformEditor.close}
             onFileSaved={(pane) => {
               if (pane === "source") setSourceRefreshToken((t) => t + 1);

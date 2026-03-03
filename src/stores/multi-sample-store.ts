@@ -15,17 +15,43 @@ export interface StackSample {
   duration?: number;
 }
 
+/** Position of a playing sample for wave view sync */
+export interface PlayingSamplePosition {
+  sampleId: string;
+  currentTime: number;
+}
+
+/** Per-sample playhead positions when multi is playing (sampleId -> currentTime in seconds) */
+export type PlayingSamplePositions = Record<string, number>;
+
+/** Slots are fixed positions; each can be empty (null) or hold a sample */
+export const SLOT_COUNT = 4;
+
 export interface MultiSampleState {
   previewMode: PreviewMode;
-  stack: StackSample[];
+  /** Slot-based: slots[0..3], each null or StackSample */
+  slots: (StackSample | null)[];
+  /** Which slot is active (0-3); shown in wavesurfer when it has a sample */
+  activeSlotIndex: number;
+  stack: StackSample[]; // derived: slots.filter(Boolean) for backwards compat
   globalTempoBpm: number;
   bpmAuto: boolean;
+  /** When a sample is playing, its position for wave view sync (active sample for waveform) */
+  playingSamplePosition: PlayingSamplePosition | null;
+  /** Per-sample playhead positions when multi is playing (for showing playhead in all blocks) */
+  playingSamplePositions: PlayingSamplePositions;
   setPreviewMode: (mode: PreviewMode) => void;
   setBpmAuto: (enabled: boolean) => void;
+  setPlayingSamplePosition: (pos: PlayingSamplePosition | null) => void;
+  setPlayingSamplePositions: (positions: PlayingSamplePositions) => void;
+  setActiveSlotIndex: (index: number) => void;
+  /** Put sample in the active slot (replace or fill) */
+  putSampleInActiveSlot: (sample: { path: string; name: string; paneType: PaneType }) => void;
   addToStack: (sample: { path: string; name: string; paneType: PaneType }) => void;
   addSamplesToStack: (samples: Array<{ path: string; name: string; paneType: PaneType }>, maxCount?: number) => void;
   replaceSampleAt: (index: number, sample: { path: string; name: string; paneType: PaneType }) => void;
   removeFromStack: (index: number) => void;
+  clearSlot: (index: number) => void;
   updateSampleBars: (index: number, bars: number, duration: number, bpm?: number) => void;
   setGlobalTempoBpm: (bpm: number) => void;
 }
@@ -44,15 +70,54 @@ function getBpmFromSample(name: string, path: string): number {
   return DEFAULT_BPM;
 }
 
+function slotsToStack(slots: (StackSample | null)[]): StackSample[] {
+  return slots.filter((s): s is StackSample => s != null);
+}
+
 export const useMultiSampleStore = create<MultiSampleState>((set) => ({
   previewMode: "single",
-  stack: [],
+  slots: [null, null, null, null],
+  activeSlotIndex: 0,
+  stack: [], // derived below
   globalTempoBpm: DEFAULT_BPM,
   bpmAuto: true,
+  playingSamplePosition: null,
+  playingSamplePositions: {},
 
   setPreviewMode: (mode) => set({ previewMode: mode }),
 
   setBpmAuto: (enabled) => set({ bpmAuto: enabled }),
+
+  setPlayingSamplePosition: (pos) => set({ playingSamplePosition: pos }),
+  setPlayingSamplePositions: (positions) => set({ playingSamplePositions: positions }),
+
+  setActiveSlotIndex: (index) =>
+    set((state) => ({
+      activeSlotIndex: Math.max(0, Math.min(index, SLOT_COUNT - 1)),
+    })),
+
+  putSampleInActiveSlot: (sample) =>
+    set((state) => {
+      const bpm = getBpmFromSample(sample.name, sample.path);
+      const newSample: StackSample = {
+        id: crypto.randomUUID(),
+        ...sample,
+        bpm,
+      };
+      const idx = state.activeSlotIndex;
+      const newSlots = [...state.slots];
+      newSlots[idx] = newSample;
+      const newStack = slotsToStack(newSlots);
+      const newTempo =
+        state.bpmAuto && newStack.length === 1
+          ? bpm
+          : state.globalTempoBpm;
+      return {
+        slots: newSlots,
+        stack: newStack,
+        globalTempoBpm: newTempo,
+      };
+    }),
 
   addToStack: (sample) =>
     set((state) => {
@@ -62,12 +127,15 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
         ...sample,
         bpm,
       };
-      const newStack = [newSample, ...state.stack];
+      const newSlots = [...state.slots];
+      newSlots[state.activeSlotIndex] = newSample;
+      const newStack = slotsToStack(newSlots);
       const newTempo =
-        state.bpmAuto && state.stack.length === 0
+        state.bpmAuto && newStack.length === 1
           ? bpm
           : state.globalTempoBpm;
       return {
+        slots: newSlots,
         stack: newStack,
         globalTempoBpm: newTempo,
       };
@@ -80,12 +148,21 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
         ...s,
         bpm: getBpmFromSample(s.name, s.path),
       }));
-      const newStack = [...toAdd, ...state.stack];
+      const newSlots = [...state.slots];
+      let slotIdx = state.activeSlotIndex;
+      for (const s of toAdd) {
+        while (slotIdx < SLOT_COUNT && newSlots[slotIdx] != null) slotIdx++;
+        if (slotIdx >= SLOT_COUNT) break;
+        newSlots[slotIdx] = s;
+        slotIdx++;
+      }
+      const newStack = slotsToStack(newSlots);
       const newTempo =
-        state.bpmAuto && state.stack.length === 0 && toAdd.length > 0
+        state.bpmAuto && newStack.length > 0 && state.stack.length === 0
           ? toAdd[0].bpm
           : state.globalTempoBpm;
       return {
+        slots: newSlots,
         stack: newStack,
         globalTempoBpm: newTempo,
       };
@@ -93,32 +170,59 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
 
   replaceSampleAt: (index, sample) =>
     set((state) => {
-      if (index < 0 || index >= state.stack.length) return state;
+      if (index < 0 || index >= SLOT_COUNT) return state;
       const bpm = getBpmFromSample(sample.name, sample.path);
       const newSample: StackSample = {
         id: crypto.randomUUID(),
         ...sample,
         bpm,
       };
-      const newStack = state.stack.map((s, i) =>
-        i === index ? newSample : s
-      );
-      return { stack: newStack };
+      const newSlots = [...state.slots];
+      newSlots[index] = newSample;
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+      };
     }),
 
   removeFromStack: (index) =>
-    set((state) => ({
-      stack: state.stack.filter((_, i) => i !== index),
-    })),
+    set((state) => {
+      if (index < 0 || index >= SLOT_COUNT) return state;
+      const newSlots = [...state.slots];
+      newSlots[index] = null;
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+      };
+    }),
+
+  clearSlot: (index) =>
+    set((state) => {
+      if (index < 0 || index >= SLOT_COUNT) return state;
+      const newSlots = [...state.slots];
+      newSlots[index] = null;
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+      };
+    }),
 
   updateSampleBars: (index, bars, duration, bpm) =>
     set((state) => {
-      const newStack = state.stack.map((s, i) =>
-        i === index
-          ? { ...s, bars, duration, ...(bpm != null && { bpm }) }
-          : s
-      );
-      return { stack: newStack };
+      if (index < 0 || index >= SLOT_COUNT) return state;
+      const slot = state.slots[index];
+      if (!slot) return state;
+      const newSlots = [...state.slots];
+      newSlots[index] = {
+        ...slot,
+        bars,
+        duration,
+        ...(bpm != null && { bpm }),
+      };
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+      };
     }),
 
   setGlobalTempoBpm: (bpm) => set({ globalTempoBpm: bpm }),

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import type { StackSample, PaneType } from "@/stores/multi-sample-store";
+import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { cn } from "@/lib/utils";
 
 const AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
@@ -31,20 +32,29 @@ function getBpmFromSample(name: string, path: string): number {
 interface MultiSampleBlockProps {
   sample: StackSample;
   index: number;
+  isActive?: boolean;
   onRemove: () => void;
   onDropSample?: (sample: { path: string; name: string; paneType: PaneType }) => void;
-  onRegisterPlay?: (sampleId: string, play: () => void) => void;
-  onRegisterStop?: (sampleId: string, stop: () => void) => void;
+  onClick?: () => void;
   className?: string;
 }
 
-export const MultiSampleBlock = ({ sample, index, onRemove, onDropSample, onRegisterPlay, onRegisterStop, className }: MultiSampleBlockProps) => {
+export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSample, onClick, className }: MultiSampleBlockProps) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const updateSampleBars = useMultiSampleStore((s) => s.updateSampleBars);
+  const setPlayingSamplePosition = useMultiSampleStore((s) => s.setPlayingSamplePosition);
+  const playingSamplePosition = useMultiSampleStore((s) => s.playingSamplePosition);
+  const playingSamplePositions = useMultiSampleStore((s) => s.playingSamplePositions);
+
+  const handleBlockClick = () => {
+    useMultiSampleStore.getState().setActiveSlotIndex(index);
+    onClick?.();
+    useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -137,14 +147,15 @@ export const MultiSampleBlock = ({ sample, index, onRemove, onDropSample, onRegi
           const width = waveformRef.current?.clientWidth ?? 400;
           wavesurfer.zoom(Math.max(1, width / duration));
           setIsLoading(false);
-          onRegisterPlay?.(sample.id, () => {
-            wavesurfer.seekTo(0);
-            wavesurfer.play();
-          });
-          onRegisterStop?.(sample.id, () => {
-            wavesurfer.seekTo(0);
-            wavesurfer.pause();
-          });
+        });
+
+        wavesurfer.on("pause", () => {
+          if (!cancelled) {
+            const multiSampleId = useWaveformEditorStore.getState().multiSampleId;
+            if (multiSampleId === sample.id) {
+              setPlayingSamplePosition(null);
+            }
+          }
         });
 
         wavesurfer.on("error", (err) => {
@@ -168,8 +179,6 @@ export const MultiSampleBlock = ({ sample, index, onRemove, onDropSample, onRegi
 
     return () => {
       cancelled = true;
-      onRegisterPlay?.(sample.id, () => {});
-      onRegisterStop?.(sample.id, () => {});
       if (wavesurferRef.current) {
         try {
           wavesurferRef.current.pause();
@@ -180,18 +189,32 @@ export const MultiSampleBlock = ({ sample, index, onRemove, onDropSample, onRegi
         wavesurferRef.current = null;
       }
     };
-  }, [sample.path, sample.paneType, sample.name, index, updateSampleBars, onRegisterPlay, onRegisterStop]);
+  }, [sample.path, sample.paneType, sample.name, sample.id, index, updateSampleBars, setPlayingSamplePosition]);
+
+  // Sync playhead from unified player: use per-sample position from playingSamplePositions, or active from playingSamplePosition
+  const currentTime = playingSamplePositions[sample.id] ?? (playingSamplePosition?.sampleId === sample.id ? playingSamplePosition.currentTime : null);
+  useEffect(() => {
+    const ws = wavesurferRef.current;
+    if (!ws || currentTime == null) return;
+    const dur = ws.getDuration();
+    if (dur > 0) {
+      const safeTime = Math.min(currentTime, dur * 0.9999);
+      ws.seekTo(safeTime / dur);
+    }
+  }, [sample.id, currentTime]);
 
   return (
     <div
       className={cn(
-        "flex flex-col border border-border rounded-lg bg-card overflow-hidden transition-colors",
+        "flex flex-col border border-border rounded-lg bg-card overflow-hidden transition-colors cursor-pointer",
         isDragOver && "border-primary bg-primary/5",
+        isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background",
         className
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onClick={handleBlockClick}
     >
       <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0">
         <span
