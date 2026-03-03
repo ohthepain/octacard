@@ -41,6 +41,15 @@ export interface WavMetadata {
   tuningCents?: number;
 }
 
+function centsToSmplPitchFraction(cents: number): number {
+  if (!Number.isFinite(cents)) return 0;
+  // Clamp cents to a supported range to avoid modulo wrapping, which would
+  // incorrectly turn negative values into large positive offsets and 100 into 0.
+  const clamped = Math.min(Math.max(cents, 0), 99.999);
+  const normalized = clamped / 100;
+  return Math.floor(normalized * 0x100000000) >>> 0;
+}
+
 /**
  * Parse WAV metadata used by the sample editor:
  * cue markers, iXML tags, and common values from smpl.
@@ -125,6 +134,16 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
         if (Number.isFinite(frame)) {
           ixmlSliceFrames.push(frame);
         }
+      }
+    } else if (chunkId === "acid" && chunkSize >= 24) {
+      const meterDenominator = view.getUint16(chunkDataStart + 16, true);
+      const meterNumerator = view.getUint16(chunkDataStart + 18, true);
+      const acidTempo = view.getFloat32(chunkDataStart + 20, true);
+      if (Number.isFinite(acidTempo) && acidTempo > 0) {
+        tempo = tempo ?? acidTempo;
+      }
+      if (meterNumerator > 0 && meterDenominator > 0) {
+        timeSignature = timeSignature ?? `${meterNumerator}/${meterDenominator}`;
       }
     } else if (chunkId === "smpl" && chunkSize >= 36) {
       const midiUnity = view.getUint32(chunkDataStart + 12, true);
@@ -272,7 +291,7 @@ interface EncodeWavOptions {
 
 /**
  * Encode AudioBuffer to WAV PCM (little-endian).
- * Chunk order: RIFF -> fmt -> data -> cue -> LIST(adtl) -> iXML
+ * Chunk order: RIFF -> fmt -> data -> cue -> LIST(adtl) -> iXML -> smpl
  */
 function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
   const numChannels = buffer.numberOfChannels;
@@ -299,6 +318,11 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
 
   const embeddedMarkers = options?.embeddedMarkers ?? true;
   const ixmlMetadata = options?.ixmlMetadata ?? false;
+  const hasSmplMetadata =
+    sampleStartFrame > 0 ||
+    sampleEndFrame < buffer.length ||
+    (options?.rootKey != null && Number.isFinite(options.rootKey)) ||
+    (options?.tuningCents != null && Number.isFinite(options.tuningCents));
 
   const cueEntries: { id: number; frame: number }[] = [];
   if (embeddedMarkers) {
@@ -367,9 +391,12 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
     ixmlChunkBytes = 8 + padToWord(raw.length);
   }
 
+  const smplPayloadSize = hasSmplMetadata ? 60 : 0; // header (36) + one loop (24)
+  const smplChunkBytes = hasSmplMetadata ? 8 + smplPayloadSize : 0;
+
   const dataChunkBytes = 8 + dataLength;
   const fmtChunkBytes = 8 + 16;
-  const totalSize = 12 + fmtChunkBytes + dataChunkBytes + cueChunkBytes + listChunkBytes + ixmlChunkBytes;
+  const totalSize = 12 + fmtChunkBytes + dataChunkBytes + cueChunkBytes + listChunkBytes + ixmlChunkBytes + smplChunkBytes;
   const riffSize = totalSize - 8;
 
   const arrayBuffer = new ArrayBuffer(totalSize);
@@ -481,6 +508,31 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
       view.setUint8(pos, 0);
       pos += 1;
     }
+  }
+
+  if (hasSmplMetadata) {
+    const midiUnity = Math.max(0, Math.min(127, Math.round(options?.rootKey ?? 60)));
+    const midiPitchFraction = centsToSmplPitchFraction(options?.tuningCents ?? 0);
+    writeString("smpl", pos);
+    view.setUint32(pos + 4, smplPayloadSize, true);
+    // Header
+    view.setUint32(pos + 8, 0, true); // manufacturer
+    view.setUint32(pos + 12, 0, true); // product
+    view.setUint32(pos + 16, 0, true); // samplePeriod
+    view.setUint32(pos + 20, midiUnity, true); // midiUnityNote
+    view.setUint32(pos + 24, midiPitchFraction, true); // midiPitchFraction
+    view.setUint32(pos + 28, 0, true); // smpteFormat
+    view.setUint32(pos + 32, 0, true); // smpteOffset
+    view.setUint32(pos + 36, 1, true); // numSampleLoops
+    view.setUint32(pos + 40, 0, true); // samplerData
+    // Loop
+    view.setUint32(pos + 44, 1, true); // dwIdentifier
+    view.setUint32(pos + 48, 0, true); // dwType (forward)
+    view.setUint32(pos + 52, sampleStartFrame, true); // dwStart
+    view.setUint32(pos + 56, sampleEndFrame, true); // dwEnd
+    view.setUint32(pos + 60, 0, true); // dwFraction
+    view.setUint32(pos + 64, 0, true); // dwPlayCount (0=infinite)
+    pos += 8 + smplPayloadSize;
   }
 
   return new Blob([arrayBuffer], { type: "audio/wav" });
