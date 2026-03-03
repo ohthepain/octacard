@@ -83,6 +83,17 @@ export function useUnifiedPlayer() {
         playbackRef.current = null;
         return;
       }
+      if (state.switchAtBarRequest && playbackRef.current && state.isPlaying && state.mode === "single") {
+        const req = state.switchAtBarRequest;
+        usePlayerStore.getState().clearSwitchAtBarRequest();
+        playbackRef.current
+          .scheduleSwitchAtNextBar(req.path, req.paneType)
+          .catch((err) => {
+            console.warn("Switch at bar failed:", err);
+            usePlayerStore.getState().stop();
+          });
+        return;
+      }
       if (state.isPlaying && !prevPlaying) {
         const { mode, singleFile, stack, volume, playbackRate } = state;
         const globalTempoBpm = useMultiSampleStore.getState().globalTempoBpm;

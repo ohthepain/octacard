@@ -37,6 +37,7 @@ import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { usePlayerStore } from "@/stores/player-store";
+import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { useAppOptionsStore } from "@/stores/app-options-store";
 import {
   exportAudioWithEdits,
@@ -161,6 +162,7 @@ export const AudioPreview = ({
   const playSingle = usePlayerStore((s) => s.playSingle);
   const playMulti = usePlayerStore((s) => s.playMulti);
   const stopPlayer = usePlayerStore((s) => s.stop);
+  const requestSwitchAtNextBar = usePlayerStore((s) => s.requestSwitchAtNextBar);
   const setActiveSample = usePlayerStore((s) => s.setActiveSample);
   const stack = useMultiSampleStore((s) => s.stack);
   const [currentTime, setCurrentTime] = useState(0);
@@ -713,8 +715,14 @@ export const AudioPreview = ({
         timelineRef.current = null;
         minimapRef.current = null;
       }
-      // In multi mode, don't stop playback when switching samples - unified player continues
-      if (!multiSampleId) {
+      // In multi mode, don't stop when switching samples or closing (e.g. tapping empty block)
+      // In single mode, don't stop when switching to a new file (switch-at-next-bar handles it)
+      const playerState = usePlayerStore.getState();
+      const isMultiMode = playerState.mode === "multi";
+      const storeFilePath = useWaveformEditorStore.getState().filePath;
+      const isSwitchingToNewFile =
+        !isMultiMode && storeFilePath && storeFilePath !== filePath && playerState.isPlaying;
+      if (!multiSampleId && !isMultiMode && !isSwitchingToNewFile) {
         stopPlayer();
       }
       setWavesurferPlaying(false);
@@ -782,7 +790,18 @@ export const AudioPreview = ({
       if (cancelled) return;
 
       setIsLoading(true);
-      stopPlayer();
+      const playerState = usePlayerStore.getState();
+      if (
+        playerState.isPlaying &&
+        playerState.mode === "single" &&
+        filePath &&
+        paneType
+      ) {
+        requestSwitchAtNextBar(filePath, paneType);
+      } else if (playerState.mode !== "multi") {
+        stopPlayer();
+      }
+      // In multi mode, never stop here - keep playback running when switching samples
       setWavesurferPlaying(false);
       setCurrentTime(0);
       setDuration(0);
@@ -1121,7 +1140,16 @@ export const AudioPreview = ({
         disableDragSelectionRef.current();
         disableDragSelectionRef.current = null;
       }
-      stopPlayer();
+      // In multi mode, don't stop when closing (e.g. tapping empty block)
+      // In single mode, don't stop when switching to new file (switch-at-next-bar handles it)
+      const playerState = usePlayerStore.getState();
+      const isMultiMode = playerState.mode === "multi";
+      const storeFilePath = useWaveformEditorStore.getState().filePath;
+      const isSwitchingToNewFile =
+        !isMultiMode && storeFilePath && storeFilePath !== filePath && playerState.isPlaying;
+      if (!isMultiMode && !isSwitchingToNewFile) {
+        stopPlayer();
+      }
       setWavesurferPlaying(false);
     };
   }, [
@@ -1137,6 +1165,7 @@ export const AudioPreview = ({
     formatBarsBeats,
     formatTime,
     stopPlayer,
+    requestSwitchAtNextBar,
   ]);
 
   // Effect to find and attach handler to minimap element after it's created
