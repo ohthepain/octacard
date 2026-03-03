@@ -35,6 +35,9 @@ import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { capture } from "@/lib/analytics";
 import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
 import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
+import { ReleaseNotesPanel } from "@/components/ReleaseNotesPanel";
+import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
+import { useReleaseTourStore } from "@/stores/release-tour-store";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -220,6 +223,22 @@ const Index = () => {
       setUnsupportedBrowserDialogOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    if (params.get("release-tour") === "1" || params.get("release-tour") === "true") {
+      useReleaseTourStore.getState().loadAndStart();
+    }
+  }, []);
+
+  const tourActive = useReleaseTourStore((s) => s.isActive);
+  const requestedDemoPaths = useReleaseTourStore((s) => s.requestedDemoPaths);
+  useEffect(() => {
+    if (!tourActive || !requestedDemoPaths) return;
+    if (!fileSystemService.hasRootForPane("source") || !fileSystemService.hasRootForPane("dest")) return;
+    if (requestedDemoPaths.sourcePath) setRequestedSourcePath(requestedDemoPaths.sourcePath);
+    if (requestedDemoPaths.destPath) setRequestedDestPath(requestedDemoPaths.destPath);
+  }, [tourActive, requestedDemoPaths?.sourcePath, requestedDemoPaths?.destPath]);
 
   useEffect(() => {
     if (!unsupportedBrowserDialogOpen) return;
@@ -803,6 +822,10 @@ const Index = () => {
           <ThemeToggle />
         </div>
       </header>
+
+      <ReleaseNotesPanel />
+
+      <ReleaseTourPointer />
 
       {/* Main Content: Flat 4-panel layout so favorites and browser dividers are independent */}
       <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">

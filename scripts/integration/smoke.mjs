@@ -34,6 +34,7 @@ import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils
 import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
 import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
+import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const headless = process.env.PW_HEADLESS !== "false";
@@ -419,6 +420,7 @@ try {
     }
   });
   await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
+  await assertWhatsNewTour(page);
   await assertFilePaneKeyboardNavigation(page);
   await assertSearchModesAllFoldersFiles(page);
   await assertSourceFolderDoesNotAutoSelectDest(page);

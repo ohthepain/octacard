@@ -1,0 +1,6 @@
+{
+  "releases": [
+    { "version": "1.0.8", "date": "2025-11-08", "path": "/release-notes/releasenotes-2025-11-08.json" },
+    { "version": "1.8.0", "date": "2026-03-03", "path": "/release-notes/releasenotes-example.json" }
+  ]
+}

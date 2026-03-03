@@ -20,6 +20,7 @@ export interface ReleaseDemo {
 export interface ReleaseFeature {
   id: string;
   title: string;
+  description?: string;
   include?: boolean;
   type?: "feature" | "fix" | "improvement";
   demo?: ReleaseDemo;
@@ -33,9 +34,35 @@ export interface ReleaseNotes {
   features: ReleaseFeature[];
 }
 
+export interface ReleaseIndexEntry {
+  version: string;
+  date: string;
+  path: string;
+}
+
+export interface ReleaseIndex {
+  releases: ReleaseIndexEntry[];
+}
+
+const DEFAULT_INDEX_PATH = "/release-notes/index.json";
+
 /**
- * Load release notes JSON. In production, fetch from public/release-notes/.
- * For now, returns null if not found.
+ * Load the release index (list of available releases).
+ */
+export async function loadReleaseIndex(path = DEFAULT_INDEX_PATH): Promise<ReleaseIndex | null> {
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    const data = (await res.json()) as ReleaseIndex;
+    if (!Array.isArray(data?.releases)) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load release notes JSON from the given path.
  */
 export async function loadReleaseNotes(path: string): Promise<ReleaseNotes | null> {
   try {
@@ -80,4 +107,11 @@ export function getTourSteps(notes: ReleaseNotes): Array<{
     }
   }
   return steps;
+}
+
+/**
+ * Get features grouped (for display by feature, not flattened).
+ */
+export function getFeatures(notes: ReleaseNotes): ReleaseFeature[] {
+  return notes.features.filter((f) => f.include !== false);
 }

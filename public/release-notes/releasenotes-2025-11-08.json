@@ -1,0 +1,91 @@
+{
+  "version": "1.0.8",
+  "releaseDate": "2025-11-08",
+  "gitHash": "06838da",
+  "features": [
+    {
+      "id": "sample-depth-option",
+      "title": "Sample Depth Option",
+      "description": "Choose 16-bit, 24-bit, or preserve the original sample depth when converting.",
+      "include": true,
+      "type": "feature",
+      "demo": {
+        "sourcePath": "/Alpha",
+        "destPath": "/Beta"
+      },
+      "instructions": [
+        {
+          "text": "Click the Format button to open format settings",
+          "highlight": "[data-testid=\"format-settings-button\"]"
+        },
+        {
+          "text": "Choose sample depth: 16-bit, 24-bit, or preserve original"
+        }
+      ]
+    },
+    {
+      "id": "sample-conversion",
+      "title": "Sample Conversion via ffmpeg",
+      "description": "Convert audio files with WAV, sample rate, depth, mono, and normalize options.",
+      "include": true,
+      "type": "feature",
+      "demo": {
+        "sourcePath": "/Alpha",
+        "destPath": "/Beta"
+      },
+      "instructions": [
+        {
+          "text": "Select source and destination folders",
+          "highlight": "[data-testid=\"panel-source\"]"
+        },
+        {
+          "text": "Click Convert to convert files with WAV, rate, depth, mono, or normalize options",
+          "highlight": "[data-testid=\"convert-button\"]"
+        }
+      ]
+    },
+    {
+      "id": "file-browser",
+      "title": "File Browser",
+      "description": "Navigate folders and use breadcrumbs to move between levels.",
+      "include": true,
+      "type": "feature",
+      "instructions": [
+        {
+          "text": "Use the file browser to navigate folders",
+          "highlight": "[data-testid=\"file-tree-scroll-source\"]"
+        },
+        {
+          "text": "Click the root breadcrumb to go to top level",
+          "highlight": "[data-testid=\"breadcrumb-root-source\"]"
+        }
+      ]
+    },
+    {
+      "id": "search-and-preview",
+      "title": "Search and Preview Work Simultaneously",
+      "description": "Search for files while listening to audio previews.",
+      "include": true,
+      "type": "feature",
+      "instructions": [
+        {
+          "text": "Search for files while previewing audio",
+          "highlight": "[data-testid=\"audio-preview-source\"]"
+        }
+      ]
+    },
+    {
+      "id": "format-settings",
+      "title": "Format Settings Dialog",
+      "description": "Configure sample rate, depth, mono, and normalize for conversions.",
+      "include": true,
+      "type": "feature",
+      "instructions": [
+        {
+          "text": "Open Format Settings to configure sample rate, depth, mono, and normalize",
+          "highlight": "[data-testid=\"format-settings-button\"]"
+        }
+      ]
+    }
+  ]
+}
