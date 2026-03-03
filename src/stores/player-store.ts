@@ -18,6 +18,11 @@ export interface RestartRequest {
   newLoopEnd: number;
 }
 
+export interface SwitchAtBarRequest {
+  path: string;
+  paneType: PaneType;
+}
+
 export interface PlayerState {
   isPlaying: boolean;
   mode: PlayerMode;
@@ -34,6 +39,8 @@ export interface PlayerState {
   globalTempoBpm: number;
   /** When set, playback should restart with new loop params (Ableton-style loop sync) */
   restartRequest: RestartRequest | null;
+  /** When set, switch to this sample at the next bar boundary (single mode, sample-accurate) */
+  switchAtBarRequest: SwitchAtBarRequest | null;
 }
 
 export interface PlayerActions {
@@ -47,6 +54,8 @@ export interface PlayerActions {
   setGlobalTempoBpm: (bpm: number) => void;
   requestRestartWithNewLoop: (req: RestartRequest) => void;
   clearRestartRequest: () => void;
+  requestSwitchAtNextBar: (path: string, paneType: PaneType) => void;
+  clearSwitchAtBarRequest: () => void;
 }
 
 /** Internal: called by playback engine when playback ends */
@@ -66,6 +75,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   playbackRate: 1,
   globalTempoBpm: 120,
   restartRequest: null,
+  switchAtBarRequest: null,
 
   playSingle: (path, paneType) =>
     set({
@@ -103,4 +113,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
   requestRestartWithNewLoop: (req) => set({ restartRequest: req }),
   clearRestartRequest: () => set({ restartRequest: null }),
+  requestSwitchAtNextBar: (path, paneType) => set({ switchAtBarRequest: { path, paneType } }),
+  clearSwitchAtBarRequest: () => set({ switchAtBarRequest: null }),
 }));

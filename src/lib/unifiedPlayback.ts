@@ -42,6 +42,11 @@ export interface PlaybackHandle {
    * Returns overridePlayStart (seconds) if this sample is playing, else null.
    */
   getRestartPosition: (path: string, newLoopStart: number, newLoopEnd: number) => number | null;
+  /**
+   * Schedule switch to a new sample at the next bar boundary (single mode only, sample-accurate).
+   * Returns a promise that resolves when the switch is scheduled.
+   */
+  scheduleSwitchAtNextBar: (path: string, paneType: PaneType) => Promise<void>;
 }
 
 /**
@@ -68,7 +73,12 @@ export async function startUnifiedPlayback(
 
   if (samples.length === 0) {
     onEnded?.();
-    return { stop: () => {} };
+    return {
+      stop: () => {},
+      stopSilent: () => {},
+      getRestartPosition: () => null,
+      scheduleSwitchAtNextBar: async () => {},
+    };
   }
 
   const ctx = new AudioContext();
@@ -242,6 +252,110 @@ export async function startUnifiedPlayback(
     ctx.close();
   }
 
+  async function scheduleSwitchAtNextBarImpl(newPath: string, newPaneType: PaneType): Promise<void> {
+    if (stopped || mode !== "single" || sources.length === 0) return;
+    const oldSource = sources[0];
+    const now = ctx.currentTime;
+    const startTime = startTimes.get(oldSource.sampleId) ?? now;
+    const elapsed = now - startTime;
+    const elapsedInBuffer = elapsed * oldSource.playbackRate;
+    const loopDuration = oldSource.loopEnd - oldSource.loopStart;
+    const posInLoop =
+      ((oldSource.playStart - oldSource.loopStart + elapsedInBuffer) % loopDuration + loopDuration) % loopDuration;
+    const currentTimeSec = oldSource.loopStart + posInLoop;
+
+    const beatsPerBar = 4;
+    const secondsPerBar = (beatsPerBar * 60) / globalTempoBpm;
+    const nextBarTime = Math.ceil(currentTimeSec / secondsPerBar) * secondsPerBar;
+    const timeUntilNextBarSample = Math.max(0.001, nextBarTime - currentTimeSec);
+    const timeUntilNextBarWall = timeUntilNextBarSample / oldSource.playbackRate;
+    const switchAt = now + timeUntilNextBarWall;
+
+    const result = await fileSystemService.getAudioFileBlob(newPath, newPaneType);
+    if (!result.success || !result.data || stopped) return;
+
+    const res = await fetch(result.data);
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = await ctx.decodeAudioData(arrayBuffer);
+    if (stopped) return;
+
+    const bufferDuration = buffer.duration;
+    const edits = getEdits(newPath);
+    const region = edits?.region;
+    const regionStart = region?.start ?? 0;
+    const regionEnd = region?.end ?? bufferDuration;
+    const loopStart = edits?.loopStart ?? regionStart;
+    const loopEnd = edits?.loopEnd ?? regionEnd;
+    const playStart = edits?.playStart ?? loopStart;
+    const loopEnabled = edits?.loopEnabled ?? true;
+    const envelopePoints = edits?.envelopePoints ?? [];
+
+    const sr = buffer.sampleRate;
+    const loopStartSample = Math.max(0, Math.floor(loopStart * sr));
+    const loopEndSample = Math.max(loopStartSample + 1, Math.min(buffer.length, Math.ceil(loopEnd * sr)));
+    const playStartSample = Math.max(loopStartSample, Math.min(loopEndSample - 1, Math.floor(playStart * sr)));
+    const loopStartExact = loopStartSample / sr;
+    const loopEndExact = loopEndSample / sr;
+    const playStartExact = playStartSample / sr;
+    const loopDurationExact = loopEndExact - loopStartExact;
+    const playDuration = loopEndExact - playStartExact;
+
+    const rate = playbackRate;
+    const newSourceNode = ctx.createBufferSource();
+    newSourceNode.buffer = buffer;
+    newSourceNode.playbackRate.value = rate;
+    if (loopEnabled) {
+      newSourceNode.loop = true;
+      newSourceNode.loopStart = loopStartExact;
+      newSourceNode.loopEnd = loopEndExact;
+    }
+
+    const gainNode = ctx.createGain();
+    if (envelopePoints.length > 0) {
+      let lastGain = getGainAtTime(envelopePoints, playStartExact) * volume;
+      gainNode.gain.setValueAtTime(lastGain, switchAt);
+      for (let bufT = 0.01; bufT < playDuration; bufT += 0.01) {
+        const bufTime = playStartExact + bufT;
+        const gain = getGainAtTime(envelopePoints, bufTime) * volume;
+        gainNode.gain.linearRampToValueAtTime(gain, switchAt + bufT / rate);
+        lastGain = gain;
+      }
+      gainNode.gain.setValueAtTime(getGainAtTime(envelopePoints, loopEndExact) * volume, switchAt + playDuration / rate);
+    } else {
+      gainNode.gain.value = volume;
+    }
+    newSourceNode.connect(gainNode);
+    gainNode.connect(masterGain);
+
+    try {
+      oldSource.source.stop(switchAt);
+    } catch {
+      // ignore if already stopped
+    }
+    newSourceNode.start(switchAt, playStartExact);
+
+    const newSampleId = newPath;
+    pathToSampleId.delete(oldSource.path);
+    pathToSampleId.set(newPath, newSampleId);
+    startTimes.delete(oldSource.sampleId);
+    startTimes.set(newSampleId, switchAt);
+    sources[0] = {
+      source: newSourceNode,
+      sampleId: newSampleId,
+      path: newPath,
+      loopStart: loopStartExact,
+      loopEnd: loopEndExact,
+      playStart: playStartExact,
+      loopEnabled,
+      envelopePoints,
+      bufferDuration,
+      playbackRate: rate,
+      loopDuration: loopDurationExact,
+      playDuration,
+    };
+    usePlayerStore.setState({ singleFile: { path: newPath, paneType: newPaneType }, activeSampleId: newPath });
+  }
+
   return {
     stop: () => {
       if (stopped) return;
@@ -275,5 +389,6 @@ export async function startUnifiedPlayback(
       const newPos = newLoopStart + posInNewLoop;
       return newPos;
     },
+    scheduleSwitchAtNextBar: scheduleSwitchAtNextBarImpl,
   };
 }
