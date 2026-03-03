@@ -1,7 +1,9 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { Play, Pause, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useMultiSampleStore, type StackSample } from "@/stores/multi-sample-store";
+import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
+import { usePlayerStore } from "@/stores/player-store";
 import { MultiSampleBlock } from "@/components/MultiSampleBlock";
 import { fileSystemService } from "@/lib/fileSystem";
 import { toast } from "sonner";
@@ -13,10 +15,13 @@ function isAudioFile(name: string): boolean {
 }
 
 interface EmptyBlockProps {
+  slotIndex: number;
+  isActive: boolean;
   onDrop?: (e: React.DragEvent) => void;
+  onClick?: () => void;
 }
 
-function EmptyBlock({ onDrop }: EmptyBlockProps) {
+function EmptyBlock({ slotIndex, isActive, onDrop, onClick }: EmptyBlockProps) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -36,11 +41,16 @@ function EmptyBlock({ onDrop }: EmptyBlockProps) {
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={cn(
-        "flex flex-col items-center justify-center border border-dashed rounded-lg min-h-[100px] text-muted-foreground transition-colors",
-        isDragOver ? "border-primary bg-primary/5" : "border-border bg-muted/30"
+        "flex flex-col items-center justify-center border border-dashed rounded-lg min-h-[100px] text-muted-foreground transition-colors cursor-pointer",
+        isDragOver ? "border-primary bg-primary/5" : "border-border bg-muted/30",
+        isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background"
       )}
       aria-hidden
+      onClick={onClick}
+      onKeyDown={(e) => e.key === "Enter" && onClick?.()}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={(e) => {
@@ -80,37 +90,24 @@ interface MultiSampleStackProps {
 }
 
 export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
+  const slots = useMultiSampleStore((s) => s.slots);
+  const activeSlotIndex = useMultiSampleStore((s) => s.activeSlotIndex);
   const stack = useMultiSampleStore((s) => s.stack);
-  const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
+  const setActiveSlotIndex = useMultiSampleStore((s) => s.setActiveSlotIndex);
   const removeFromStack = useMultiSampleStore((s) => s.removeFromStack);
   const addToStack = useMultiSampleStore((s) => s.addToStack);
   const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
   const replaceSampleAt = useMultiSampleStore((s) => s.replaceSampleAt);
+  const closeWaveform = useWaveformEditorStore((s) => s.close);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const playFnsRef = useRef<Map<string, () => void>>(new Map());
-  const stopFnsRef = useRef<Map<string, () => void>>(new Map());
-  const startTimeRef = useRef<number>(0);
-  const nextTriggerBarRef = useRef<Map<string, number>>(new Map());
-  const rafIdRef = useRef<number>(0);
-
-  const registerPlay = useCallback((sampleId: string, play: () => void) => {
-    playFnsRef.current.set(sampleId, play);
-  }, []);
-
-  const registerStop = useCallback((sampleId: string, stop: () => void) => {
-    stopFnsRef.current.set(sampleId, stop);
-  }, []);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const playMulti = usePlayerStore((s) => s.playMulti);
+  const stop = usePlayerStore((s) => s.stop);
+  const setActiveSample = usePlayerStore((s) => s.setActiveSample);
 
   const handleStop = useCallback(() => {
-    setIsPlaying(false);
-    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-    nextTriggerBarRef.current.clear();
-    stack.forEach((s) => {
-      const stop = stopFnsRef.current.get(s.id);
-      stop?.();
-    });
-  }, [stack]);
+    stop();
+  }, [stop]);
 
   const togglePlay = useCallback(() => {
     if (stack.length === 0) return;
@@ -118,49 +115,38 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
     if (!hasValidBars) return;
 
     if (isPlaying) {
-      handleStop();
+      stop();
       return;
     }
 
-    startTimeRef.current = performance.now();
-    nextTriggerBarRef.current.clear();
-    stack.forEach((s) => nextTriggerBarRef.current.set(s.id, 0));
-    setIsPlaying(true);
-  }, [isPlaying, stack, handleStop]);
+    playMulti(
+      stack.map((s) => ({
+        id: s.id,
+        path: s.path,
+        name: s.name,
+        paneType: s.paneType,
+        bpm: s.bpm,
+        duration: s.duration,
+      }))
+    );
+  }, [isPlaying, stack, stop, playMulti]);
 
-  useEffect(() => {
-    if (!isPlaying || stack.length === 0) return;
+  const handleEmptySlotClick = useCallback(
+    (slotIndex: number) => {
+      setActiveSlotIndex(slotIndex);
+      closeWaveform();
+    },
+    [setActiveSlotIndex, closeWaveform]
+  );
 
-    const secondsPerBar = (60 / globalTempoBpm) * 4;
-
-    const tick = () => {
-      const elapsed = (performance.now() - startTimeRef.current) / 1000;
-      const currentBar = elapsed / secondsPerBar;
-
-      stack.forEach((sample) => {
-        const bars = sample.bars ?? 0;
-        if (bars <= 0) return;
-
-        const nextBar = nextTriggerBarRef.current.get(sample.id) ?? 0;
-        if (currentBar >= nextBar) {
-          const play = playFnsRef.current.get(sample.id);
-          play?.();
-          nextTriggerBarRef.current.set(sample.id, nextBar + bars);
-        }
-      });
-
-      rafIdRef.current = requestAnimationFrame(tick);
-    };
-
-    rafIdRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-    };
-  }, [isPlaying, stack, globalTempoBpm]);
-
-  const totalSlots = 5;
-  const filledCount = 1 + stack.length;
-  const emptyCount = Math.max(0, totalSlots - filledCount);
+  const openWaveformForActiveSlot = useCallback(() => {
+    const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+    const sample = slots[activeSlotIndex];
+    if (sample) {
+      setActiveSample(sample.id);
+      useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+    }
+  }, [setActiveSample]);
 
   const handleMultiDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -178,10 +164,12 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
               paneType: sourcePane as "source" | "dest",
             }));
             addSamplesToStack(samples, 8);
+            openWaveformForActiveSlot();
           }
         } else if (sourceType === "file" && isAudioFile(sourcePath.split("/").pop() || "")) {
           const name = sourcePath.split("/").filter(Boolean).pop() || sourcePath;
           addToStack({ path: sourcePath, name, paneType: sourcePane as "source" | "dest" });
+          openWaveformForActiveSlot();
         }
         return;
       }
@@ -219,7 +207,10 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
               samples.push({ path: result.data, name, paneType: "source" });
             }
           }
-          if (samples.length > 0) addSamplesToStack(samples, 8);
+          if (samples.length > 0) {
+            addSamplesToStack(samples, 8);
+            openWaveformForActiveSlot();
+          }
         } else if (handle?.kind === "file") {
           const file = await (handle as FileSystemFileHandle).getFile();
           if (file && isAudioFile(file.name)) {
@@ -228,6 +219,7 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
               const path = result.data;
               const name = path.split("/").filter(Boolean).pop() || file.name;
               addToStack({ path, name, paneType: "source" });
+              openWaveformForActiveSlot();
             }
           }
         }
@@ -239,13 +231,14 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
             const path = result.data;
             const name = path.split("/").filter(Boolean).pop() || file.name;
             addToStack({ path, name, paneType: "source" });
+            openWaveformForActiveSlot();
           } else {
             toast.error("Select a source folder first to add files from your computer");
           }
         }
       }
     },
-    [addToStack, addSamplesToStack]
+    [addToStack, addSamplesToStack, openWaveformForActiveSlot]
   );
 
   return (
@@ -289,23 +282,44 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
           </div>
         </div>
 
-        {/* Sample blocks */}
-        {stack.map((sample, index) => (
-          <MultiSampleBlock
-            key={sample.id}
-            sample={sample}
-            index={index}
-            onRemove={() => removeFromStack(index)}
-            onDropSample={(s) => replaceSampleAt(index, s)}
-            onRegisterPlay={registerPlay}
-            onRegisterStop={registerStop}
-          />
-        ))}
-
-        {/* Empty placeholders */}
-        {Array.from({ length: emptyCount }).map((_, i) => (
-          <EmptyBlock key={`empty-${i}`} onDrop={handleMultiDrop} />
-        ))}
+        {/* Slot blocks: each slot is either a sample or empty */}
+        {slots.map((sample, slotIndex) =>
+          sample ? (
+            <MultiSampleBlock
+              key={sample.id}
+              sample={sample}
+              index={slotIndex}
+              isActive={activeSlotIndex === slotIndex}
+              onRemove={() => {
+                if (slotIndex === activeSlotIndex) closeWaveform();
+                removeFromStack(slotIndex);
+              }}
+              onDropSample={(s) => {
+                replaceSampleAt(slotIndex, s);
+                if (slotIndex === activeSlotIndex) {
+                  const { slots } = useMultiSampleStore.getState();
+                  const updated = slots[activeSlotIndex];
+                  if (updated) {
+                    setActiveSample(updated.id);
+                    useWaveformEditorStore.getState().openWithFileFromMulti(updated.path, updated.name, updated.paneType, updated.id);
+                  }
+                }
+              }}
+              onClick={() => setActiveSample(sample.id)}
+            />
+          ) : (
+            <EmptyBlock
+              key={`empty-${slotIndex}`}
+              slotIndex={slotIndex}
+              isActive={activeSlotIndex === slotIndex}
+              onDrop={(e) => {
+                setActiveSlotIndex(slotIndex);
+                handleMultiDrop(e);
+              }}
+              onClick={() => handleEmptySlotClick(slotIndex)}
+            />
+          )
+        )}
       </div>
     </div>
   );

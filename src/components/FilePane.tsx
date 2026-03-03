@@ -253,7 +253,8 @@ export const FilePane = ({
   const paneType = (paneName === "dest" ? "dest" : "source") as "source" | "dest";
   const volumeId = currentVolumeUUID ?? "_default";
   const previewMode = useMultiSampleStore((s) => s.previewMode);
-  const addToStack = useMultiSampleStore((s) => s.addToStack);
+  const putSampleInActiveSlot = useMultiSampleStore((s) => s.putSampleInActiveSlot);
+  const setActiveSlotIndex = useMultiSampleStore((s) => s.setActiveSlotIndex);
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
@@ -3298,7 +3299,24 @@ export const FilePane = ({
                     toggleFolder(node);
                   } else if (node.type === "file" && isAudioFile(node.name)) {
                     if (previewMode === "multi") {
-                      addToStack({ path: node.path, name: node.name, paneType });
+                      const { slots } = useMultiSampleStore.getState();
+                      const existingSlotIndex = slots.findIndex(
+                        (s) => s && s.path === node.path && s.paneType === paneType
+                      );
+                      if (existingSlotIndex >= 0) {
+                        setActiveSlotIndex(existingSlotIndex);
+                        const sample = slots[existingSlotIndex];
+                        if (sample) {
+                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                        }
+                      } else {
+                        putSampleInActiveSlot({ path: node.path, name: node.name, paneType });
+                        const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+                        const sample = slots[activeSlotIndex];
+                        if (sample) {
+                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                        }
+                      }
                     } else {
                       const file = { path: node.path, name: node.name };
                       setSelectedAudioFile(file);
@@ -3383,10 +3401,29 @@ export const FilePane = ({
                   <ContextMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
-                      addToStack({ path: node.path, name: node.name, paneType });
+                      const { slots } = useMultiSampleStore.getState();
+                      const existingSlotIndex = slots.findIndex(
+                        (s) => s && s.path === node.path && s.paneType === paneType
+                      );
+                      if (existingSlotIndex >= 0) {
+                        setActiveSlotIndex(existingSlotIndex);
+                        const sample = slots[existingSlotIndex];
+                        if (sample) {
+                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                        }
+                      } else {
+                        putSampleInActiveSlot({ path: node.path, name: node.name, paneType });
+                        const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+                        const sample = slots[activeSlotIndex];
+                        if (sample) {
+                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                        }
+                      }
                     }}
                   >
-                    Add to multi
+                    {useMultiSampleStore.getState().slots.some((s) => s && s.path === node.path && s.paneType === paneType)
+                      ? "Select in multi"
+                      : "Add to multi"}
                   </ContextMenuItem>
                 )}
                 <ContextMenuItem
@@ -3585,6 +3622,28 @@ export const FilePane = ({
     const tree = buildFolderTreeFromSearchResults(searchResults, currentRootPath, treeViewMode);
     setSearchResultsTree(tree);
   }, [searchQuery, searchResults, currentRootPath, treeViewMode, buildFolderTreeFromSearchResults]);
+
+  // In Files mode, auto-expand all folders containing matching files (from root down to each file's parent)
+  useEffect(() => {
+    if (!searchQuery || treeViewMode !== "files" || searchResults.length === 0) return;
+
+    const searchRootPath = currentRootPath || "";
+    const folderIdsToExpand = new Set<string>();
+    searchResults.forEach((r) => {
+      if (r.isDirectory) return; // Files mode: only expand folders that contain matching files
+      const parentPath = dirname(r.path);
+      if (parentPath && parentPath !== "." && parentPath !== "/") {
+        let p = parentPath;
+        while (p && p !== "." && p !== "/") {
+          if (!searchRootPath || p.startsWith(searchRootPath)) {
+            folderIdsToExpand.add(`search-folder-${p}`);
+          }
+          p = dirname(p);
+        }
+      }
+    });
+    setExpandedFolders(folderIdsToExpand);
+  }, [searchQuery, treeViewMode, searchResults, currentRootPath]);
 
   const filteredFileSystem = filterNodes(fileTree, searchQuery);
 

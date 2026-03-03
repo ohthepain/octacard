@@ -32,6 +32,8 @@ function parseTagText(xml: string, tag: string): string | undefined {
 export interface WavMetadata {
   sampleRate: number;
   totalFrames: number;
+  numChannels?: number;
+  bitsPerSample?: number;
   sampleStartFrame?: number;
   sampleEndFrame?: number;
   sliceFrames: number[];
@@ -62,6 +64,8 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
   let sampleRate = 0;
   let dataBytes = 0;
   let blockAlign = 0;
+  let numChannels = 0;
+  let bitsPerSample = 0;
   const cueById = new Map<number, number>();
   const ixmlSliceFrames: number[] = [];
   let tempo: number | undefined;
@@ -80,8 +84,10 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
     if (chunkDataEnd > arrayBuffer.byteLength) break;
 
     if (chunkId === "fmt " && chunkSize >= 16) {
+      numChannels = view.getUint16(chunkDataStart + 2, true);
       sampleRate = view.getUint32(chunkDataStart + 4, true);
       blockAlign = view.getUint16(chunkDataStart + 12, true);
+      if (chunkSize >= 16) bitsPerSample = view.getUint16(chunkDataStart + 14, true);
     } else if (chunkId === "data") {
       dataBytes = chunkSize;
     } else if (chunkId === "cue " && chunkSize >= 4) {
@@ -199,6 +205,8 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
   return {
     sampleRate,
     totalFrames,
+    ...(numChannels > 0 && { numChannels }),
+    ...(bitsPerSample > 0 && { bitsPerSample }),
     sampleStartFrame,
     sampleEndFrame,
     sliceFrames,
@@ -207,6 +215,71 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
     rootKey,
     tuningCents,
   };
+}
+
+/** Format bytes for display */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+export interface AudioFileInfo {
+  sampleRate: number;
+  numChannels: number;
+  bitsPerSample: number | null;
+  totalSamples: number;
+  totalFrames: number;
+  durationSeconds: number;
+  fileSizeBytes: number | null;
+  format: string;
+}
+
+/** Get audio file info for display (WAV from metadata, others from decode). */
+export async function getAudioFileInfo(blob: Blob): Promise<AudioFileInfo | null> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const fileSizeBytes = arrayBuffer.byteLength;
+
+  // Try WAV metadata first (fast, no decode)
+  const parsed = parseWavMetadata(arrayBuffer);
+  if (parsed) {
+    const numChannels = parsed.numChannels ?? 1;
+    const bitsPerSample = parsed.bitsPerSample ?? null;
+    const totalFrames = parsed.totalFrames;
+    const totalSamples = totalFrames * numChannels;
+    const durationSeconds = parsed.sampleRate > 0 ? totalFrames / parsed.sampleRate : 0;
+    return {
+      sampleRate: parsed.sampleRate,
+      numChannels,
+      bitsPerSample,
+      totalSamples,
+      totalFrames,
+      durationSeconds,
+      fileSizeBytes,
+      format: "WAV",
+    };
+  }
+
+  // Fallback: decode to get info (works for MP3, etc.)
+  try {
+    const ctx = new AudioContext();
+    const decoded = await ctx.decodeAudioData(arrayBuffer);
+    await ctx.close();
+    const totalFrames = decoded.length;
+    const totalSamples = totalFrames * decoded.numberOfChannels;
+    return {
+      sampleRate: decoded.sampleRate,
+      numChannels: decoded.numberOfChannels,
+      bitsPerSample: null, // Decoded is 32-bit float
+      totalSamples,
+      totalFrames,
+      durationSeconds: decoded.duration,
+      fileSizeBytes,
+      format: "decoded",
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

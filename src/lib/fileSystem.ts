@@ -519,7 +519,7 @@ class FileSystemService {
   }
 
   private async pickDirectoryHandle(
-    pickerId: "root" | PaneType,
+    pickerId: "root" | PaneType | "saveAs",
     startIn?: FileSystemDirectoryHandle,
   ): Promise<FileSystemDirectoryHandle> {
     const testPicker = (window as any).__octacardPickDirectory;
@@ -1000,6 +1000,45 @@ class FileSystemService {
       await writable.write(blob);
       await writable.close();
       await this.reindexSubtree(dirPath, paneType);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  }
+
+  /** Pick a directory via the system picker (e.g. for Save As). Returns the handle or error/cancelled. */
+  async pickDirectoryForSaveAs(
+    startIn?: FileSystemDirectoryHandle
+  ): Promise<FileSystemResult<FileSystemDirectoryHandle>> {
+    if (!hasDirectoryPickerSupport()) {
+      return { success: false, error: "File System Access API not supported in this browser" };
+    }
+    try {
+      const handle = await this.pickDirectoryHandle("saveAs", startIn);
+      return { success: true, data: handle };
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        return { success: false, cancelled: true };
+      }
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /** Write a Blob to an arbitrary directory handle (e.g. from Save As picker). Does not reindex. */
+  async writeBlobToDirectoryHandle(
+    dirHandle: FileSystemDirectoryHandle,
+    filename: string,
+    blob: Blob
+  ): Promise<FileSystemResult> {
+    try {
+      const safeName = sanitizeFilenameMinimal(filename) || "export.wav";
+      const fileHandle = await dirHandle.getFileHandle(safeName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
       return { success: true };
     } catch (error) {
       return {

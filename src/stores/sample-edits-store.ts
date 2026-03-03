@@ -13,6 +13,13 @@ export interface RegionParams {
 export interface SampleEdits {
   region?: RegionParams | null;
   envelopePoints?: EnvelopePoint[];
+  /** Playback loop region (start/end in seconds). Defaults to region or full duration. */
+  loopStart?: number;
+  loopEnd?: number;
+  /** Where play starts within the loop region (seconds). */
+  playStart?: number;
+  /** Whether playback loops within the region. */
+  loopEnabled?: boolean;
 }
 
 interface SampleEditsState {
