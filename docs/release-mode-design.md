@@ -1,6 +1,6 @@
 # Release Mode Design
 
-A lightweight interactive product tour engine powered by structured release data. The app consumes JSON, renders a top area with steps/instructions, loads demo files, and auto-highlights UI elements.
+A lightweight interactive product tour engine powered by structured release data. The app consumes JSON, renders a release notes section above the header, and lets users explore features with "Show me" buttons that point at UI elements.
 
 ## Pipeline Overview
 
@@ -22,29 +22,27 @@ Release Mode (guided demo)
 
 ### Behavior
 
-- **Top area**: A banner or strip below the header showing:
-  - Current step number (e.g. "2 of 5")
-  - Instruction text
-  - Next / Previous / Skip buttons
-  - Optional: "Start tour" entry point
-- **Highlight**: Auto-highlight the UI element specified by `instruction.highlight` (e.g. `[data-testid="format-settings-button"]`). Use a spotlight/overlay pattern (dim rest of UI, focus on element).
-- **Demo loading**: Before each feature, if `demo` is present:
-  - `loadSample`: Load a sample file into the waveform view (if applicable)
-  - `loadProjectState`: Restore app state (navigation, selections, etc.)
-  - `sourcePath` / `destPath`: Navigate file panes to given virtual paths
-- **Entry**: Triggered by URL param or a "What's new" / "Release tour" button in the header or About dialog.
+- **Release notes section** (above the header): A branded panel showing:
+  - "What's new in v{version}" with release date
+  - Current feature title
+  - **Step list**: Each instruction with a "Show me" button (when `highlight` is set). Clicking "Show me" draws an animated arrow and box around the target element—no overlay or dimming.
+  - **Navigation**: Previous/Next feature, Previous/Next release
+  - **Request improvement**: Link to `/vibe-coding-rules.html`
+  - **Dismiss** (X) to close
+- **Multi-release**: Load from `public/release-notes/index.json`; navigate between releases.
+- **Demo loading**: When feature changes, apply `sourcePath`/`destPath` to navigate file panes. Future: `loadSample`, `loadProjectState`.
+- **Entry**: URL param `?release-tour=1` or "What's new" in About dialog.
 
 ### UX
 
-- Similar to Figma's onboarding or Linear's product tours.
-- Non-blocking: user can dismiss or skip at any time.
-- Progress persists (optional): remember which steps were completed.
+- Non-blocking: user dismisses at any time.
+- On-demand highlight: "Show me" shows arrow/box; auto-clears after ~4s or on click.
 
 ### Data Flow
 
-- Load JSON from `public/release-notes/releasenotes-<version>.json` or a configurable path.
-- Filter features by `include: true`.
-- Flatten instructions into a linear sequence of steps, or group by feature (user advances through features, then steps within each).
+- Load index from `public/release-notes/index.json`.
+- Load release JSON from path in index.
+- Group by feature; display steps per feature with "Show me" buttons.
 
 ## Admin Mode
 
@@ -121,30 +119,28 @@ e2e/
 ```
 schema/
   release-notes.schema.json     # JSON schema
-  public/
-    release-notes/
-      releasenotes-1.8.0.json   # Published release data
-  output/
-    release-notes-screenshots/  # Screenshots (from generate command)
-  scripts/
-    generate-release-notes-pdf.mjs  # Optional PDF
-  e2e/
-    release-notes.spec.ts       # Playwright tests
-  src/
-    components/
-      ReleaseTourBanner.tsx    # Top area with steps
-      ReleaseTourHighlight.tsx  # Spotlight overlay
-    stores/
-      release-tour-store.ts    # Zustand store for tour state
-    lib/
-      releaseNotes.ts          # Load/parse JSON, types
+public/
+  release-notes/
+    index.json                  # List of releases (version, date, path)
+    releasenotes-*.json         # Published release data
+output/
+  release-notes-screenshots/    # Screenshots (from generate command)
+scripts/
+  generate-release-notes-pdf.mjs  # Optional PDF
+src/
+  components/
+    ReleaseNotesPanel.tsx       # Section above header with steps + Show me
+    ReleaseTourPointer.tsx     # Arrow/box when Show me is active
+  stores/
+    release-tour-store.ts       # Zustand store (multi-release, showMe)
+  lib/
+    releaseNotes.ts             # Load index, load notes, getFeatures
 ```
 
 ## Implementation Order
 
 1. **Phase 1**: JSON schema + generate command (done)
-2. **Phase 2**: `ReleaseTourBanner` + `release-tour-store` — load JSON, render steps, show/hide
-3. **Phase 3**: Highlight overlay + selector resolution
-4. **Phase 4**: Demo loading (paths, sample, project state)
-5. **Phase 5**: Admin mode (edit UI)
-6. **Phase 6**: Playwright tests
+2. **Phase 2**: `ReleaseNotesPanel` + `ReleaseTourPointer` + multi-release store (done)
+3. **Phase 3**: Demo loading (paths) (done)
+4. **Phase 4**: Admin mode (edit UI)
+5. **Phase 5**: Playwright tests

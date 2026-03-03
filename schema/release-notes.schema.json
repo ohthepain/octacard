@@ -40,6 +40,10 @@
           "type": "string",
           "description": "Display title for the feature"
         },
+        "description": {
+          "type": "string",
+          "description": "Optional longer description of the feature"
+        },
         "include": {
           "type": "boolean",
           "default": true,

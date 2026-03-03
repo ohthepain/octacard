@@ -1,9 +1,10 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 import { capture } from "@/lib/analytics";
 import packageJson from "../../package.json";
+import { useReleaseTourStore } from "@/stores/release-tour-store";
 
 interface AboutDialogProps {
   open: boolean;
@@ -11,6 +12,13 @@ interface AboutDialogProps {
 }
 
 export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
+  const loadAndStart = useReleaseTourStore((s) => s.loadAndStart);
+
+  const handleWhatsNew = async () => {
+    onOpenChange(false);
+    await loadAndStart();
+  };
+
   const termsUrl = "/terms-of-service.html";
   const privacyUrl = "/privacy-policy.html";
   const vibeCodingUrl = "/vibe-coding-rules.html";
@@ -58,6 +66,10 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
           </div>
 
           <div className="pt-4 border-t border-border space-y-2">
+            <Button variant="outline" className="w-full gap-2" onClick={handleWhatsNew}>
+              <Sparkles className="w-4 h-4" />
+              What&apos;s new
+            </Button>
             <Button variant="outline" className="w-full gap-2" asChild>
               <a href="https://github.com/ohthepain/octacard" target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="w-4 h-4" />
