@@ -20,6 +20,7 @@
     "preview": "vite preview",
     "preview:it": "vite preview --host 127.0.0.1 --port 3010 --strictPort",
     "it": "node scripts/integration/smoke.mjs",
+    "release-screenshots": "concurrently -k -s first -n preview,capture \"pnpm:preview:it\" \"wait-on http://127.0.0.1:3010 && E2E_BASE_URL=http://127.0.0.1:3010 node scripts/capture-release-screenshots.mjs\"",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",

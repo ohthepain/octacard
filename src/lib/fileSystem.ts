@@ -567,7 +567,6 @@ class FileSystemService {
       return {
         success: true,
         data: handle,
-        warning: "Source and destination are set to the same folder. Consider selecting a different destination for copy operations.",
       };
     } catch (error: any) {
       if (error.name === "AbortError") {
@@ -615,10 +614,6 @@ class FileSystemService {
 
       if (virtualPath) {
         void this.ensureSearchIndex(paneType);
-        const sameFolderWarning =
-          paneType === "dest" && (await this.areSourceAndDestSame())
-            ? "Source and destination are set to the same folder. Consider selecting a different destination for copy operations."
-            : undefined;
         return {
           success: true,
           data: {
@@ -626,16 +621,11 @@ class FileSystemService {
             virtualPath,
             reusedExistingRoot: true,
           },
-          warning: sameFolderWarning,
         };
       }
 
       await registry.setRoot(handle);
       void this.ensureSearchIndex(paneType);
-      const sameFolderWarning =
-        paneType === "dest" && (await this.areSourceAndDestSame())
-          ? "Source and destination are set to the same folder. Consider selecting a different destination for copy operations."
-          : undefined;
       return {
         success: true,
         data: {
@@ -643,7 +633,6 @@ class FileSystemService {
           virtualPath: "/",
           reusedExistingRoot: false,
         },
-        warning: sameFolderWarning,
       };
     } catch (error: any) {
       if (error.name === "AbortError") {

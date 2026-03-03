@@ -1,0 +1,38 @@
+{
+  "version": "1.8.0",
+  "releaseDate": "2026-03-03",
+  "gitHash": "abc1234",
+  "features": [
+    {
+      "id": "sample-format-dialog",
+      "title": "Sample Format Dialog with Conversion Options",
+      "include": true,
+      "type": "feature",
+      "demo": {
+        "sourcePath": "/Alpha",
+        "destPath": "/Beta"
+      },
+      "instructions": [
+        {
+          "text": "Click the Format button to open format settings",
+          "highlight": "[data-testid=\"format-settings-button\"]"
+        },
+        {
+          "text": "Adjust sample rate, depth, mono, or normalize options"
+        }
+      ]
+    },
+    {
+      "id": "convert-button",
+      "title": "Convert Files",
+      "include": true,
+      "type": "feature",
+      "instructions": [
+        {
+          "text": "Select source and destination folders, then click Convert",
+          "highlight": "[data-testid=\"convert-button\"]"
+        }
+      ]
+    }
+  ]
+}

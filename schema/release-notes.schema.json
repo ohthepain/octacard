@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://octacard.app/schemas/release-notes.json",
+  "title": "Release Notes",
+  "description": "Structured release data for the guided demo engine. Consumed by Release Mode in the app.",
+  "type": "object",
+  "required": ["version", "releaseDate", "features"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Semantic version (e.g. 1.8.0)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.-]+)?$"
+    },
+    "releaseDate": {
+      "type": "string",
+      "format": "date",
+      "description": "Release date (YYYY-MM-DD)"
+    },
+    "gitHash": {
+      "type": "string",
+      "description": "Short git hash of last processed commit (optional)"
+    },
+    "features": {
+      "type": "array",
+      "description": "User-facing features for the guided tour",
+      "items": { "$ref": "#/definitions/Feature" }
+    }
+  },
+  "definitions": {
+    "Feature": {
+      "type": "object",
+      "required": ["id", "title"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique slug (e.g. slice-export)",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Display title for the feature"
+        },
+        "include": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to include in the tour (admin can toggle)"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["feature", "fix", "improvement"],
+          "default": "feature"
+        },
+        "demo": {
+          "$ref": "#/definitions/Demo"
+        },
+        "instructions": {
+          "type": "array",
+          "description": "Step-by-step instructions for the guided tour",
+          "items": { "$ref": "#/definitions/Instruction" }
+        }
+      }
+    },
+    "Demo": {
+      "type": "object",
+      "description": "Demo content to load before showing this feature",
+      "properties": {
+        "loadSample": {
+          "type": "string",
+          "description": "Sample file path to load (e.g. breakbeat_slices.wav). Relative to demo assets."
+        },
+        "loadProjectState": {
+          "type": "string",
+          "description": "Project state JSON to restore (e.g. slice-demo.json)"
+        },
+        "sourcePath": {
+          "type": "string",
+          "description": "Virtual path to navigate source pane to"
+        },
+        "destPath": {
+          "type": "string",
+          "description": "Virtual path to navigate dest pane to"
+        }
+      }
+    },
+    "Instruction": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Instruction text shown in the top area"
+        },
+        "highlight": {
+          "type": "string",
+          "description": "Selector for UI element to highlight. Use data-testid (e.g. [data-testid=\"format-settings-button\"]) or CSS selector."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["wait", "click", "navigate"],
+          "description": "Optional: auto-perform action when step is shown"
+        },
+        "waitFor": {
+          "type": "string",
+          "description": "Selector to wait for before advancing (e.g. dialog open)"
+        }
+      }
+    }
+  }
+}
