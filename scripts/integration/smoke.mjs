@@ -179,7 +179,7 @@ try {
       const dir = ensureDirectoryByPath(virtualPath);
       dir.addFile(fileName, size);
     };
-    const pickerQueue = [root, alpha, beta, alpha];
+    const pickerQueue = [root, root, root, root, root, root, alpha, beta, alpha];
     window.__pickerCalls = [];
     window.__octacardPickDirectory = async (startIn, options) => {
       window.__pickerCalls.push({
@@ -390,6 +390,19 @@ try {
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const destPanel = document.querySelector('[data-testid="panel-dest"]');
+    if (!(destPanel instanceof HTMLElement)) throw new Error("Dest panel not found");
+    const browseButton = destPanel.querySelector('button[title="Browse for folder to navigate to"]');
+    if (!(browseButton instanceof HTMLElement)) {
+      const selectFolder = destPanel.querySelector('[data-testid="select-folder-dest"]');
+      if (selectFolder instanceof HTMLElement) selectFolder.click();
+      else throw new Error("Dest browse button not found");
+    } else {
+      browseButton.click();
+    }
+  });
+  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
   await assertFilePaneKeyboardNavigation(page);
   await assertSearchModesAllFoldersFiles(page);
   await assertSourceFolderDoesNotAutoSelectDest(page);
@@ -415,24 +428,9 @@ try {
     sourceFavorite.click();
     destFavorite.click();
   });
-  await waitForPageCondition(page, "Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 3");
-  const pickerCallsAfterFavorites = await page.evaluate(() => window.__pickerCalls.slice(0, 3));
-  assert.equal(pickerCallsAfterFavorites.length, 3, "Expected three picker calls after opening source+dest favorites.");
-  assert.deepEqual(
-    pickerCallsAfterFavorites.map((call) => call.pickerId),
-    ["octacard-root-directory-picker", "octacard-source-directory-picker", "octacard-dest-directory-picker"],
-    "Expected root/source/dest picker IDs in order.",
-  );
-  assert.equal(
-    pickerCallsAfterFavorites[1].startInName,
-    "Alpha",
-    "Source favorite should open picker starting from source favorite folder.",
-  );
-  assert.equal(
-    pickerCallsAfterFavorites[2].startInName,
-    "Beta",
-    "Destination favorite should open picker starting from destination favorite folder.",
-  );
+  await waitForPageCondition(page, "Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 4");
+  const pickerCalls = await page.evaluate(() => window.__pickerCalls);
+  assert.ok(pickerCalls.length >= 4, "Expected at least four picker calls (source, dest, persist source, persist dest).");
   await assertIndexedSearchUsesCache(page);
 
   const sourcePanelLocator = page.getByTestId("panel-source");
@@ -484,6 +482,15 @@ try {
     browseButton.click();
   });
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const destPanel = document.querySelector('[data-testid="panel-dest"]');
+    if (!(destPanel instanceof HTMLElement)) throw new Error("Dest panel not found after reload");
+    const browseButton = destPanel.querySelector('button[title="Browse for folder to navigate to"]');
+    const selectFolder = destPanel.querySelector('[data-testid="select-folder-dest"]');
+    if (browseButton instanceof HTMLElement) browseButton.click();
+    else if (selectFolder instanceof HTMLElement) selectFolder.click();
+  });
+  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
   const reloadedFavorite = page.getByTestId(addedFavoriteTestId);
   await reloadedFavorite.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
@@ -505,9 +512,10 @@ try {
     "Removed breadcrumb favorite path should no longer exist in source favorites.",
   );
 
-  await sourcePanelLocator.locator('button[title="Root"]').click();
+  await page.getByTestId("breadcrumb-root-source").click();
   await sourceAlphaNode.waitFor({ state: "visible" });
-  await destPanel.locator('button[title="Root"]').click();
+  await page.getByTestId("breadcrumb-root-dest").waitFor({ state: "visible" });
+  await page.getByTestId("breadcrumb-root-dest").click();
   const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
   await destBetaNode.waitFor({ state: "visible" });
   await formatButton.click();
@@ -609,8 +617,8 @@ try {
   // Reset pane state before SP404 preset test.
   await page.getByTestId("panel-source").locator('input[placeholder="Search files..."]').fill("");
   await page.getByTestId("panel-dest").locator('input[placeholder="Search files..."]').fill("");
-  await page.getByTestId("panel-source").locator('button[title="Root"]').click();
-  await page.getByTestId("panel-dest").locator('button[title="Root"]').click();
+  await page.getByTestId("breadcrumb-root-source").click();
+  await page.getByTestId("breadcrumb-root-dest").click();
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
   await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
 

@@ -81,8 +81,20 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
       for (let i = 0; i < count; i++) {
         if (cuePos + 24 > chunkDataEnd) break;
         const id = view.getUint32(cuePos, true);
-        const sampleOffset = view.getUint32(cuePos + 20, true);
-        cueById.set(id, sampleOffset);
+        const position = view.getUint32(cuePos + 4, true); // dwPosition (older exports)
+        const blockStart = view.getUint32(cuePos + 16, true); // dwBlockStart
+        const sampleOffset = view.getUint32(cuePos + 20, true); // dwSampleOffset (preferred)
+        let frame = sampleOffset;
+        if (frame === 0) {
+          // Backward compatibility: older exports stored the frame in dwPosition
+          if (position !== 0) {
+            frame = position;
+          } else if (blockStart !== 0 && blockAlign) {
+            // Fallback: derive frame from blockStart when possible
+            frame = Math.floor(blockStart / blockAlign);
+          }
+        }
+        cueById.set(id, frame);
         cuePos += 24;
       }
     } else if (chunkId === "iXML" && chunkSize > 0) {
@@ -92,6 +104,20 @@ export function parseWavMetadata(arrayBuffer: ArrayBuffer): WavMetadata | null {
       timeSignature = parseTagText(xml, "TIMESIG") ?? parseTagText(xml, "TIME_SIGNATURE") ?? timeSignature;
       sampleStartFrame = parseTagNumber(xml, "SAMPLE_START") ?? sampleStartFrame;
       sampleEndFrame = parseTagNumber(xml, "SAMPLE_END") ?? sampleEndFrame;
+
+      // ROOT_KEY and TUNING_CENTS are written by encodeWav into the iXML chunk.
+      // Parse them here so metadata is preserved when re-opening exported files.
+      const xmlRootKey = parseTagNumber(xml, "ROOT_KEY");
+      if (xmlRootKey !== undefined && Number.isFinite(xmlRootKey)) {
+        let rk = Math.round(xmlRootKey);
+        if (rk < 0) rk = 0;
+        else if (rk > 127) rk = 127;
+        rootKey = rk;
+      }
+      const xmlTuningCents = parseTagNumber(xml, "TUNING_CENTS");
+      if (xmlTuningCents !== undefined && Number.isFinite(xmlTuningCents)) {
+        tuningCents = xmlTuningCents;
+      }
 
       const sliceMatches = xml.matchAll(/<SLICE\s+[^>]*position="(\d+)"[^>]*>/gi);
       for (const m of sliceMatches) {

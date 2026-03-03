@@ -11,8 +11,8 @@ export async function assertSourceFolderDoesNotAutoSelectDest(page) {
   await destPanel.waitFor({ state: "visible" });
 
   // Navigate both to root
-  await sourcePanel.locator('button[title="Root"]').click();
-  await destPanel.locator('button[title="Root"]').click();
+  await sourcePanel.getByTestId("breadcrumb-root-source").click();
+  await destPanel.getByTestId("breadcrumb-root-dest").click();
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
   await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
 

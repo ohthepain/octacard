@@ -31,6 +31,19 @@ export async function assertExpandedFoldersPersistOnReload(page) {
 
   const reloadedAlphaNode = page.getByTestId(alphaNodeTestId);
   await reloadedAlphaNode.waitFor({ state: "visible" });
+
+  await page.evaluate(() => {
+    const destPanel = document.querySelector('[data-testid="panel-dest"]');
+    if (!(destPanel instanceof HTMLElement)) throw new Error("Dest panel not found after reload");
+    const browseButton = destPanel.querySelector('button[title="Browse for folder to navigate to"]');
+    const selectFolder = destPanel.querySelector('[data-testid="select-folder-dest"]');
+    if (browseButton instanceof HTMLElement) browseButton.click();
+    else if (selectFolder instanceof HTMLElement) selectFolder.click();
+    else throw new Error("Dest browse button not found after reload");
+  });
+  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
+
+  await reloadedAlphaNode.waitFor({ state: "visible" });
   await page.waitForTimeout(1200);
   const reloadedExpanded = await reloadedAlphaNode.getAttribute("data-expanded");
   const persistedAfterReload = await page.evaluate(() => localStorage.getItem("octacard_nav_state_source__default"));
