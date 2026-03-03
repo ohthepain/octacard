@@ -32,6 +32,7 @@ import { assertSearchModesAllFoldersFiles } from "../../tests/search-modes-all-f
 import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-folder-does-not-auto-select-dest.mjs";
 import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils.mjs";
 import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
+import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
@@ -445,6 +446,7 @@ try {
   await page.getByTestId("breadcrumb-favorite-source").waitFor({ state: "visible" });
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
   await assertBarsBeatsSupport(page);
+  await assertSampleStartEndBar(page);
   await assertWaveformTimeModeToggle(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
