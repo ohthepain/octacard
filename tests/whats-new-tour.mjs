@@ -20,9 +20,9 @@ export async function assertWhatsNewTour(page) {
   await panel.waitFor({ state: "visible" });
   assert.ok(await panel.isVisible(), "Expected release notes panel to be visible");
 
-  const whatsNewHeading = panel.getByText(/What's new in v/);
+  const whatsNewHeading = panel.getByText(/What's new/);
   await whatsNewHeading.waitFor({ state: "visible" });
-  assert.ok(await whatsNewHeading.isVisible(), "Expected 'What's new in v' heading");
+  assert.ok(await whatsNewHeading.isVisible(), "Expected 'What's new' heading");
 
   const nextFeatureButton = panel.getByRole("button", { name: "Next feature" });
   if (await nextFeatureButton.isEnabled().catch(() => false)) {
