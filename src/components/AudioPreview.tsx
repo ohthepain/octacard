@@ -1340,19 +1340,8 @@ export const AudioPreview = ({
       }
       return;
     }
-    if (multiSampleId && stack.length > 0) {
-      setActiveSample(multiSampleId);
-      playMulti(
-        stack.map((s) => ({
-          id: s.id,
-          path: s.path,
-          name: s.name,
-          paneType: s.paneType,
-          bpm: s.bpm,
-          duration: s.duration,
-        }))
-      );
-    } else if (filePath && paneType && !isEmptyState && duration > 0) {
+    // Wave editor always plays just the one sample being edited, regardless of multi/single mode
+    if (filePath && paneType && !isEmptyState && duration > 0) {
       playSingle(filePath, paneType);
     }
   }, [
@@ -1368,12 +1357,8 @@ export const AudioPreview = ({
     filePath,
     paneType,
     isEmptyState,
-    multiSampleId,
-    stack,
     stopPlayer,
     playSingle,
-    playMulti,
-    setActiveSample,
   ]);
 
   const handleRecordClick = useCallback(() => {
@@ -1586,9 +1571,18 @@ export const AudioPreview = ({
   const getLoopLengthParts = useCallback(() => {
     const len = Math.max(0, loopEnd - loopStart);
     const totalBeats = secondsPerBeat > 0 ? len / secondsPerBeat : 0;
-    const bars = Math.floor(totalBeats / parsedTimeSignature.beatsPerBar);
-    const beats = Math.floor(totalBeats % parsedTimeSignature.beatsPerBar);
-    const sixteenths = Math.round((totalBeats - Math.floor(totalBeats)) * 4);
+    let bars = Math.floor(totalBeats / parsedTimeSignature.beatsPerBar);
+    let beats = Math.floor(totalBeats % parsedTimeSignature.beatsPerBar);
+    let sixteenths = Math.round((totalBeats - Math.floor(totalBeats)) * 4);
+    // Normalize: 4 sixteenths = 1 beat (fixes floating-point e.g. 3.999999 for 4.0)
+    if (sixteenths >= 4) {
+      sixteenths = 0;
+      beats += 1;
+      if (beats >= parsedTimeSignature.beatsPerBar) {
+        beats = 0;
+        bars += 1;
+      }
+    }
     return { bars, beats, sixteenths };
   }, [loopEnd, loopStart, parsedTimeSignature.beatsPerBar, secondsPerBeat]);
 
