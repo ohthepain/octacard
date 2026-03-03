@@ -4,6 +4,14 @@ Generate release notes from git history by reviewing commits and their diffs. Pr
 
 **COMMIT_LIMIT: 10** — Use this value everywhere "N commits" or "commit limit" is referenced below. If the user provides a number after the command (e.g. `/generate-release-notes 5`), use that instead.
 
+## Pipeline
+
+```
+Git commits → AI summarizes → Structured JSON draft → You curate & enrich → App consumes JSON → Release Mode
+```
+
+The **primary output** is structured JSON (`releasenotes-<date>.json`) for the in-app guided demo engine. The app will render a top area with steps, load demo files, and auto-highlight UI elements. PDF is optional for external distribution.
+
 ## Steps
 
 ### 1. Get the starting commit hash
@@ -23,19 +31,73 @@ Generate release notes from git history by reviewing commits and their diffs. Pr
 
 - For each commit, review the diff and identify user-facing features, fixes, or notable changes.
 - Write concise, user-oriented bullet points (e.g., "Added X", "Fixed Y", "Improved Z").
-- Report only user-facing behavior. Ignore refactors and changes to development scripts and CI jobs
+- Collect and Report only USER-FACING FEATURES. Ignore refactors and changes to development scripts and CI jobs
 - Group by commit if helpful, or flatten into a single list.
 
 ### 4. Append to releasenotes.txt
 
 - Create `releasenotes.txt` if it does not exist.
-- Add a dated section header, e.g. `## YYYY-MM-DD` (today's date).
+- Get the **commit date** of the last processed hash: `git log -1 --format=%cd --date=short <last-hash>`.
+- Add a section header using that date: `## YYYY-MM-DD`.
 - Prepend the release note bullets under that header.
 - Use a blank line between sections.
 
-### 5. Persist the last processed hash
+### 5. Create structured JSON (primary output)
 
-- Determine the hash of the **last** commit you processed (the newest of the N you processed).
+- Create `releasenotes-<date>.json` (e.g. `releasenotes-2026-03-03.json`).
+- Use the schema at `schema/release-notes.schema.json` as reference.
+- For each USER-FACING FEATURE, add:
+  - `id`: unique slug (e.g. `sample-format-dialog`)
+  - `title`: display title
+  - `include`: true (admin can toggle later)
+  - `type`: "feature" | "fix" | "improvement"
+  - `demo`: optional `loadSample`, `loadProjectState`, `sourcePath`, `destPath` (paths relative to demo assets)
+  - `instructions`: array of steps with `text` and optional `highlight` selector
+- Use `data-testid` for `highlight` when available: `[data-testid="format-settings-button"]`. See existing `data-testid` in `src/components/` and `src/pages/Index.tsx`.
+- Include `gitHash` (short) from the last processed commit.
+- Example:
+
+```json
+{
+  "version": "1.8.0",
+  "releaseDate": "2026-03-03",
+  "gitHash": "abc1234",
+  "features": [
+    {
+      "id": "sample-format-dialog",
+      "title": "Sample Format Dialog with Conversion Options",
+      "include": true,
+      "type": "feature",
+      "demo": {
+        "sourcePath": "/Alpha",
+        "destPath": "/Beta"
+      },
+      "instructions": [
+        { "text": "Click the Format button to open format settings", "highlight": "[data-testid=\"format-settings-button\"]" },
+        { "text": "Adjust sample rate, depth, mono, or normalize options" }
+      ]
+    }
+  ]
+}
+```
+
+### 6. Run the app and collect screenshots (Playwright)
+
+- Ensure the app is running: `pnpm run preview:it` (port 3010). Start it in the background if needed.
+- Use Playwright (the project already has it). Run a script or use the Playwright API.
+- For each USER-FACING FEATURE, review the code and figure out how to reproduce the behavior.
+- Navigate to the relevant view, perform any needed interactions, then capture a screenshot.
+- Save screenshots to `output/release-notes-screenshots/` with descriptive names. Use alphabetical ordering so they match bullet order (e.g. `01-sample-format-dialog.png`, `02-cf-card-view.png`).
+- Use `chromium.launch({ headless: true })` and `page.screenshot({ path: ... })`. See `scripts/integration/smoke.mjs` for patterns.
+
+### 7. Generate PDF (optional)
+
+- If a PDF is needed for external distribution, run: `node scripts/generate-release-notes-pdf.mjs --notes releasenotes.txt --screenshots output/release-notes-screenshots/ --output ReleaseNotes<date>-<githash>.pdf`
+- Use the same **commit date** and **last processed hash** for the filename, e.g. `ReleaseNotes2026-03-03-abc1234.pdf`.
+
+### 8. Persist the last processed hash
+
+- Determine the hash of the **last** commit you processed (the newest of the N commits you processed).
 - Write that hash to `.cursor/release-notes-last-hash.txt` (overwrite the file).
 - This becomes the new "start" for the next run.
 
@@ -49,8 +111,17 @@ Generate release notes from git history by reviewing commits and their diffs. Pr
 - Improved waveform rendering performance
 ```
 
+## Output format for releasenotes.pdf (optional)
+
+The PDF contains:
+
+- A title: "Release Notes" with the date and git hash
+- The release note bullets from the latest section of releasenotes.txt
+- Each screenshot embedded below its corresponding feature bullet (screenshots are matched by order: first bullet → first screenshot, etc.)
+
 ## Notes
 
 - Process at most COMMIT_LIMIT commits per run. Run the command again to continue.
 - Skip merge commits when counting toward the limit if they add no user-facing changes.
 - Focus on user-visible changes; omit internal refactors unless notable.
+- The JSON file is the primary output for the app's Release Mode. Curate and enrich it in Admin mode before release.

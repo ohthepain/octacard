@@ -1,3 +1,16 @@
+## 2025-11-08
+
+- Drag window by header bar (Electron)
+- Auto-navigate to CF card when inserted
+- Sample depth option (16-bit, 24-bit, preserve original)
+- Sample conversion via ffmpeg (WAV, rate, depth, mono, normalize)
+- Eject CF card with state persistence
+- Save and restore navigation state when reopening app
+- Navigate to parent folder
+- Unified file pane for local and CF card
+- File browser
+- Search and preview work simultaneously
+
 ## 2025-03-02
 
 - Auto-detect CF card insertion and removal

@@ -1397,10 +1397,12 @@ export const AudioPreview = ({
 
   const applyLoopLengthParts = useCallback(
     (parts: { bars: number; beats: number; sixteenths: number }) => {
-      const bars = Math.max(0, Math.floor(parts.bars));
-      const beats = Math.max(0, Math.floor(parts.beats));
-      const sixteenths = Math.max(0, Math.floor(parts.sixteenths));
-      const totalBeats = bars * parsedTimeSignature.beatsPerBar + beats + sixteenths / 4;
+      // Allow negative values for borrowing; compute total beats from raw parts
+      const bars = Math.floor(parts.bars);
+      const beats = Math.floor(parts.beats);
+      const sixteenths = Math.floor(parts.sixteenths);
+      let totalBeats = bars * parsedTimeSignature.beatsPerBar + beats + sixteenths / 4;
+      totalBeats = Math.max(0.25, totalBeats); // min 1 sixteenth
       const nextEnd = clampToDuration(loopStart + totalBeats * secondsPerBeat);
       if (nextEnd <= loopStart) return;
       setLoopEnd(nextEnd);
@@ -1541,7 +1543,7 @@ export const AudioPreview = ({
         const dy = loopPartDragRef.current.startY - moveE.clientY;
         const dx = moveE.clientX - loopPartDragRef.current.startX;
         const steps = Math.round((dy + dx) / 8);
-        const raw = Math.max(0, loopPartDragRef.current.startValue + steps);
+        const raw = loopPartDragRef.current.startValue + steps;
         const next = { ...getLoopLengthParts() };
         if (part === "bars") next.bars = raw;
         if (part === "beats") next.beats = raw;
@@ -1569,8 +1571,8 @@ export const AudioPreview = ({
       const next = { ...getLoopLengthParts() };
       const maxBars = secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999;
       if (part === "bars") next.bars = Math.min(maxBars, Math.max(0, next.bars + delta));
-      else if (part === "beats") next.beats = Math.min(parsedTimeSignature.beatsPerBar - 1, Math.max(0, next.beats + delta));
-      else if (part === "sixteenths") next.sixteenths = Math.min(3, Math.max(0, next.sixteenths + delta));
+      else if (part === "beats") next.beats = next.beats + delta;
+      else if (part === "sixteenths") next.sixteenths = next.sixteenths + delta;
       applyLoopLengthParts(next);
     },
     [applyLoopLengthParts, duration, getLoopLengthParts, parsedTimeSignature.beatsPerBar, secondsPerBar],
@@ -1948,49 +1950,57 @@ export const AudioPreview = ({
             <>
               <div className="text-[10px] uppercase text-muted-foreground">Len</div>
               <div
-                role="spinbutton"
-                tabIndex={0}
-                data-testid="loop-length-bars"
-                aria-label="Loop length bars"
-                aria-valuenow={loopLengthParts.bars}
-                aria-valuemin={0}
-                aria-valuemax={secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999}
-                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
-                onMouseDown={(e) => handleLoopPartDragStart("bars", e)}
-                onKeyDown={(e) => handleLoopPartKeyDown("bars", e)}
-                title="Drag or use arrow keys to adjust loop bars"
+                role="group"
+                aria-label="Loop length (bars : beats : sixteenths)"
+                className="h-7 w-[8.5rem] flex items-center rounded-md border border-input bg-background text-xs font-mono select-none"
               >
-                {loopLengthParts.bars}b
-              </div>
-              <div
-                role="spinbutton"
-                tabIndex={0}
-                data-testid="loop-length-beats"
-                aria-label="Loop length beats"
-                aria-valuenow={loopLengthParts.beats}
-                aria-valuemin={0}
-                aria-valuemax={parsedTimeSignature.beatsPerBar - 1}
-                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
-                onMouseDown={(e) => handleLoopPartDragStart("beats", e)}
-                onKeyDown={(e) => handleLoopPartKeyDown("beats", e)}
-                title="Drag or use arrow keys to adjust loop beats"
-              >
-                {loopLengthParts.beats}bt
-              </div>
-              <div
-                role="spinbutton"
-                tabIndex={0}
-                data-testid="loop-length-sixteenths"
-                aria-label="Loop length sixteenths"
-                aria-valuenow={loopLengthParts.sixteenths}
-                aria-valuemin={0}
-                aria-valuemax={3}
-                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
-                onMouseDown={(e) => handleLoopPartDragStart("sixteenths", e)}
-                onKeyDown={(e) => handleLoopPartKeyDown("sixteenths", e)}
-                title="Drag or use arrow keys to adjust loop sixteenths"
-              >
-                {loopLengthParts.sixteenths}x16
+                <span
+                  role="spinbutton"
+                  tabIndex={0}
+                  data-testid="loop-length-bars"
+                  aria-label="Loop length bars"
+                  aria-valuenow={loopLengthParts.bars}
+                  aria-valuemin={0}
+                  aria-valuemax={secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999}
+                  className="w-6 shrink-0 flex items-center justify-center cursor-move hover:bg-muted/50 rounded-l-[5px]"
+                  onMouseDown={(e) => handleLoopPartDragStart("bars", e)}
+                  onKeyDown={(e) => handleLoopPartKeyDown("bars", e)}
+                  title="Drag or use arrow keys to adjust loop bars"
+                >
+                  {String(loopLengthParts.bars).padStart(3, " ")}
+                </span>
+                <span className="w-3 shrink-0 flex items-center justify-center text-muted-foreground">:</span>
+                <span
+                  role="spinbutton"
+                  tabIndex={0}
+                  data-testid="loop-length-beats"
+                  aria-label="Loop length beats"
+                  aria-valuenow={loopLengthParts.beats}
+                  aria-valuemin={0}
+                  aria-valuemax={parsedTimeSignature.beatsPerBar - 1}
+                  className="w-6 shrink-0 flex items-center justify-center cursor-move hover:bg-muted/50"
+                  onMouseDown={(e) => handleLoopPartDragStart("beats", e)}
+                  onKeyDown={(e) => handleLoopPartKeyDown("beats", e)}
+                  title="Drag or use arrow keys to adjust loop beats"
+                >
+                  {String(loopLengthParts.beats).padStart(2, " ")}
+                </span>
+                <span className="w-3 shrink-0 flex items-center justify-center text-muted-foreground">:</span>
+                <span
+                  role="spinbutton"
+                  tabIndex={0}
+                  data-testid="loop-length-sixteenths"
+                  aria-label="Loop length sixteenths"
+                  aria-valuenow={loopLengthParts.sixteenths}
+                  aria-valuemin={0}
+                  aria-valuemax={3}
+                  className="w-6 shrink-0 flex items-center justify-center cursor-move hover:bg-muted/50 rounded-r-[5px]"
+                  onMouseDown={(e) => handleLoopPartDragStart("sixteenths", e)}
+                  onKeyDown={(e) => handleLoopPartKeyDown("sixteenths", e)}
+                  title="Drag or use arrow keys to adjust loop sixteenths"
+                >
+                  {String(loopLengthParts.sixteenths).padStart(2, " ")}
+                </span>
               </div>
               <Input
                 data-testid="audio-preview-time-signature"
