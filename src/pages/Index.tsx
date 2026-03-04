@@ -173,8 +173,16 @@ const Index = () => {
   const [requestedDestPath, setRequestedDestPath] = useState<string | null>(null);
   const [requestedSourceRevealPath, setRequestedSourceRevealPath] = useState<string | null>(null);
   const [requestedDestRevealPath, setRequestedDestRevealPath] = useState<string | null>(null);
-  const [selectedSourceItem, setSelectedSourceItem] = useState<{ path: string; type: "file" | "folder"; name: string } | null>(null);
-  const [selectedDestItem, setSelectedDestItem] = useState<{ path: string; type: "file" | "folder"; name: string } | null>(null);
+  const [selectedSourceItem, setSelectedSourceItem] = useState<{
+    path: string;
+    type: "file" | "folder";
+    name: string;
+  } | null>(null);
+  const [selectedDestItem, setSelectedDestItem] = useState<{
+    path: string;
+    type: "file" | "folder";
+    name: string;
+  } | null>(null);
   const [sourceRootVersion, setSourceRootVersion] = useState(0);
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
@@ -189,7 +197,7 @@ const Index = () => {
       isEmptyState: s.isEmptyState,
       multiSampleId: s.multiSampleId,
       close: s.close,
-    }))
+    })),
   );
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<{
@@ -283,7 +291,7 @@ const Index = () => {
               paneType: s.paneType,
               bpm: s.bpm,
               duration: s.duration,
-            }))
+            })),
           );
         }
       } else if (mode === "single" && singleFile) {
@@ -301,7 +309,7 @@ const Index = () => {
                 paneType: s.paneType,
                 bpm: s.bpm,
                 duration: s.duration,
-              }))
+              })),
             );
           }
         }
@@ -314,6 +322,7 @@ const Index = () => {
   useEffect(() => {
     if (typeof window !== "undefined" && (window as any).__octacardTestHooks) {
       (window as any).__octacardPlayerStore = usePlayerStore;
+      (window as any).__octacardMultiSampleStore = useMultiSampleStore;
     }
   }, []);
 
@@ -379,10 +388,7 @@ const Index = () => {
   };
 
   const handleStartConversion = async () => {
-    if (
-      !fileSystemService.hasRootForPane("source") ||
-      !fileSystemService.hasRootForPane("dest")
-    ) {
+    if (!fileSystemService.hasRootForPane("source") || !fileSystemService.hasRootForPane("dest")) {
       return;
     }
     const sourceSelection = selectedSourceItem ?? {
@@ -390,8 +396,7 @@ const Index = () => {
       type: "folder" as const,
       name: "",
     };
-    const destinationSelectionPath =
-      selectedDestItem?.type === "folder" ? selectedDestItem.path : destPath || "/";
+    const destinationSelectionPath = selectedDestItem?.type === "folder" ? selectedDestItem.path : destPath || "/";
 
     let files: FileSystemEntry[] = [];
     let sourceBasePath = sourceSelection.path;
@@ -427,9 +432,7 @@ const Index = () => {
       // Default behavior: preserve the selected source folder in destination.
       // Exception: when source and destination folder names match, copy only contents.
       sourceBasePath =
-        sourceSelection.path !== "/" && !hasSameFolderName
-          ? dirname(sourceSelection.path)
-          : sourceSelection.path;
+        sourceSelection.path !== "/" && !hasSameFolderName ? dirname(sourceSelection.path) : sourceSelection.path;
     }
 
     if (files.length === 0) {
@@ -453,9 +456,7 @@ const Index = () => {
     conversionAbortControllerRef.current = new AbortController();
 
     const targetSampleRate =
-      formatSettings.sampleRate === "dont-change"
-        ? undefined
-        : parseInt(formatSettings.sampleRate, 10);
+      formatSettings.sampleRate === "dont-change" ? undefined : parseInt(formatSettings.sampleRate, 10);
 
     setConversionProgress({
       isVisible: true,
@@ -499,14 +500,10 @@ const Index = () => {
           break;
         }
         const entry = files[i];
-        setConversionProgress((p) =>
-          p ? { ...p, current: i, currentFile: entry.name } : p
-        );
+        setConversionProgress((p) => (p ? { ...p, current: i, currentFile: entry.name } : p));
 
         const sourcePrefix = sourceBasePath === "/" ? "/" : `${sourceBasePath}/`;
-        const relativePath = entry.path.startsWith(sourcePrefix)
-          ? entry.path.slice(sourcePrefix.length)
-          : entry.name;
+        const relativePath = entry.path.startsWith(sourcePrefix) ? entry.path.slice(sourcePrefix.length) : entry.name;
         const dirParts = relativePath.split("/");
         let fileName = dirParts.pop() || entry.name;
 
@@ -518,17 +515,12 @@ const Index = () => {
           const pathParts = entry.path.split("/").filter(Boolean);
           if (pathParts.length >= 2) {
             parentFolderName = pathParts[pathParts.length - 2];
-            bpmResult = parentFolderName
-              ? parseBpmFromString(parentFolderName)
-              : null;
+            bpmResult = parentFolderName ? parseBpmFromString(parentFolderName) : null;
             tempoFromFolder = !!bpmResult;
           }
         }
 
-        const targetBpm =
-          formatSettings.tempo !== "dont-change"
-            ? parseInt(formatSettings.tempo, 10)
-            : undefined;
+        const targetBpm = formatSettings.tempo !== "dont-change" ? parseInt(formatSettings.tempo, 10) : undefined;
         const sourceBpm = bpmResult?.bpm;
         const applyTempo =
           targetBpm != null &&
@@ -536,21 +528,15 @@ const Index = () => {
           sourceBpm != null &&
           formatSettings.tempo !== "dont-change";
 
-        let destDir = dirParts.length
-          ? `${destinationBasePath}/${dirParts.join("/")}`
-          : destinationBasePath;
+        let destDir = dirParts.length ? `${destinationBasePath}/${dirParts.join("/")}` : destinationBasePath;
 
         if (applyTempo) {
           if (tempoFromFolder && parentFolderName) {
             const updatedDirParts = dirParts.map((p) =>
-              p === parentFolderName
-                ? replaceBpmInString(p, sourceBpm, targetBpm)
-                : p
+              p === parentFolderName ? replaceBpmInString(p, sourceBpm, targetBpm) : p,
             );
             destDir =
-              updatedDirParts.length > 0
-                ? `${destinationBasePath}/${updatedDirParts.join("/")}`
-                : destinationBasePath;
+              updatedDirParts.length > 0 ? `${destinationBasePath}/${updatedDirParts.join("/")}` : destinationBasePath;
           } else {
             fileName = replaceBpmInString(entry.name, sourceBpm, targetBpm);
           }
@@ -614,9 +600,7 @@ const Index = () => {
         return;
       }
 
-      setConversionProgress((p) =>
-        p ? { ...p, current: files.length, currentFile: "" } : p
-      );
+      setConversionProgress((p) => (p ? { ...p, current: files.length, currentFile: "" } : p));
       setDestRefreshToken((v) => v + 1);
       setPendingConversionRequest(null);
       setTimeout(() => setConversionProgress(null), 500);
@@ -624,16 +608,13 @@ const Index = () => {
       if (errors.length > 0) {
         const failedCount = errors.length;
         const totalCount = files.length;
-        toast.error(
-          failedCount === totalCount ? "Conversion Failed" : "Some Files Failed",
-          {
-            description:
-              failedCount === totalCount
-                ? errors[0]?.error ?? "Unable to convert files."
-                : `${failedCount} of ${totalCount} files failed: ${errors.map((e) => e.name).join(", ")}`,
-            duration: 6000,
-          }
-        );
+        toast.error(failedCount === totalCount ? "Conversion Failed" : "Some Files Failed", {
+          description:
+            failedCount === totalCount
+              ? (errors[0]?.error ?? "Unable to convert files.")
+              : `${failedCount} of ${totalCount} files failed: ${errors.map((e) => e.name).join(", ")}`,
+          duration: 6000,
+        });
       }
 
       const hasConversion =
@@ -715,7 +696,7 @@ const Index = () => {
 
   const applyBrowseSelection = (
     paneType: "source" | "dest",
-    selection: { reusedExistingRoot: boolean; virtualPath: string }
+    selection: { reusedExistingRoot: boolean; virtualPath: string },
   ) => {
     const revealPath = selection.virtualPath === "/" ? null : selection.virtualPath;
     if (paneType === "source") {
@@ -774,7 +755,8 @@ const Index = () => {
         }
         if (selectedSourceItem?.type === "file" && isAudioFile(selectedSourceItem.name)) {
           const alreadyAdded = toAdd.some((s) => s.path === selectedSourceItem.path);
-          if (!alreadyAdded) toAdd.push({ path: selectedSourceItem.path, name: selectedSourceItem.name, paneType: "source" });
+          if (!alreadyAdded)
+            toAdd.push({ path: selectedSourceItem.path, name: selectedSourceItem.name, paneType: "source" });
         }
         if (selectedDestItem?.type === "file" && isAudioFile(selectedDestItem.name)) {
           const alreadyAdded = toAdd.some((s) => s.path === selectedDestItem.path);
@@ -786,14 +768,16 @@ const Index = () => {
           const { slots, activeSlotIndex } = useMultiSampleStore.getState();
           const sample = slots[activeSlotIndex];
           if (sample) {
-            useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+            useWaveformEditorStore
+              .getState()
+              .openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
           }
         }
       } else {
         setPreviewMode("single");
       }
     },
-    [setPreviewMode, addSamplesToStack, selectedSourceItem, selectedDestItem]
+    [setPreviewMode, addSamplesToStack, selectedSourceItem, selectedDestItem],
   );
 
   const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
@@ -839,7 +823,7 @@ const Index = () => {
             data-testid="multi-mode-toggle"
             onClick={() => handlePreviewModeChange(previewMode === "multi" ? "single" : "multi")}
           >
-            Multi
+            Stack
           </Button>
           <Button
             variant="outline"
@@ -885,10 +869,7 @@ const Index = () => {
             asChild
             aria-label="Help"
           >
-            <Link
-              to="/help"
-              onClick={() => capture("octacard_help_clicked", { source: "header" })}
-            >
+            <Link to="/help" onClick={() => capture("octacard_help_clicked", { source: "header" })}>
               <HelpCircle className="w-4 h-4" />
             </Link>
           </Button>
@@ -935,11 +916,7 @@ const Index = () => {
           <ResizableHandle withHandle />
 
           {/* Source Browser - center separator only affects source vs dest */}
-          <ResizablePanel
-            id="source-browser"
-            defaultSize="30%"
-            minSize="15%"
-          >
+          <ResizablePanel id="source-browser" defaultSize="30%" minSize="15%">
             <div className="h-full min-h-0" data-testid="panel-source">
               <FilePane
                 key={`source-${sourceRootVersion}`}
@@ -974,11 +951,7 @@ const Index = () => {
           <ResizableHandle withHandle />
 
           {/* Dest Browser - center separator only affects source vs dest */}
-          <ResizablePanel
-            id="dest-browser"
-            defaultSize="30%"
-            minSize="15%"
-          >
+          <ResizablePanel id="dest-browser" defaultSize="30%" minSize="15%">
             <div className="h-full min-h-0" data-testid="panel-dest">
               <FilePane
                 key={`dest-${destRootVersion}`}
@@ -1050,8 +1023,9 @@ const Index = () => {
           <DialogHeader>
             <DialogTitle>Browser Not Supported</DialogTitle>
             <DialogDescription>
-              OctaCard requires the File System Access API and currently supports Brave, Chrome, and other Chromium-based
-              browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.
+              OctaCard requires the File System Access API and currently supports Brave, Chrome, and other
+              Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are
+              not supported.
             </DialogDescription>
           </DialogHeader>
         </DialogContent>
@@ -1114,10 +1088,7 @@ const Index = () => {
                     {conversionProgress.current} of {conversionProgress.total} files
                   </span>
                 </div>
-                <Progress
-                  value={(conversionProgress.current / conversionProgress.total) * 100}
-                  className="h-2"
-                />
+                <Progress value={(conversionProgress.current / conversionProgress.total) * 100} className="h-2" />
               </div>
             </div>
           </DialogContent>
@@ -1141,9 +1112,7 @@ const Index = () => {
                 conversionCancelRequestedRef.current = true;
                 setCancelConversionPromptOpen(false);
                 conversionAbortControllerRef.current?.abort();
-                setConversionProgress((p) =>
-                  p ? { ...p, currentFile: "Cancelling conversion..." } : p
-                );
+                setConversionProgress((p) => (p ? { ...p, currentFile: "Cancelling conversion..." } : p));
               }}
             >
               Cancel Conversion

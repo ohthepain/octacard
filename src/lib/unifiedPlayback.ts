@@ -48,6 +48,14 @@ export interface PlaybackHandle {
    * Returns a promise that resolves when the switch is scheduled.
    */
   scheduleSwitchAtNextBar: (path: string, paneType: PaneType) => Promise<void>;
+  /**
+   * Update volume for a specific sample in real-time (does not interrupt playback).
+   */
+  setSampleVolume: (sampleId: string, volume: number) => void;
+  /**
+   * Update master volume in real-time (does not interrupt playback).
+   */
+  setMasterVolume: (volume: number) => void;
 }
 
 /**
@@ -62,12 +70,14 @@ export async function startUnifiedPlayback(
     globalTempoBpm?: number;
     /** Override initial play position (for restart after loop length change) */
     overridePlayStart?: Record<string, number>;
+    /** Per-sample volume overrides (sampleId -> volume 0-1) */
+    sampleVolumes?: Record<string, number>;
     onTimeUpdate?: (sampleId: string, currentTime: number) => void;
     onPositionsUpdate?: (positions: Record<string, number>) => void;
     onEnded?: () => void;
   }
 ): Promise<PlaybackHandle> {
-  const { volume = 1, playbackRate = 1, globalTempoBpm = 120, overridePlayStart, onTimeUpdate, onPositionsUpdate, onEnded } = options;
+  const { volume = 1, playbackRate = 1, globalTempoBpm = 120, overridePlayStart, sampleVolumes = {}, onTimeUpdate, onPositionsUpdate, onEnded } = options;
   const getEdits = useSampleEditsStore.getState().getEdits;
   const setCurrentTime = usePlayerStore.getState().setCurrentTime;
   const setPlaying = (v: boolean) => usePlayerStore.setState({ isPlaying: v });
@@ -103,6 +113,8 @@ export async function startUnifiedPlayback(
     playbackRate: number;
     loopDuration: number;
     playDuration: number; // loopEnd - playStart, for loop-off duration
+    gainNode: GainNode;
+    baseVolume: number; // The base volume multiplier (from envelope or 1)
   }[] = [];
   let rafId = 0;
   let stopped = false;
@@ -161,21 +173,24 @@ export async function startUnifiedPlayback(
     }
 
     const gainNode = ctx.createGain();
+    const sampleVolume = sampleVolumes[sample.id] ?? 1;
     const playDuration = loopEndExact - playStartExact;
+    let baseVolume = volume;
     if (envelopePoints.length > 0) {
       const envInterval = 0.01;
-      let lastGain = getGainAtTime(envelopePoints, playStartExact) * volume;
+      let lastGain = getGainAtTime(envelopePoints, playStartExact) * volume * sampleVolume;
       gainNode.gain.setValueAtTime(lastGain, 0);
       for (let bufT = envInterval; bufT < playDuration; bufT += envInterval) {
         const bufTime = playStartExact + bufT;
-        const gain = getGainAtTime(envelopePoints, bufTime) * volume;
+        const gain = getGainAtTime(envelopePoints, bufTime) * volume * sampleVolume;
         const outTime = bufT / rate;
         gainNode.gain.linearRampToValueAtTime(gain, outTime);
         lastGain = gain;
       }
-      gainNode.gain.setValueAtTime(getGainAtTime(envelopePoints, loopEndExact) * volume, playDuration / rate);
+      gainNode.gain.setValueAtTime(getGainAtTime(envelopePoints, loopEndExact) * volume * sampleVolume, playDuration / rate);
+      baseVolume = getGainAtTime(envelopePoints, playStartExact);
     } else {
-      gainNode.gain.value = volume;
+      gainNode.gain.value = volume * sampleVolume;
     }
     source.connect(gainNode);
     gainNode.connect(masterGain);
@@ -209,6 +224,8 @@ export async function startUnifiedPlayback(
       playbackRate: rate,
       loopDuration: loopDurationExact,
       playDuration: duration,
+      gainNode,
+      baseVolume,
     });
   }
 
@@ -361,6 +378,65 @@ export async function startUnifiedPlayback(
     usePlayerStore.setState({ singleFile: { path: newPath, paneType: newPaneType }, activeSampleId: newPath });
   }
 
+  function setMasterVolumeImpl(newVolume: number): void {
+    if (stopped) return;
+    const clampedVolume = Math.max(0, Math.min(1, newVolume));
+    const now = ctx.currentTime;
+    masterGain.gain.cancelScheduledValues(now);
+    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+    masterGain.gain.linearRampToValueAtTime(clampedVolume, now + 0.01);
+  }
+
+  function setSampleVolumeImpl(sampleId: string, newVolume: number): void {
+    if (stopped) return;
+    const clampedVolume = Math.max(0, Math.min(1, newVolume));
+    const s = sources.find((src) => src.sampleId === sampleId);
+    if (!s) return;
+    
+    const now = ctx.currentTime;
+    if (s.envelopePoints.length > 0) {
+      // For envelope-based gain, we need to recalculate the gain curve
+      // Get current position in the loop
+      const startTime = startTimes.get(sampleId) ?? now;
+      const elapsed = now - startTime;
+      const elapsedInBuffer = elapsed * s.playbackRate;
+      const loopDuration = s.loopEnd - s.loopStart;
+      const posInLoop = ((s.playStart - s.loopStart + elapsedInBuffer) % loopDuration + loopDuration) % loopDuration;
+      const currentTimeSec = s.loopStart + posInLoop;
+      
+      // Get current envelope gain
+      const envelopeGain = getGainAtTime(s.envelopePoints, currentTimeSec);
+      const masterVol = masterGain.gain.value;
+      const newGain = envelopeGain * masterVol * clampedVolume;
+      
+      // Update gain smoothly
+      s.gainNode.gain.cancelScheduledValues(now);
+      s.gainNode.gain.setValueAtTime(s.gainNode.gain.value, now);
+      s.gainNode.gain.linearRampToValueAtTime(newGain, now + 0.01);
+      
+      // Reschedule envelope for the rest of the loop
+      const playDuration = s.loopEnd - s.playStart;
+      const remainingTime = playDuration - posInLoop;
+      const envInterval = 0.01;
+      let lastGain = newGain;
+      for (let bufT = envInterval; bufT < remainingTime; bufT += envInterval) {
+        const bufTime = currentTimeSec + bufT;
+        const envelopeGainAtTime = getGainAtTime(s.envelopePoints, bufTime);
+        const gain = envelopeGainAtTime * masterVol * clampedVolume;
+        const outTime = now + bufT / s.playbackRate;
+        s.gainNode.gain.linearRampToValueAtTime(gain, outTime);
+        lastGain = gain;
+      }
+    } else {
+      // Simple volume update
+      const masterVol = masterGain.gain.value;
+      const newGain = masterVol * clampedVolume;
+      s.gainNode.gain.cancelScheduledValues(now);
+      s.gainNode.gain.setValueAtTime(s.gainNode.gain.value, now);
+      s.gainNode.gain.linearRampToValueAtTime(newGain, now + 0.01);
+    }
+  }
+
   return {
     stop: () => {
       if (stopped) return;
@@ -395,5 +471,7 @@ export async function startUnifiedPlayback(
       return newPos;
     },
     scheduleSwitchAtNextBar: scheduleSwitchAtNextBarImpl,
+    setSampleVolume: setSampleVolumeImpl,
+    setMasterVolume: setMasterVolumeImpl,
   };
 }

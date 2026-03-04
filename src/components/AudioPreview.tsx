@@ -4,6 +4,7 @@ import {
   SkipBack,
   SkipForward,
   Volume2,
+  VolumeX,
   X,
   ZoomIn,
   ZoomOut,
@@ -165,6 +166,8 @@ export const AudioPreview = ({
   const stopPlayer = usePlayerStore((s) => s.stop);
   const requestSwitchAtNextBar = usePlayerStore((s) => s.requestSwitchAtNextBar);
   const setActiveSample = usePlayerStore((s) => s.setActiveSample);
+  const muted = usePlayerStore((s) => s.muted);
+  const setMuted = usePlayerStore((s) => s.setMuted);
   const stack = useMultiSampleStore((s) => s.stack);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -1287,12 +1290,13 @@ export const AudioPreview = ({
   }, [playbackRate]);
 
   // Update volume (wavesurfer for slice playback; player store for unified playback)
+  // Mute is separate: player store holds remembered volume + muted; playback uses effective = muted ? 0 : volume
   useEffect(() => {
     usePlayerStore.getState().setVolume(volume);
     if (wavesurferRef.current) {
-      wavesurferRef.current.setVolume(volume);
+      wavesurferRef.current.setVolume(muted ? 0 : volume);
     }
-  }, [volume]);
+  }, [volume, muted]);
 
   // Sync region drag selection with envelope toggle
   useEffect(() => {
@@ -2742,7 +2746,18 @@ export const AudioPreview = ({
 
         {/* Volume Control */}
         <div className="flex items-center gap-2 shrink-0" style={{ width: "128px", minWidth: "128px" }}>
-          <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
+          <button
+            type="button"
+            onClick={() => setMuted(!muted)}
+            className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded"
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? (
+              <VolumeX className="w-4 h-4" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
+          </button>
           <Slider
             value={[volume]}
             max={1}
