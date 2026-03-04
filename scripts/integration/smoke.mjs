@@ -33,6 +33,7 @@ import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-fold
 import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils.mjs";
 import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
 import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
+import { assertLoopLengthResetsOnSampleChange } from "../../tests/loop-length-resets-on-sample-change.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
 import { testInitScript } from "./init-test.mjs";
@@ -175,6 +176,7 @@ try {
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
   await assertBarsBeatsSupport(page);
   await assertSampleStartEndBar(page);
+  await assertLoopLengthResetsOnSampleChange(page);
   await assertWaveformTimeModeToggle(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
