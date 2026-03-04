@@ -235,6 +235,7 @@ export const AudioPreview = ({
   const [hoveredSliceKey, setHoveredSliceKey] = useState<string | null>(null);
   const [timeDisplayMode, setTimeDisplayMode] = useState<"clock" | "bars">("clock");
   const [tempoBpm, setTempoBpm] = useState(120);
+  const [tempoEditingValue, setTempoEditingValue] = useState<string | null>(null);
   const [timeSignature, setTimeSignature] = useState("4/4");
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(0);
@@ -485,13 +486,7 @@ export const AudioPreview = ({
   }, [filePath, paneType, isEmptyState]);
 
   const sliceDetectionRunForRef = useRef<string | null>(null);
-
-  // #region agent log
-  useEffect(() => {
-    if (!filePath || isEmptyState) return;
-    fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:filePathChange',message:'filePath changed',data:{filePath,loopStart,loopEnd,duration},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
-  }, [filePath, isEmptyState]);
-  // #endregion
+  const prevFilePathForLoopRef = useRef<string | null>(null);
 
   // On load: parse embedded metadata (tempo/timesig/slices/start-end).
   // Uses fileSystemService to avoid wrong buffer when audioUrl is stale during sample switch.
@@ -512,6 +507,10 @@ export const AudioPreview = ({
           else {
             const bpmResult = parseBpmFromString(fileName ?? "");
             if (bpmResult?.bpm) setTempoBpm(bpmResult.bpm);
+            else {
+              const mainTempo = useMultiSampleStore.getState().globalTempoBpm;
+              if (Number.isFinite(mainTempo) && mainTempo > 0) setTempoBpm(mainTempo);
+            }
           }
           if (parsed.timeSignature) setTimeSignature(parsed.timeSignature);
           if (parsed.rootKey != null && Number.isFinite(parsed.rootKey)) setRootKey(String(parsed.rootKey));
@@ -524,19 +523,10 @@ export const AudioPreview = ({
               ? parsed.sampleEndFrame / parsed.sampleRate
               : Math.max(metadataStart, duration || durationFromFile);
           const edits = getEdits(filePath);
-          // #region agent log
-          const barsFromMeta = (metadataEnd - metadataStart) * (parsed.tempo ?? 120) / 240;
-          fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:metadataEffect',message:'Metadata parsed for new file',data:{filePath,editsFromStore:edits,durationFromFile,metadataStart,metadataEnd,barsFromMeta,durationState:duration},timestamp:Date.now(),hypothesisId:'B,C'})}).catch(()=>{});
-          // #endregion
           const dur = duration || metadataEnd;
-          const loopStartVal = edits?.loopStart ?? Math.max(0, metadataStart);
-          const loopEndVal = edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd);
-          const usedEdits = edits != null && (edits.loopStart != null || edits.loopEnd != null);
-          // #region agent log
-          fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:metadataEffect',message:'Setting loop from edits or metadata',data:{loopStartVal,loopEndVal,usedEdits,editsLoopStart:edits?.loopStart,editsLoopEnd:edits?.loopEnd},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
-          setLoopStart(loopStartVal);
-          setLoopEnd(loopEndVal);
+          prevFilePathForLoopRef.current = filePath;
+          setLoopStart(edits?.loopStart ?? Math.max(0, metadataStart));
+          setLoopEnd(edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd));
           setPlayStart(edits?.playStart ?? Math.max(0, metadataStart));
           setLoopEnabled(edits?.loopEnabled ?? true);
 
@@ -565,10 +555,9 @@ export const AudioPreview = ({
 
   // Persist loop settings to sample-edits-store when they change (after file has loaded)
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/a31e75e3-8f4d-4254-8a14-777131006b0f',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'759e87'},body:JSON.stringify({sessionId:'759e87',location:'AudioPreview.tsx:persistEffect',message:'Persist effect ran',data:{filePath,loopStart,loopEnd,duration,willReturnEarly:!filePath||isEmptyState||duration<=0},timestamp:Date.now(),hypothesisId:'A,D'})}).catch(()=>{});
-    // #endregion
     if (!filePath || isEmptyState || duration <= 0) return;
+    // Skip persist when loop values are from a different file (filePath changed but metadata not yet loaded)
+    if (filePath !== prevFilePathForLoopRef.current) return;
     const existing = getEdits(filePath) ?? {};
     const prevLoopStart = existing.loopStart;
     const prevLoopEnd = existing.loopEnd;
@@ -671,6 +660,7 @@ export const AudioPreview = ({
   const prevFilePathRef = useRef<string | null>(null);
   useEffect(() => {
     if (isEmptyState || !filePath) {
+      prevFilePathForLoopRef.current = null;
       setSliceMarkers([]);
       setSliceConfidenceOverrides(new Map<string, number>());
       setSlicePositionOverrides(new Map<string, number>());
@@ -2306,10 +2296,17 @@ export const AudioPreview = ({
               <Input
                 data-testid="audio-preview-tempo"
                 className="h-7 w-[68px] text-xs font-mono"
-                value={String(Math.round(tempoBpm))}
-                onChange={(e) => {
-                  const v = Number.parseFloat(e.target.value);
-                  if (Number.isFinite(v)) setTempoBpm(Math.max(1, v));
+                inputMode="numeric"
+                value={tempoEditingValue ?? String(Math.round(tempoBpm))}
+                onFocus={() => setTempoEditingValue(String(Math.round(tempoBpm)))}
+                onChange={(e) => setTempoEditingValue(e.target.value)}
+                onBlur={() => {
+                  const n = Number.parseFloat(tempoEditingValue ?? "");
+                  if (Number.isFinite(n) && n >= 50 && n <= 240) setTempoBpm(n);
+                  setTempoEditingValue(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                 }}
                 disabled={isLoading}
                 title="Tempo BPM"
