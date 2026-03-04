@@ -28,7 +28,38 @@ export function testInitScript() {
     view.setUint32(40, numSamples, true);
     return new Blob([buffer], { type: "audio/wav" });
   }
+  /** Minimal valid AIFF (0.1s stereo 44.1kHz 16-bit) for FFmpeg conversion tests. */
+  function createMinimalAiffBlob() {
+    const sampleRate = 44100;
+    const numFrames = 4410;
+    const numChannels = 2;
+    const pcmBytes = numFrames * numChannels * 2;
+    const commSize = 18;
+    const ssndSize = 8 + pcmBytes;
+    const formSize = 4 + commSize + 4 + ssndSize;
+    const totalSize = 8 + formSize;
+    const buf = new ArrayBuffer(totalSize);
+    const v = new DataView(buf);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    let o = 0;
+    w(o, "FORM"); o += 4;
+    v.setUint32(o, formSize, false); o += 4;
+    w(o, "AIFF"); o += 4;
+    w(o, "COMM"); o += 4;
+    v.setUint32(o, commSize, false); o += 4;
+    v.setUint16(o, numChannels, false); o += 2;
+    v.setUint32(o, numFrames, false); o += 4;
+    v.setUint16(o, 16, false); o += 2;
+    v.setUint8(o++, 0x40); v.setUint8(o++, 0x0f); v.setUint8(o++, 0x8c); v.setUint8(o++, 0);
+    for (let i = 0; i < 6; i++) v.setUint8(o++, 0);
+    w(o, "SSND"); o += 4;
+    v.setUint32(o, ssndSize, false); o += 4;
+    v.setUint32(o, 0, false); o += 4;
+    v.setUint32(o, 0, false); o += 4;
+    return new Blob([buf], { type: "audio/aiff" });
+  }
   const minimalWavBlob = createMinimalWavBlob();
+  const minimalAiffBlob = createMinimalAiffBlob();
 
   class MockFileHandle {
     constructor(name, size = 64) {
@@ -40,6 +71,9 @@ export function testInitScript() {
     async getFile() {
       if (/\.wav$/i.test(this.name)) {
         return new File([minimalWavBlob], this.name, { type: "audio/wav", lastModified: Date.now() });
+      }
+      if (/\.(aif|aiff)$/i.test(this.name)) {
+        return new File([minimalAiffBlob], this.name, { type: "audio/aiff", lastModified: Date.now() });
       }
       return new File([new Uint8Array(this._size)], this.name, { lastModified: Date.now() });
     }
@@ -138,6 +172,9 @@ export function testInitScript() {
   for (let i = 1; i <= 300; i++) {
     huge.addFile(`huge-${i}.wav`, 64);
   }
+  const fixtures = root.addDirectory(new MockDirectoryHandle("Fixtures"));
+  fixtures.addFile("TVD_120_resampled_break_tape_vinyl_bear.wav", 128);
+  fixtures.addFile("KJ_SAWKA_Drum_and_Bass_170_bpm_4bar14.aif", 128);
 
   const ensureDirectoryByPath = (virtualPath) => {
     const parts = virtualPath.split("/").filter(Boolean);
@@ -224,6 +261,15 @@ export function testInitScript() {
             size: 64,
             isDirectory: false,
           })),
+        };
+      }
+      if (startPath === "/Fixtures") {
+        return {
+          success: true,
+          data: [
+            { name: "TVD_120_resampled_break_tape_vinyl_bear.wav", path: "/Fixtures/TVD_120_resampled_break_tape_vinyl_bear.wav", type: "file", size: 128, isDirectory: false },
+            { name: "KJ_SAWKA_Drum_and_Bass_170_bpm_4bar14.aif", path: "/Fixtures/KJ_SAWKA_Drum_and_Bass_170_bpm_4bar14.aif", type: "file", size: 128, isDirectory: false },
+          ],
         };
       }
       return { success: true, data: [] };

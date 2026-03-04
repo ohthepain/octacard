@@ -34,6 +34,8 @@ import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils
 import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
 import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
 import { assertLoopLengthResetsOnSampleChange } from "../../tests/loop-length-resets-on-sample-change.mjs";
+import { assertSpaceBarPlaysCurrentSample } from "../../tests/space-bar-plays-current-sample.mjs";
+import { assertAudioLoadAiffAndWav } from "../../tests/audio-load-aiff-wav.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
 import { testInitScript } from "./init-test.mjs";
@@ -177,7 +179,9 @@ try {
   await assertBarsBeatsSupport(page);
   await assertSampleStartEndBar(page);
   await assertLoopLengthResetsOnSampleChange(page);
+  await assertSpaceBarPlaysCurrentSample(page);
   await assertWaveformTimeModeToggle(page);
+  await assertAudioLoadAiffAndWav(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(

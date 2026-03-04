@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { usePlayerStore } from "./player-store";
 
 interface WaveformEditorState {
   isOpen: boolean;
@@ -35,15 +36,21 @@ export const useWaveformEditorStore = create<WaveformEditorState>((set) => ({
       multiSampleId: null,
     }),
 
-  openWithFile: (filePath, fileName, paneType) =>
-    set({
+  openWithFile: (filePath, fileName, paneType) => {
+    const player = usePlayerStore.getState();
+    if (player.mode === "single" && player.isPlaying) {
+      player.stop();
+      usePlayerStore.getState().playSingle(filePath, paneType);
+    }
+    return set({
       isOpen: true,
       isEmptyState: false,
       filePath,
       fileName,
       paneType,
       multiSampleId: null,
-    }),
+    });
+  },
 
   openWithFileFromMulti: (filePath, fileName, paneType, sampleId) =>
     set({

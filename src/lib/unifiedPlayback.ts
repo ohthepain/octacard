@@ -4,6 +4,7 @@
  */
 
 import { fileSystemService } from "./fileSystem";
+import { ensureAudioDecodable } from "./audioConverter";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { usePlayerStore } from "@/stores/player-store";
 import type { PaneType } from "@/stores/multi-sample-store";
@@ -122,7 +123,8 @@ export async function startUnifiedPlayback(
     const result = await fileSystemService.getAudioFileBlob(sample.path, sample.paneType);
     if (!result.success || !result.data) continue;
 
-    const res = await fetch(result.data);
+    const decodableUrl = await ensureAudioDecodable(result.data, sample.path);
+    const res = await fetch(decodableUrl);
     const arrayBuffer = await res.arrayBuffer();
     const buffer = await ctx.decodeAudioData(arrayBuffer);
     const bufferDuration = buffer.duration;
@@ -245,6 +247,7 @@ export async function startUnifiedPlayback(
     cancelAnimationFrame(rafId);
     for (const s of sources) {
       try {
+        s.source.onended = null;
         s.source.stop();
       } catch {
         // ignore
@@ -275,7 +278,8 @@ export async function startUnifiedPlayback(
     const result = await fileSystemService.getAudioFileBlob(newPath, newPaneType);
     if (!result.success || !result.data || stopped) return;
 
-    const res = await fetch(result.data);
+    const decodableUrl = await ensureAudioDecodable(result.data, newPath);
+    const res = await fetch(decodableUrl);
     const arrayBuffer = await res.arrayBuffer();
     const buffer = await ctx.decodeAudioData(arrayBuffer);
     if (stopped) return;

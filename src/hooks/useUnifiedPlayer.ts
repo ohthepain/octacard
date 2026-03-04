@@ -12,9 +12,63 @@ import { startUnifiedPlayback, type PlaybackHandle } from "@/lib/unifiedPlayback
 export function useUnifiedPlayer() {
   const playbackRef = useRef<PlaybackHandle | null>(null);
   const prevIsPlayingRef = useRef(false);
+  const prevMultiStackRef = useRef<{ id: string; path: string }[]>([]);
 
   useEffect(() => {
     prevIsPlayingRef.current = usePlayerStore.getState().isPlaying;
+    prevMultiStackRef.current = useMultiSampleStore.getState().stack.map((s) => ({ id: s.id, path: s.path }));
+
+    const unsubMulti = useMultiSampleStore.subscribe(() => {
+      const playerState = usePlayerStore.getState();
+      if (!playerState.isPlaying || playerState.mode !== "multi") return;
+      const multiStack = useMultiSampleStore.getState().stack;
+      const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
+      if (multiStack.length === 0 || !hasValidBars) return;
+      const prevStack = prevMultiStackRef.current;
+      const currKeys = multiStack.map((s) => `${s.id}:${s.path}`).join(",");
+      const prevKeys = prevStack.map((s) => `${s.id}:${s.path}`).join(",");
+      if (currKeys === prevKeys) return;
+      prevMultiStackRef.current = multiStack.map((s) => ({ id: s.id, path: s.path }));
+
+      playbackRef.current?.stopSilent();
+      playbackRef.current = null;
+      usePlayerStore.setState({ stack: multiStack, activeSampleId: multiStack[0]?.id ?? null });
+      const { volume, playbackRate } = playerState;
+      const globalTempoBpm = useMultiSampleStore.getState().globalTempoBpm;
+      const setPlayingSamplePosition = useMultiSampleStore.getState().setPlayingSamplePosition;
+      const setPlayingSamplePositions = useMultiSampleStore.getState().setPlayingSamplePositions;
+      const samples = multiStack.map((s) => ({
+        id: s.id,
+        path: s.path,
+        paneType: s.paneType,
+        bpm: s.bpm,
+        duration: s.duration,
+      }));
+      startUnifiedPlayback("multi", samples, {
+        volume,
+        playbackRate: 1,
+        globalTempoBpm,
+        onTimeUpdate: (sampleId, t) => {
+          usePlayerStore.getState().setCurrentTime(t);
+          if (useWaveformEditorStore.getState().multiSampleId === sampleId) {
+            setPlayingSamplePosition({ sampleId, currentTime: t });
+          }
+        },
+        onPositionsUpdate: (positions) => setPlayingSamplePositions(positions),
+        onEnded: () => {
+          playbackRef.current = null;
+          setPlayingSamplePosition(null);
+          setPlayingSamplePositions({});
+        },
+      })
+        .then((h) => { playbackRef.current = h; })
+        .catch((err) => {
+          console.warn("Multi stack-change restart failed:", err);
+          usePlayerStore.getState().stop();
+          setPlayingSamplePosition(null);
+          setPlayingSamplePositions({});
+        });
+    });
 
     const unsub = usePlayerStore.subscribe((state) => {
       const prevPlaying = prevIsPlayingRef.current;
@@ -79,7 +133,7 @@ export function useUnifiedPlayer() {
       }
 
       if (!state.isPlaying && prevPlaying) {
-        playbackRef.current?.stop();
+        playbackRef.current?.stopSilent();
         playbackRef.current = null;
         return;
       }
@@ -162,6 +216,7 @@ export function useUnifiedPlayer() {
 
     return () => {
       unsub();
+      unsubMulti();
       playbackRef.current?.stop();
       playbackRef.current = null;
     };

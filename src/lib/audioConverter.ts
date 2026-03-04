@@ -6,6 +6,27 @@ let ffmpegInstance: FFmpeg | null = null;
 let isInitialized = false;
 let isInitializing = false;
 
+/** Serialize FFmpeg conversions to avoid FS conflicts when multiple AIFF loads run in parallel. */
+let conversionMutex = Promise.resolve<void>(undefined);
+
+function withConversionMutex<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = conversionMutex;
+  let resolveMutex: () => void;
+  conversionMutex = new Promise<void>((r) => {
+    resolveMutex = r;
+  });
+  return prev.then(
+    () =>
+      fn().finally(() => {
+        resolveMutex!();
+      }),
+    (err) => {
+      resolveMutex!();
+      throw err;
+    }
+  );
+}
+
 export function cancelActiveConversion(): void {
   if (ffmpegInstance) {
     try {
@@ -163,6 +184,7 @@ export async function convertAudio(
   inputFile: File,
   options: ConversionOptions
 ): Promise<Blob> {
+  return withConversionMutex(async () => {
   let fileToConvert = inputFile;
 
   // Pre-process with region trim and envelope if specified
@@ -314,6 +336,35 @@ export async function convertAudio(
     } catch {
       // Ignore cleanup errors
     }
+    throw error;
+  }
+  });
+}
+
+/** Extensions that browsers typically cannot decode natively (AIFF). */
+const AIFF_EXT = /\.(aif|aiff)$/i;
+
+/**
+ * Ensures a blob URL points to audio the Web Audio API can decode.
+ * Converts AIFF to WAV on-the-fly since browsers have limited AIFF support.
+ * Returns the original URL if no conversion is needed.
+ */
+export async function ensureAudioDecodable(
+  blobUrl: string,
+  virtualPath: string
+): Promise<string> {
+  if (!AIFF_EXT.test(virtualPath)) {
+    return blobUrl;
+  }
+  try {
+    const res = await fetch(blobUrl);
+    const blob = await res.blob();
+    const fileName = virtualPath.split('/').pop() || 'audio.aif';
+    const file = new File([blob], fileName, { type: blob.type || 'audio/aiff' });
+    const wavBlob = await convertAudio(file, { format: 'WAV' });
+    return URL.createObjectURL(wavBlob);
+  } catch (error) {
+    console.error('Failed to convert AIFF to WAV:', error);
     throw error;
   }
 }
