@@ -13,6 +13,8 @@ export interface StackSample {
   bars?: number;
   bpm?: number;
   duration?: number;
+  volume?: number; // Per-sample volume (0-1), defaults to 1
+  muted?: boolean; // Mute is separate from volume; unmute restores remembered volume
 }
 
 /** Position of a playing sample for wave view sync */
@@ -54,6 +56,8 @@ export interface MultiSampleState {
   clearSlot: (index: number) => void;
   updateSampleBars: (index: number, bars: number, duration: number, bpm?: number) => void;
   setGlobalTempoBpm: (bpm: number) => void;
+  setSampleVolume: (index: number, volume: number) => void;
+  setSampleMuted: (index: number, muted: boolean) => void;
 }
 
 const DEFAULT_BPM = 120;
@@ -226,4 +230,36 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
     }),
 
   setGlobalTempoBpm: (bpm) => set({ globalTempoBpm: bpm }),
+
+  setSampleVolume: (index, volume) =>
+    set((state) => {
+      if (index < 0 || index >= SLOT_COUNT) return state;
+      const slot = state.slots[index];
+      if (!slot) return state;
+      const newSlots = [...state.slots];
+      newSlots[index] = {
+        ...slot,
+        volume: Math.max(0, Math.min(1, volume)),
+      };
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+      };
+    }),
+
+  setSampleMuted: (index, muted) =>
+    set((state) => {
+      if (index < 0 || index >= SLOT_COUNT) return state;
+      const slot = state.slots[index];
+      if (!slot) return state;
+      const newSlots = [...state.slots];
+      newSlots[index] = {
+        ...slot,
+        muted,
+      };
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+      };
+    }),
 }));

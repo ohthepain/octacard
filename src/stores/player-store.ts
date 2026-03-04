@@ -35,6 +35,7 @@ export interface PlayerState {
   /** Current playhead position in seconds (for active sample) */
   currentTime: number;
   volume: number;
+  muted: boolean;
   playbackRate: number;
   globalTempoBpm: number;
   /** When set, playback should restart with new loop params (Ableton-style loop sync) */
@@ -50,6 +51,7 @@ export interface PlayerActions {
   setActiveSample: (id: string | null) => void;
   setCurrentTime: (t: number) => void;
   setVolume: (v: number) => void;
+  setMuted: (muted: boolean) => void;
   setPlaybackRate: (r: number) => void;
   setGlobalTempoBpm: (bpm: number) => void;
   requestRestartWithNewLoop: (req: RestartRequest) => void;
@@ -72,6 +74,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   activeSampleId: null,
   currentTime: 0,
   volume: 1,
+  muted: false,
   playbackRate: 1,
   globalTempoBpm: 120,
   restartRequest: null,
@@ -106,6 +109,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   setCurrentTime: (t) => set({ currentTime: t }),
 
   setVolume: (v) => set({ volume: v }),
+
+  setMuted: (muted) => set({ muted }),
 
   setPlaybackRate: (r) => set({ playbackRate: r }),
 

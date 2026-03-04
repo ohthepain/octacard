@@ -38,6 +38,7 @@ import { assertSpaceBarPlaysCurrentSample } from "../../tests/space-bar-plays-cu
 import { assertAudioLoadAiffAndWav } from "../../tests/audio-load-aiff-wav.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
+import { assertVolumeSliderRealTime } from "../../tests/volume-slider-real-time.mjs";
 import { testInitScript } from "./init-test.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
@@ -182,6 +183,7 @@ try {
   await assertSpaceBarPlaysCurrentSample(page);
   await assertWaveformTimeModeToggle(page);
   await assertAudioLoadAiffAndWav(page);
+  await assertVolumeSliderRealTime(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(

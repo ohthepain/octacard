@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { X, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import WaveSurfer from "wavesurfer.js";
 import { fileSystemService } from "@/lib/fileSystem";
 import { ensureAudioDecodable } from "@/lib/audioConverter";
@@ -55,6 +56,10 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
   const singleFile = usePlayerStore((s) => s.singleFile);
   const playerCurrentTime = usePlayerStore((s) => s.currentTime);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const setSampleVolume = useMultiSampleStore((s) => s.setSampleVolume);
+  const setSampleMuted = useMultiSampleStore((s) => s.setSampleMuted);
+  const volume = sample.volume ?? 1;
+  const muted = sample.muted ?? false;
 
   const handleBlockClick = () => {
     useMultiSampleStore.getState().setActiveSlotIndex(index);
@@ -246,6 +251,34 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
         >
           <X className="w-3 h-3" />
         </Button>
+      </div>
+      <div className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setSampleMuted(index, !muted);
+          }}
+          className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded"
+          aria-label={muted ? "Unmute" : "Mute"}
+        >
+          {muted ? (
+            <VolumeX className="w-3 h-3" />
+          ) : (
+            <Volume2 className="w-3 h-3" />
+          )}
+        </button>
+        <Slider
+          value={[volume]}
+          max={1}
+          step={0.01}
+          onValueChange={(value) => {
+            setSampleVolume(index, value[0]);
+          }}
+          className="cursor-pointer flex-1"
+          data-testid={`volume-slider-${index}`}
+        />
       </div>
       <div className="flex-1 min-h-[60px] relative">
         {errorMessage ? (

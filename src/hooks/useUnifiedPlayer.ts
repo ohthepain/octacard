@@ -13,6 +13,8 @@ export function useUnifiedPlayer() {
   const playbackRef = useRef<PlaybackHandle | null>(null);
   const prevIsPlayingRef = useRef(false);
   const prevMultiStackRef = useRef<{ id: string; path: string }[]>([]);
+  const prevVolumeRef = useRef<number>(1);
+  const prevMutedRef = useRef<boolean>(false);
 
   useEffect(() => {
     prevIsPlayingRef.current = usePlayerStore.getState().isPlaying;
@@ -27,7 +29,18 @@ export function useUnifiedPlayer() {
       const prevStack = prevMultiStackRef.current;
       const currKeys = multiStack.map((s) => `${s.id}:${s.path}`).join(",");
       const prevKeys = prevStack.map((s) => `${s.id}:${s.path}`).join(",");
-      if (currKeys === prevKeys) return;
+      
+      // Check if only volume/mute changed (not structure)
+      if (currKeys === prevKeys) {
+        // Volume or mute changed - update in real-time
+        if (playbackRef.current && playbackRef.current.setSampleVolume) {
+          for (const s of multiStack) {
+            const effectiveVolume = s.muted ? 0 : (s.volume ?? 1);
+            playbackRef.current.setSampleVolume(s.id, effectiveVolume);
+          }
+        }
+        return;
+      }
       prevMultiStackRef.current = multiStack.map((s) => ({ id: s.id, path: s.path }));
 
       playbackRef.current?.stopSilent();
@@ -44,10 +57,15 @@ export function useUnifiedPlayer() {
         bpm: s.bpm,
         duration: s.duration,
       }));
+      const sampleVolumes: Record<string, number> = {};
+      for (const s of multiStack) {
+        sampleVolumes[s.id] = s.muted ? 0 : (s.volume ?? 1);
+      }
       startUnifiedPlayback("multi", samples, {
         volume,
         playbackRate: 1,
         globalTempoBpm,
+        sampleVolumes,
         onTimeUpdate: (sampleId, t) => {
           usePlayerStore.getState().setCurrentTime(t);
           if (useWaveformEditorStore.getState().multiSampleId === sampleId) {
@@ -87,8 +105,9 @@ export function useUnifiedPlayer() {
           const globalTempoBpm = useMultiSampleStore.getState().globalTempoBpm;
           const setPlayingSamplePosition = useMultiSampleStore.getState().setPlayingSamplePosition;
           if (mode === "single" && singleFile && singleFile.path === req.path) {
+            const effectiveVolume = state.muted ? 0 : state.volume;
             startUnifiedPlayback("single", [{ id: singleFile.path, path: singleFile.path, paneType: singleFile.paneType }], {
-              volume,
+              volume: effectiveVolume,
               playbackRate,
               globalTempoBpm,
               overridePlayStart: { [req.path]: overridePlayStart },
@@ -103,11 +122,17 @@ export function useUnifiedPlayer() {
             if (sample) {
               const setPlayingSamplePositions = useMultiSampleStore.getState().setPlayingSamplePositions;
               const samples = stack.map((s) => ({ id: s.id, path: s.path, paneType: s.paneType, bpm: s.bpm, duration: s.duration }));
+              const multiStack = useMultiSampleStore.getState().stack;
+              const sampleVolumes: Record<string, number> = {};
+              for (const s of multiStack) {
+                sampleVolumes[s.id] = s.muted ? 0 : (s.volume ?? 1);
+              }
               startUnifiedPlayback("multi", samples, {
                 volume,
                 playbackRate: 1,
                 globalTempoBpm,
                 overridePlayStart: { [req.path]: overridePlayStart },
+                sampleVolumes,
                 onTimeUpdate: (sampleId, t) => {
                   usePlayerStore.getState().setCurrentTime(t);
                   if (useWaveformEditorStore.getState().multiSampleId === sampleId) {
@@ -137,6 +162,17 @@ export function useUnifiedPlayer() {
         playbackRef.current = null;
         return;
       }
+      // Handle volume/mute changes during playback (single mode uses master volume)
+      if (state.isPlaying && playbackRef.current && playbackRef.current.setMasterVolume) {
+        const effectiveVolume = state.muted ? 0 : state.volume;
+        const prevEffective = prevMutedRef.current ? 0 : prevVolumeRef.current;
+        if (prevEffective !== effectiveVolume) {
+          playbackRef.current.setMasterVolume(effectiveVolume);
+        }
+      }
+      prevVolumeRef.current = state.volume;
+      prevMutedRef.current = state.muted;
+
       if (state.switchAtBarRequest && playbackRef.current && state.isPlaying && state.mode === "single") {
         const req = state.switchAtBarRequest;
         usePlayerStore.getState().clearSwitchAtBarRequest();
@@ -154,8 +190,9 @@ export function useUnifiedPlayer() {
         const setPlayingSamplePosition = useMultiSampleStore.getState().setPlayingSamplePosition;
 
         if (mode === "single" && singleFile) {
+          const effectiveVolume = state.muted ? 0 : state.volume;
           startUnifiedPlayback("single", [{ id: singleFile.path, path: singleFile.path, paneType: singleFile.paneType }], {
-            volume,
+            volume: effectiveVolume,
             playbackRate,
             globalTempoBpm,
             onTimeUpdate: (_, t) => {
@@ -181,10 +218,16 @@ export function useUnifiedPlayer() {
             bpm: s.bpm,
             duration: s.duration,
           }));
+          const multiStack = useMultiSampleStore.getState().stack;
+          const sampleVolumes: Record<string, number> = {};
+          for (const s of multiStack) {
+            sampleVolumes[s.id] = s.muted ? 0 : (s.volume ?? 1);
+          }
           startUnifiedPlayback("multi", samples, {
             volume,
             playbackRate: 1,
             globalTempoBpm,
+            sampleVolumes,
             onTimeUpdate: (sampleId, t) => {
               usePlayerStore.getState().setCurrentTime(t);
               const multiSampleId = useWaveformEditorStore.getState().multiSampleId;
