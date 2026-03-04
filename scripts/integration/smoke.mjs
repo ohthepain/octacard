@@ -19,9 +19,13 @@ import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mj
 import { assertLargeBatchConversionCanBeCancelledQuickly } from "../../tests/conversion-cancel-large-batch.mjs";
 import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
 import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
-import { assertIndexedSearchUsesCache, assertSearchFindsConvertedFileAfterReindex } from "../../tests/search-indexing.mjs";
+import {
+  assertIndexedSearchUsesCache,
+  assertSearchFindsConvertedFileAfterReindex,
+} from "../../tests/search-indexing.mjs";
 import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
 import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
+import { assertMultiStackCanAddNewRow } from "../../tests/multi-stack-add-row.mjs";
 import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
 import { assertFilenameShortener } from "../../tests/filename-shortener.mjs";
 import { assertBraveBrowserSupport } from "../../tests/brave-browser-support.mjs";
@@ -164,7 +168,10 @@ try {
   });
   await waitForPageCondition(page, "Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 4");
   const pickerCalls = await page.evaluate(() => window.__pickerCalls);
-  assert.ok(pickerCalls.length >= 4, "Expected at least four picker calls (source, dest, persist source, persist dest).");
+  assert.ok(
+    pickerCalls.length >= 4,
+    "Expected at least four picker calls (source, dest, persist source, persist dest).",
+  );
   await assertIndexedSearchUsesCache(page);
 
   const sourcePanelLocator = page.getByTestId("panel-source");
@@ -184,6 +191,7 @@ try {
   await assertWaveformTimeModeToggle(page);
   await assertAudioLoadAiffAndWav(page);
   await assertVolumeSliderRealTime(page);
+  await assertMultiStackCanAddNewRow(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(
