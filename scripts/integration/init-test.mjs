@@ -222,6 +222,13 @@ export function testInitScript() {
               size: 128,
               isDirectory: false,
             },
+            {
+              name: "Melô.wav",
+              path: "/Alpha/Melô.wav",
+              type: "file",
+              size: 128,
+              isDirectory: false,
+            },
           ],
         };
       }
