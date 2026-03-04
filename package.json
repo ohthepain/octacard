@@ -98,7 +98,7 @@
     "playwright": "^1.58.2",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "vite": "^5.4.21",
+    "vite": "^7.3.1",
     "vitest": "^4.0.18",
     "wait-on": "^9.0.4"
   },
