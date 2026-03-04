@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from "react";
-import { Play, Pause, Square } from "lucide-react";
+import { Play, Pause, Square, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMultiSampleStore, type StackSample } from "@/stores/multi-sample-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
@@ -97,6 +97,7 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
   const removeFromStack = useMultiSampleStore((s) => s.removeFromStack);
   const addToStack = useMultiSampleStore((s) => s.addToStack);
   const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
+  const addSlotRow = useMultiSampleStore((s) => s.addSlotRow);
   const replaceSampleAt = useMultiSampleStore((s) => s.replaceSampleAt);
   const closeWaveform = useWaveformEditorStore((s) => s.close);
 
@@ -248,7 +249,7 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
         className
       )}
     >
-      <div className="grid grid-cols-[minmax(180px,1fr)_minmax(200px,1fr)_minmax(200px,1fr)_minmax(200px,1fr)_minmax(200px,1fr)] gap-3 max-w-full">
+      <div className="grid grid-cols-[minmax(180px,1fr)_minmax(0,1fr)] gap-3 max-w-full">
         {/* Global Transport Block */}
         <div className="flex flex-col gap-2 border border-border rounded-lg bg-muted/30 p-3 shrink-0">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -279,47 +280,59 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
             >
               <Square className="w-4 h-4" />
             </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 w-8 p-0"
+              onClick={addSlotRow}
+              aria-label="Add stack row"
+              data-testid="stack-add-row-button"
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
           </div>
         </div>
 
-        {/* Slot blocks: each slot is either a sample or empty */}
-        {slots.map((sample, slotIndex) =>
-          sample ? (
-            <MultiSampleBlock
-              key={sample.id}
-              sample={sample}
-              index={slotIndex}
-              isActive={activeSlotIndex === slotIndex}
-              onRemove={() => {
-                if (slotIndex === activeSlotIndex) closeWaveform();
-                removeFromStack(slotIndex);
-              }}
-              onDropSample={(s) => {
-                replaceSampleAt(slotIndex, s);
-                if (slotIndex === activeSlotIndex) {
-                  const { slots } = useMultiSampleStore.getState();
-                  const updated = slots[activeSlotIndex];
-                  if (updated) {
-                    setActiveSample(updated.id);
-                    useWaveformEditorStore.getState().openWithFileFromMulti(updated.path, updated.name, updated.paneType, updated.id);
+        <div className="grid grid-cols-4 gap-3 min-w-0">
+          {/* Slot blocks: each slot is either a sample or empty */}
+          {slots.map((sample, slotIndex) =>
+            sample ? (
+              <MultiSampleBlock
+                key={sample.id}
+                sample={sample}
+                index={slotIndex}
+                isActive={activeSlotIndex === slotIndex}
+                onRemove={() => {
+                  if (slotIndex === activeSlotIndex) closeWaveform();
+                  removeFromStack(slotIndex);
+                }}
+                onDropSample={(s) => {
+                  replaceSampleAt(slotIndex, s);
+                  if (slotIndex === activeSlotIndex) {
+                    const { slots } = useMultiSampleStore.getState();
+                    const updated = slots[activeSlotIndex];
+                    if (updated) {
+                      setActiveSample(updated.id);
+                      useWaveformEditorStore.getState().openWithFileFromMulti(updated.path, updated.name, updated.paneType, updated.id);
+                    }
                   }
-                }
-              }}
-              onClick={() => setActiveSample(sample.id)}
-            />
-          ) : (
-            <EmptyBlock
-              key={`empty-${slotIndex}`}
-              slotIndex={slotIndex}
-              isActive={activeSlotIndex === slotIndex}
-              onDrop={(e) => {
-                setActiveSlotIndex(slotIndex);
-                handleMultiDrop(e);
-              }}
-              onClick={() => handleEmptySlotClick(slotIndex)}
-            />
-          )
-        )}
+                }}
+                onClick={() => setActiveSample(sample.id)}
+              />
+            ) : (
+              <EmptyBlock
+                key={`empty-${slotIndex}`}
+                slotIndex={slotIndex}
+                isActive={activeSlotIndex === slotIndex}
+                onDrop={(e) => {
+                  setActiveSlotIndex(slotIndex);
+                  handleMultiDrop(e);
+                }}
+                onClick={() => handleEmptySlotClick(slotIndex)}
+              />
+            )
+          )}
+        </div>
       </div>
     </div>
   );
