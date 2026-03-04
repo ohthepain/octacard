@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import WaveSurfer from "wavesurfer.js";
 import { fileSystemService } from "@/lib/fileSystem";
+import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { toast } from "sonner";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
@@ -125,6 +126,7 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
           return;
         }
 
+        const decodableUrl = await ensureAudioDecodable(result.data, sample.path);
         if (cancelled || !waveformRef.current) return;
 
         const wavesurfer = WaveSurfer.create({
@@ -171,7 +173,7 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
           setIsLoading(false);
         });
 
-        await wavesurfer.load(result.data);
+        await wavesurfer.load(decodableUrl);
       } catch (err) {
         if (!cancelled) {
           setErrorMessage(String(err));

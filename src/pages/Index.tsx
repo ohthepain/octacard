@@ -267,8 +267,11 @@ const Index = () => {
         stop();
         return;
       }
-      // Start whatever was last (use multi sample store's stack for multi - it has bars)
-      if (mode === "multi" && stack.length > 0) {
+      // Prefer waveform editor's current file when open (user may have tapped a new sample)
+      const we = useWaveformEditorStore.getState();
+      if (we.isOpen && we.filePath && we.paneType && !we.isEmptyState) {
+        playSingle(we.filePath, we.paneType);
+      } else if (mode === "multi" && stack.length > 0) {
         const multiStack = useMultiSampleStore.getState().stack;
         const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
         if (multiStack.length > 0 && hasValidBars) {
@@ -286,31 +289,32 @@ const Index = () => {
       } else if (mode === "single" && singleFile) {
         playSingle(singleFile.path, singleFile.paneType);
       } else {
-        const we = useWaveformEditorStore.getState();
-        if (we.isOpen && we.filePath && we.paneType && !we.isEmptyState) {
-          playSingle(we.filePath, we.paneType);
-        } else {
-          const multiStack = useMultiSampleStore.getState().stack;
-          if (multiStack.length > 0) {
-            const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
-            if (hasValidBars) {
-              playMulti(
-                multiStack.map((s) => ({
-                  id: s.id,
-                  path: s.path,
-                  name: s.name,
-                  paneType: s.paneType,
-                  bpm: s.bpm,
-                  duration: s.duration,
-                }))
-              );
-            }
+        const multiStack = useMultiSampleStore.getState().stack;
+        if (multiStack.length > 0) {
+          const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
+          if (hasValidBars) {
+            playMulti(
+              multiStack.map((s) => ({
+                id: s.id,
+                path: s.path,
+                name: s.name,
+                paneType: s.paneType,
+                bpm: s.bpm,
+                duration: s.duration,
+              }))
+            );
           }
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as any).__octacardTestHooks) {
+      (window as any).__octacardPlayerStore = usePlayerStore;
+    }
   }, []);
 
   useEffect(() => {

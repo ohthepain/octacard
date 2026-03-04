@@ -50,6 +50,7 @@ import {
   type AudioFileInfo,
 } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
+import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { detectSliceMarkers, selectTopSlices, type SliceMarker, type SliceDetectionMode } from "@/lib/sliceDetection";
 import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
@@ -195,13 +196,13 @@ export const AudioPreview = ({
     let t: number;
     if (playerMode === "multi" && multiSampleId && playingSamplePosition?.sampleId === multiSampleId) {
       t = playingSamplePosition.currentTime;
-    } else if (playerMode === "single" && isPlaying) {
+    } else if (playerMode === "single" && isPlaying && singleFile?.path === filePath) {
       t = playerCurrentTime;
     } else return;
     const safeTime = Math.min(t, duration * 0.9999);
     ws.seekTo(safeTime / duration);
     setCurrentTime(safeTime);
-  }, [playerMode, multiSampleId, playingSamplePosition, isPlaying, playerCurrentTime, duration]);
+  }, [playerMode, multiSampleId, playingSamplePosition, isPlaying, playerCurrentTime, duration, singleFile?.path, filePath]);
 
   const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
   const playStartTimeRef = useRef<number>(0);
@@ -467,8 +468,9 @@ export const AudioPreview = ({
         const result = await fileSystemService.getAudioFileBlob(filePath!, paneType!);
 
         if (result.success && result.data) {
+          const decodableUrl = await ensureAudioDecodable(result.data, filePath!);
           console.log("AudioPreview - Got audio blob data URL for file:", filePath);
-          setAudioUrl(result.data);
+          setAudioUrl(decodableUrl);
           setErrorMessage("");
         } else {
           console.error("Failed to get audio file blob:", result.error);
@@ -497,7 +499,9 @@ export const AudioPreview = ({
       try {
         const result = await fileSystemService.getAudioFileBlob(filePath, paneType);
         if (!result.success || !result.data || cancelled) return;
-        const res = await fetch(result.data);
+        const decodableUrl = await ensureAudioDecodable(result.data, filePath);
+        if (cancelled) return;
+        const res = await fetch(decodableUrl);
         const arrayBuffer = await res.arrayBuffer();
         if (cancelled) return;
         const parsed = parseWavMetadata(arrayBuffer);
@@ -610,7 +614,8 @@ export const AudioPreview = ({
         setIsAnalyzing(false);
         return;
       }
-      const res = await fetch(result.data);
+      const decodableUrl = await ensureAudioDecodable(result.data, filePath);
+      const res = await fetch(decodableUrl);
       const arrayBuffer = await res.arrayBuffer();
 
       const parsed = parseWavCueMarkers(arrayBuffer);
@@ -741,10 +746,12 @@ export const AudioPreview = ({
       // In single mode, don't stop when switching to a new file (switch-at-next-bar handles it)
       const playerState = usePlayerStore.getState();
       const isMultiMode = playerState.mode === "multi";
-      const storeFilePath = useWaveformEditorStore.getState().filePath;
+      const weState = useWaveformEditorStore.getState();
+      const storeFilePath = weState.filePath;
       const isSwitchingToNewFile =
-        !isMultiMode && storeFilePath && storeFilePath !== filePath && playerState.isPlaying;
-      if (!multiSampleId && !isMultiMode && !isSwitchingToNewFile) {
+        !isMultiMode && storeFilePath && storeFilePath !== filePath;
+      const isEditorClosingOrEmpty = !weState.isOpen || weState.isEmptyState;
+      if (!multiSampleId && !isMultiMode && !isSwitchingToNewFile && isEditorClosingOrEmpty) {
         stopPlayer();
       }
       setWavesurferPlaying(false);
@@ -820,10 +827,8 @@ export const AudioPreview = ({
         paneType
       ) {
         requestSwitchAtNextBar(filePath, paneType);
-      } else if (playerState.mode !== "multi") {
-        stopPlayer();
       }
-      // In multi mode, never stop here - keep playback running when switching samples
+      // Never stop player during WaveSurfer init; this can race against sample switching.
       setWavesurferPlaying(false);
       setCurrentTime(0);
       setDuration(0);
@@ -887,7 +892,8 @@ export const AudioPreview = ({
               toast.error("Could not load existing audio for overdub");
               return;
             }
-            const existingBlob = await fetch(existingResult.data).then((r) => r.blob());
+            const decodableUrl = await ensureAudioDecodable(existingResult.data, filePath);
+            const existingBlob = await fetch(decodableUrl).then((r) => r.blob());
             const mixed = await mixOverdub(existingBlob, blob, recordStartTimeRef.current);
             if (mixed) {
               const result = await fileSystemService.writeBlobToPath(filePath, mixed, paneType);
@@ -909,7 +915,8 @@ export const AudioPreview = ({
           try {
             const existingResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
             if (existingResult.success && existingResult.data) {
-              const existingBlob = await fetch(existingResult.data).then((r) => r.blob());
+              const decodableUrl = await ensureAudioDecodable(existingResult.data, filePath);
+              const existingBlob = await fetch(decodableUrl).then((r) => r.blob());
               const replaced = await replaceSegment(existingBlob, blob, recordStartTimeRef.current);
               const result = await fileSystemService.writeBlobToPath(filePath, replaced, paneType);
               if (result.success) {
@@ -1007,6 +1014,14 @@ export const AudioPreview = ({
         setDuration(dur);
         setIsLoading(false);
         setErrorMessage("");
+
+        // Sync playhead when waveform loads while already playing (e.g. load new sample while playing)
+        const playerState = usePlayerStore.getState();
+        if (playerState.mode === "single" && playerState.isPlaying && dur > 0) {
+          const t = Math.min(playerState.currentTime, dur * 0.9999);
+          wavesurfer.seekTo(t / dur);
+          setCurrentTime(t);
+        }
 
         // Update envelope points to span full duration
         if (envelopeRef.current && dur > 0) {
@@ -1166,10 +1181,12 @@ export const AudioPreview = ({
       // In single mode, don't stop when switching to new file (switch-at-next-bar handles it)
       const playerState = usePlayerStore.getState();
       const isMultiMode = playerState.mode === "multi";
-      const storeFilePath = useWaveformEditorStore.getState().filePath;
+      const weState = useWaveformEditorStore.getState();
+      const storeFilePath = weState.filePath;
       const isSwitchingToNewFile =
-        !isMultiMode && storeFilePath && storeFilePath !== filePath && playerState.isPlaying;
-      if (!isMultiMode && !isSwitchingToNewFile) {
+        !isMultiMode && storeFilePath && storeFilePath !== filePath;
+      const isEditorClosingOrEmpty = !weState.isOpen || weState.isEmptyState;
+      if (!isMultiMode && !isSwitchingToNewFile && isEditorClosingOrEmpty) {
         stopPlayer();
       }
       setWavesurferPlaying(false);
@@ -1781,7 +1798,8 @@ export const AudioPreview = ({
         toast.error(blobResult.error || "Failed to load audio");
         return;
       }
-      const blob = await fetch(blobResult.data).then((r) => r.blob());
+      const decodableUrl = await ensureAudioDecodable(blobResult.data, filePath);
+      const blob = await fetch(decodableUrl).then((r) => r.blob());
       const regs = regionsRef.current?.getRegions() ?? [];
       const region = regs[0];
       const regionStart = region?.start ?? 0;
