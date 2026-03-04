@@ -190,6 +190,11 @@ try {
   await assertSpaceBarPlaysCurrentSample(page);
   await assertWaveformTimeModeToggle(page);
   await assertAudioLoadAiffAndWav(page);
+  // Navigate back to Alpha folder after assertAudioLoadAiffAndWav navigated to root/Fixtures
+  const alphaNode = page.getByTestId("tree-node-source-_Alpha");
+  await alphaNode.waitFor({ state: "visible" });
+  await alphaNode.click();
+  await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
   await assertVolumeSliderRealTime(page);
   await assertMultiStackCanAddNewRow(page);
 
