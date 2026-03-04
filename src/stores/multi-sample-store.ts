@@ -24,14 +24,14 @@ export interface PlayingSamplePosition {
 /** Per-sample playhead positions when multi is playing (sampleId -> currentTime in seconds) */
 export type PlayingSamplePositions = Record<string, number>;
 
-/** Slots are fixed positions; each can be empty (null) or hold a sample */
-export const SLOT_COUNT = 4;
+/** Slot row width; rows can be appended dynamically */
+export const SLOT_ROW_SIZE = 4;
 
 export interface MultiSampleState {
   previewMode: PreviewMode;
-  /** Slot-based: slots[0..3], each null or StackSample */
+  /** Slot-based grid; each entry is null or StackSample */
   slots: (StackSample | null)[];
-  /** Which slot is active (0-3); shown in wavesurfer when it has a sample */
+  /** Which slot is active; shown in wavesurfer when it has a sample */
   activeSlotIndex: number;
   stack: StackSample[]; // derived: slots.filter(Boolean) for backwards compat
   globalTempoBpm: number;
@@ -49,6 +49,7 @@ export interface MultiSampleState {
   putSampleInActiveSlot: (sample: { path: string; name: string; paneType: PaneType }) => void;
   addToStack: (sample: { path: string; name: string; paneType: PaneType }) => void;
   addSamplesToStack: (samples: Array<{ path: string; name: string; paneType: PaneType }>, maxCount?: number) => void;
+  addSlotRow: () => void;
   replaceSampleAt: (index: number, sample: { path: string; name: string; paneType: PaneType }) => void;
   removeFromStack: (index: number) => void;
   clearSlot: (index: number) => void;
@@ -76,7 +77,7 @@ function slotsToStack(slots: (StackSample | null)[]): StackSample[] {
 
 export const useMultiSampleStore = create<MultiSampleState>((set) => ({
   previewMode: "single",
-  slots: [null, null, null, null],
+  slots: Array.from({ length: SLOT_ROW_SIZE }, () => null),
   activeSlotIndex: 0,
   stack: [], // derived below
   globalTempoBpm: DEFAULT_BPM,
@@ -93,7 +94,7 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
 
   setActiveSlotIndex: (index) =>
     set((state) => ({
-      activeSlotIndex: Math.max(0, Math.min(index, SLOT_COUNT - 1)),
+      activeSlotIndex: Math.max(0, Math.min(index, state.slots.length - 1)),
     })),
 
   putSampleInActiveSlot: (sample) =>
@@ -151,8 +152,8 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
       const newSlots = [...state.slots];
       let slotIdx = state.activeSlotIndex;
       for (const s of toAdd) {
-        while (slotIdx < SLOT_COUNT && newSlots[slotIdx] != null) slotIdx++;
-        if (slotIdx >= SLOT_COUNT) break;
+        while (slotIdx < newSlots.length && newSlots[slotIdx] != null) slotIdx++;
+        if (slotIdx >= newSlots.length) break;
         newSlots[slotIdx] = s;
         slotIdx++;
       }
@@ -168,9 +169,14 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
       };
     }),
 
+  addSlotRow: () =>
+    set((state) => ({
+      slots: [...state.slots, ...Array.from({ length: SLOT_ROW_SIZE }, () => null)],
+    })),
+
   replaceSampleAt: (index, sample) =>
     set((state) => {
-      if (index < 0 || index >= SLOT_COUNT) return state;
+      if (index < 0 || index >= state.slots.length) return state;
       const bpm = getBpmFromSample(sample.name, sample.path);
       const newSample: StackSample = {
         id: crypto.randomUUID(),
@@ -187,7 +193,7 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
 
   removeFromStack: (index) =>
     set((state) => {
-      if (index < 0 || index >= SLOT_COUNT) return state;
+      if (index < 0 || index >= state.slots.length) return state;
       const newSlots = [...state.slots];
       newSlots[index] = null;
       return {
@@ -198,7 +204,7 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
 
   clearSlot: (index) =>
     set((state) => {
-      if (index < 0 || index >= SLOT_COUNT) return state;
+      if (index < 0 || index >= state.slots.length) return state;
       const newSlots = [...state.slots];
       newSlots[index] = null;
       return {
@@ -209,7 +215,7 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
 
   updateSampleBars: (index, bars, duration, bpm) =>
     set((state) => {
-      if (index < 0 || index >= SLOT_COUNT) return state;
+      if (index < 0 || index >= state.slots.length) return state;
       const slot = state.slots[index];
       if (!slot) return state;
       const newSlots = [...state.slots];
