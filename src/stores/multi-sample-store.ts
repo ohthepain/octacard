@@ -239,7 +239,7 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
 
   setSampleVolume: (index, volume) =>
     set((state) => {
-      if (index < 0 || index >= SLOT_COUNT) return state;
+      if (index < 0 || index >= state.slots.length) return state;
       const slot = state.slots[index];
       if (!slot) return state;
       const newSlots = [...state.slots];
@@ -255,7 +255,7 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
 
   setSampleMuted: (index, muted) =>
     set((state) => {
-      if (index < 0 || index >= SLOT_COUNT) return state;
+      if (index < 0 || index >= state.slots.length) return state;
       const slot = state.slots[index];
       if (!slot) return state;
       const newSlots = [...state.slots];

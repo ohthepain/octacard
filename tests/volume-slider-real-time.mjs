@@ -6,26 +6,35 @@ import { waitForPageCondition } from "./wait-utils.mjs";
  * User can tap on a stack block and adjust volume without interrupting playback.
  */
 export async function assertVolumeSliderRealTime(page) {
+  // Close waveform if open from previous test so tree is clickable
+  await page.evaluate(() => {
+    const store = window.__octacardWaveformEditorStore;
+    if (store?.getState?.()?.close) {
+      store.getState().close();
+    }
+    const closeBtn = document.querySelector('[data-testid="audio-preview-close"]');
+    if (closeBtn instanceof HTMLElement) closeBtn.click();
+  }).catch(() => {});
+  await page.waitForTimeout(500);
+
   // Enable multi mode
   const multiToggle = page.getByTestId("multi-mode-toggle");
   await multiToggle.waitFor({ state: "visible" });
   await multiToggle.click();
   await page.waitForTimeout(300);
 
-  // Add first sample to stack
+  // Add first sample to stack (click adds to active slot)
   const firstFileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
   await firstFileNode.waitFor({ state: "visible" });
-  await firstFileNode.dragTo(page.getByTestId("panel-source"), {
-    targetPosition: { x: 100, y: 100 },
-  });
+  await firstFileNode.click();
   await page.waitForTimeout(500);
 
-  // Add second sample to stack
+  // Add second sample to stack (click "Next sample" to focus next slot, then click file)
+  await page.getByText("Next sample", { exact: true }).first().click();
+  await page.waitForTimeout(200);
   const secondFileNode = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await secondFileNode.waitFor({ state: "visible" });
-  await secondFileNode.dragTo(page.getByTestId("panel-source"), {
-    targetPosition: { x: 200, y: 100 },
-  });
+  await secondFileNode.click();
   await page.waitForTimeout(500);
 
   // Wait for samples to load
@@ -62,22 +71,15 @@ export async function assertVolumeSliderRealTime(page) {
   const volumeSlider0 = page.getByTestId("volume-slider-0");
   await volumeSlider0.waitFor({ state: "visible" });
 
-  // Get slider element and adjust it using keyboard or direct value change
-  // First, get the slider thumb
-  const sliderThumb = volumeSlider0.locator('[role="slider"]');
-  await sliderThumb.waitFor({ state: "visible" });
-
   // Click on the slider track at 30% position to set volume to ~0.3
   const sliderBounds = await volumeSlider0.boundingBox();
   if (!sliderBounds) {
     throw new Error("Slider bounds not found");
   }
-
-  // Click at 30% of slider width (0.3 volume)
   const targetX = sliderBounds.x + sliderBounds.width * 0.3;
   const targetY = sliderBounds.y + sliderBounds.height / 2;
   await page.mouse.click(targetX, targetY);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(300);
 
   // Verify volume changed in store
   const newVolume = await page.evaluate(() => {
