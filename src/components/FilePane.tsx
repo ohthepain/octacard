@@ -258,7 +258,7 @@ export const FilePane = ({
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
-  const [treeViewMode, setTreeViewMode] = useState<"all" | "folders" | "files">("all");
+  const [treeViewMode, setTreeViewMode] = useState<"all" | "folders" | "files">("files");
   const [sortBy, setSortBy] = useState<"name" | "dateAdded" | "dateCreated" | "dateModified" | "dateLastOpened">(
     "name",
   );
@@ -3829,12 +3829,12 @@ export const FilePane = ({
               <div className="flex items-center rounded-md border border-border overflow-hidden">
                 <Button
                   size="sm"
-                  variant={treeViewMode === "all" ? "secondary" : "ghost"}
+                  variant={treeViewMode === "files" ? "secondary" : "ghost"}
                   className="rounded-none"
-                  onClick={() => setTreeViewMode("all")}
-                  title="Show files and folders"
+                  onClick={() => setTreeViewMode("files")}
+                  title="Show matching files and folders that contain matching files"
                 >
-                  All
+                  Files
                 </Button>
                 <Button
                   size="sm"
@@ -3847,12 +3847,12 @@ export const FilePane = ({
                 </Button>
                 <Button
                   size="sm"
-                  variant={treeViewMode === "files" ? "secondary" : "ghost"}
+                  variant={treeViewMode === "all" ? "secondary" : "ghost"}
                   className="rounded-none"
-                  onClick={() => setTreeViewMode("files")}
-                  title="Show matching files and folders that contain matching files"
+                  onClick={() => setTreeViewMode("all")}
+                  title="Show files and folders"
                 >
-                  Files
+                  All
                 </Button>
               </div>
               <div className="relative">

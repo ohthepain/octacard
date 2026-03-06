@@ -182,7 +182,16 @@ try {
     browseButton.click();
   });
   await page.getByTestId("breadcrumb-favorite-source").waitFor({ state: "visible" });
-  await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
+  const alphaFileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
+  const alphaFileVisible = await alphaFileNode.isVisible().catch(() => false);
+  if (!alphaFileVisible) {
+    const alphaRootNode = page.getByTestId("tree-node-source-_Alpha");
+    const alphaRootVisible = await alphaRootNode.isVisible().catch(() => false);
+    if (alphaRootVisible) {
+      await alphaRootNode.click();
+    }
+  }
+  await alphaFileNode.waitFor({ state: "visible" });
   await assertBarsBeatsSupport(page);
   await assertSampleStartEndBar(page);
   await assertLoopLengthResetsOnSampleChange(page);
