@@ -42,6 +42,7 @@ import { assertAudioLoadAiffAndWav } from "../../tests/audio-load-aiff-wav.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
 import { assertVolumeSliderRealTime } from "../../tests/volume-slider-real-time.mjs";
+import { assertMultiStackPersistsAfterReload } from "../../tests/multi-stack-persists-refresh.mjs";
 import { testInitScript } from "./init-test.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
@@ -144,6 +145,7 @@ try {
   await assertSearchModesAllFoldersFiles(page);
   await assertSourceFolderDoesNotAutoSelectDest(page);
   await assertExpandedFoldersPersistOnReload(page);
+  await assertMultiStackPersistsAfterReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });

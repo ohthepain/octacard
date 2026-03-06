@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 
 export type PreviewMode = "single" | "multi";
@@ -28,6 +29,7 @@ export type PlayingSamplePositions = Record<string, number>;
 
 /** Slot row width; rows can be appended dynamically */
 export const SLOT_ROW_SIZE = 4;
+const MULTI_SAMPLE_STORE_STORAGE_KEY = "octacard_multi_sample_store_v1";
 
 export interface MultiSampleState {
   previewMode: PreviewMode;
@@ -79,7 +81,7 @@ function slotsToStack(slots: (StackSample | null)[]): StackSample[] {
   return slots.filter((s): s is StackSample => s != null);
 }
 
-export const useMultiSampleStore = create<MultiSampleState>((set) => ({
+export const useMultiSampleStore = create<MultiSampleState>()(persist((set) => ({
   previewMode: "single",
   slots: Array.from({ length: SLOT_ROW_SIZE }, () => null),
   activeSlotIndex: 0,
@@ -268,4 +270,28 @@ export const useMultiSampleStore = create<MultiSampleState>((set) => ({
         stack: slotsToStack(newSlots),
       };
     }),
+}), {
+  name: MULTI_SAMPLE_STORE_STORAGE_KEY,
+  storage: createJSONStorage(() => localStorage),
+  partialize: (state) => ({
+    previewMode: state.previewMode,
+    slots: state.slots,
+    activeSlotIndex: state.activeSlotIndex,
+    globalTempoBpm: state.globalTempoBpm,
+    bpmAuto: state.bpmAuto,
+  }),
+  merge: (persistedState, currentState) => {
+    const persisted = persistedState as Partial<MultiSampleState>;
+    const slots =
+      Array.isArray(persisted.slots) && persisted.slots.length > 0
+        ? persisted.slots
+        : currentState.slots;
+    return {
+      ...currentState,
+      ...persisted,
+      slots,
+      activeSlotIndex: Math.max(0, Math.min(persisted.activeSlotIndex ?? currentState.activeSlotIndex, slots.length - 1)),
+      stack: slotsToStack(slots),
+    };
+  },
 }));
