@@ -43,6 +43,7 @@ function EmptyBlock({ slotIndex, isActive, onDrop, onClick }: EmptyBlockProps) {
     <div
       role="button"
       tabIndex={0}
+      data-testid={`empty-slot-${slotIndex}`}
       className={cn(
         "flex flex-col items-center justify-center border border-dashed rounded-lg min-h-[100px] text-muted-foreground transition-colors cursor-pointer",
         isDragOver ? "border-primary bg-primary/5" : "border-border bg-muted/30",

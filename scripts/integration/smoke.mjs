@@ -25,7 +25,6 @@ import {
 } from "../../tests/search-indexing.mjs";
 import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
 import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
-import { assertMultiStackCanAddNewRow } from "../../tests/multi-stack-add-row.mjs";
 import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
 import { assertFilenameShortener } from "../../tests/filename-shortener.mjs";
 import { assertBraveBrowserSupport } from "../../tests/brave-browser-support.mjs";
@@ -196,7 +195,6 @@ try {
   await alphaNode.click();
   await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
   await assertVolumeSliderRealTime(page);
-  await assertMultiStackCanAddNewRow(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(

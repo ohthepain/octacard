@@ -21,7 +21,7 @@ import { Progress } from "@/components/ui/progress";
 import { Play, HelpCircle, Activity } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useMultiSampleStore, SLOT_ROW_SIZE } from "@/stores/multi-sample-store";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
@@ -323,6 +323,14 @@ const Index = () => {
     if (typeof window !== "undefined" && (window as any).__octacardTestHooks) {
       (window as any).__octacardPlayerStore = usePlayerStore;
       (window as any).__octacardMultiSampleStore = useMultiSampleStore;
+      (window as any).__octacardWaveformEditorStore = useWaveformEditorStore;
+      (window as any).__octacardMultiSampleStoreResetStack = () => {
+        useMultiSampleStore.setState({
+          slots: Array.from({ length: SLOT_ROW_SIZE }, () => null),
+          activeSlotIndex: 0,
+          stack: [],
+        });
+      };
     }
   }, []);
 
