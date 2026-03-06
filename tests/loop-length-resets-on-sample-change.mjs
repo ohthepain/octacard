@@ -43,7 +43,11 @@ export async function assertLoopLengthResetsOnSampleChange(page) {
   // Load second sample (Melô.wav in same folder)
   const secondFileNode = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await secondFileNode.waitFor({ state: "visible" });
-  await secondFileNode.click();
+  await page.evaluate(() => {
+    const node = document.querySelector('[data-testid="tree-node-source-_Alpha_Mel__wav"]');
+    if (!(node instanceof HTMLElement)) throw new Error("Second sample node not found");
+    node.click();
+  });
 
   // Wait for waveform to load for the new file (filename changes)
   await page.getByTestId("audio-preview-filename").waitFor({ state: "visible" });
