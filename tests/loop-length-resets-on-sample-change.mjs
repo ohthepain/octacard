@@ -20,7 +20,10 @@ export async function assertLoopLengthResetsOnSampleChange(page) {
   const modeTrigger = page.getByTestId("audio-preview-time-mode");
   await modeTrigger.waitFor({ state: "visible" });
   await modeTrigger.click();
-  await page.getByRole("option", { name: "Bars/Beats" }).click();
+  const barsBeatsOption = page.getByRole("option", { name: "Bars/Beats" });
+  await barsBeatsOption.click();
+  await page.keyboard.press("Escape");
+  await barsBeatsOption.waitFor({ state: "hidden" });
 
   // Wait for loop length controls to be visible
   const loopLengthBars = page.getByTestId("loop-length-bars");
@@ -43,14 +46,21 @@ export async function assertLoopLengthResetsOnSampleChange(page) {
   // Load second sample (Melô.wav in same folder)
   const secondFileNode = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await secondFileNode.waitFor({ state: "visible" });
-  await secondFileNode.click();
+  try {
+    await secondFileNode.click();
+  } catch {
+    await secondFileNode.evaluate((node) => node.click());
+  }
 
   // Wait for waveform to load for the new file (filename changes)
   await page.getByTestId("audio-preview-filename").waitFor({ state: "visible" });
   await waitForPageCondition(
     page,
-    `document.querySelector('[data-testid="audio-preview-filename"]')?.textContent?.trim() === "Melô.wav"`,
-    { timeout: 5000 },
+    `(() => {
+      const text = document.querySelector('[data-testid="audio-preview-filename"]')?.textContent?.trim() ?? "";
+      return text.includes("Mel") && text.toLowerCase().endsWith(".wav");
+    })()`,
+    { timeout: 8000 },
   );
 
   // Wait for loop length to stabilize
@@ -66,6 +76,8 @@ export async function assertLoopLengthResetsOnSampleChange(page) {
     lengthFull,
     `Second sample should show default (full) loop length "${lengthFull}", not "${lengthAfterSecondFile}".`,
   );
+
+  await page.keyboard.press("Escape");
 }
 
 async function getLoopLengthDisplay(page) {

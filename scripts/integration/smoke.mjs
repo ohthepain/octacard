@@ -25,6 +25,7 @@ import {
 } from "../../tests/search-indexing.mjs";
 import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
 import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
+import { assertMultiStackRowControls } from "../../tests/multi-stack-row-controls.mjs";
 import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
 import { assertFilenameShortener } from "../../tests/filename-shortener.mjs";
 import { assertBraveBrowserSupport } from "../../tests/brave-browser-support.mjs";
@@ -77,6 +78,7 @@ try {
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
   await assertMultiModeToggle(page);
+  await assertMultiStackRowControls(page);
   await assertWaveformButtonOpensEmptyState(page);
   await assertExportPromptsFilenameInEmptyState(page);
   await assertFormatMenuCategories(page);
