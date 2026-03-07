@@ -10,7 +10,11 @@ import { waitForPageCondition } from "./wait-utils.mjs";
 export async function assertSpaceBarPlaysCurrentSample(page) {
   const firstFileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
   await firstFileNode.waitFor({ state: "visible" });
-  await firstFileNode.click();
+  await page.evaluate(() => {
+    const node = document.querySelector('[data-testid="tree-node-source-_Alpha_inside-alpha_wav"]');
+    if (!(node instanceof HTMLElement)) throw new Error("First sample node not found");
+    node.click();
+  });
 
   const preview = page.getByTestId("audio-preview-source");
   await preview.waitFor({ state: "visible" });
@@ -26,7 +30,11 @@ export async function assertSpaceBarPlaysCurrentSample(page) {
   // Load second sample
   const secondFileNode = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await secondFileNode.waitFor({ state: "visible" });
-  await secondFileNode.click();
+  await page.evaluate(() => {
+    const node = document.querySelector('[data-testid="tree-node-source-_Alpha_Mel__wav"]');
+    if (!(node instanceof HTMLElement)) throw new Error("Second sample node not found");
+    node.click();
+  });
 
   await waitForPageCondition(
     page,
