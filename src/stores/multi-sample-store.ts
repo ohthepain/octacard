@@ -54,6 +54,9 @@ export interface MultiSampleState {
   addToStack: (sample: { path: string; name: string; paneType: PaneType }) => void;
   addSamplesToStack: (samples: Array<{ path: string; name: string; paneType: PaneType }>, maxCount?: number) => void;
   addSlotRow: () => void;
+  addSlotRowAt: (rowIndex: number) => void;
+  removeSlotRow: (rowIndex: number) => void;
+  moveSlotRow: (fromRowIndex: number, toRowIndex: number) => void;
   replaceSampleAt: (index: number, sample: { path: string; name: string; paneType: PaneType }) => void;
   removeFromStack: (index: number) => void;
   clearSlot: (index: number) => void;
@@ -79,6 +82,14 @@ function getBpmFromSample(name: string, path: string): number {
 
 function slotsToStack(slots: (StackSample | null)[]): StackSample[] {
   return slots.filter((s): s is StackSample => s != null);
+}
+
+function chunkSlots(slots: (StackSample | null)[]): (StackSample | null)[][] {
+  const rows: (StackSample | null)[][] = [];
+  for (let i = 0; i < slots.length; i += SLOT_ROW_SIZE) {
+    rows.push(slots.slice(i, i + SLOT_ROW_SIZE));
+  }
+  return rows;
 }
 
 export const useMultiSampleStore = create<MultiSampleState>()(persist((set) => ({
@@ -176,9 +187,88 @@ export const useMultiSampleStore = create<MultiSampleState>()(persist((set) => (
     }),
 
   addSlotRow: () =>
-    set((state) => ({
-      slots: [...state.slots, ...Array.from({ length: SLOT_ROW_SIZE }, () => null)],
-    })),
+    set((state) => {
+      const newSlots = [...state.slots, ...Array.from({ length: SLOT_ROW_SIZE }, () => null)];
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+      };
+    }),
+
+  addSlotRowAt: (rowIndex) =>
+    set((state) => {
+      const rows = chunkSlots(state.slots);
+      const clampedRowIndex = Math.max(0, Math.min(rowIndex, rows.length));
+      const newRow = Array.from({ length: SLOT_ROW_SIZE }, () => null);
+      const newRows = [...rows];
+      newRows.splice(clampedRowIndex, 0, newRow);
+      const newSlots = newRows.flat();
+      const currentActiveRow = Math.floor(state.activeSlotIndex / SLOT_ROW_SIZE);
+      const nextActiveSlotIndex =
+        currentActiveRow >= clampedRowIndex ? state.activeSlotIndex + SLOT_ROW_SIZE : state.activeSlotIndex;
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+        activeSlotIndex: Math.min(nextActiveSlotIndex, newSlots.length - 1),
+      };
+    }),
+
+  removeSlotRow: (rowIndex) =>
+    set((state) => {
+      const rows = chunkSlots(state.slots);
+      if (rows.length <= 1) return state;
+      const clampedRowIndex = Math.max(0, Math.min(rowIndex, rows.length - 1));
+      const newRows = [...rows];
+      newRows.splice(clampedRowIndex, 1);
+      const newSlots = newRows.flat();
+      const activeRow = Math.floor(state.activeSlotIndex / SLOT_ROW_SIZE);
+      let nextActiveRow = activeRow;
+      if (activeRow === clampedRowIndex) {
+        nextActiveRow = Math.max(0, clampedRowIndex - 1);
+      } else if (activeRow > clampedRowIndex) {
+        nextActiveRow = activeRow - 1;
+      }
+      const activeCol = state.activeSlotIndex % SLOT_ROW_SIZE;
+      const nextActiveSlotIndex = Math.min(nextActiveRow * SLOT_ROW_SIZE + activeCol, newSlots.length - 1);
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+        activeSlotIndex: nextActiveSlotIndex,
+      };
+    }),
+
+  moveSlotRow: (fromRowIndex, toRowIndex) =>
+    set((state) => {
+      const rows = chunkSlots(state.slots);
+      if (rows.length <= 1) return state;
+      const from = Math.max(0, Math.min(fromRowIndex, rows.length - 1));
+      const to = Math.max(0, Math.min(toRowIndex, rows.length - 1));
+      if (from === to) return state;
+
+      const newRows = [...rows];
+      const [movedRow] = newRows.splice(from, 1);
+      if (!movedRow) return state;
+      newRows.splice(to, 0, movedRow);
+      const newSlots = newRows.flat();
+
+      const activeRow = Math.floor(state.activeSlotIndex / SLOT_ROW_SIZE);
+      const activeCol = state.activeSlotIndex % SLOT_ROW_SIZE;
+      let nextActiveRow = activeRow;
+      if (activeRow === from) {
+        nextActiveRow = to;
+      } else if (from < activeRow && activeRow <= to) {
+        nextActiveRow = activeRow - 1;
+      } else if (to <= activeRow && activeRow < from) {
+        nextActiveRow = activeRow + 1;
+      }
+      const nextActiveSlotIndex = Math.min(nextActiveRow * SLOT_ROW_SIZE + activeCol, newSlots.length - 1);
+
+      return {
+        slots: newSlots,
+        stack: slotsToStack(newSlots),
+        activeSlotIndex: nextActiveSlotIndex,
+      };
+    }),
 
   replaceSampleAt: (index, sample) =>
     set((state) => {
