@@ -1039,6 +1039,19 @@ export const AudioPreview = ({
 
         // Set initial zoom
         wavesurfer.zoom(zoom);
+
+        // Render stereo/multi-channel files as split channels when supported by WaveSurfer.
+        const decodedData = wavesurfer.getDecodedData();
+        const channelCount = decodedData?.numberOfChannels ?? 1;
+        if (channelCount > 1) {
+          const perChannelHeight = Math.max(40, Math.floor(debouncedWaveformHeight / channelCount));
+          wavesurfer.setOptions({
+            splitChannels: Array.from({ length: channelCount }, () => ({
+              overlay: false,
+              height: perChannelHeight,
+            })),
+          });
+        }
       });
 
       wavesurfer.on("play", () => {
@@ -2434,6 +2447,7 @@ export const AudioPreview = ({
       <div className="relative overflow-hidden" style={{ minHeight: debouncedWaveformHeight + 60 }}>
         <div
           ref={waveformRef}
+          data-testid="audio-preview-waveform"
           className="w-full cursor-pointer"
           style={{ height: debouncedWaveformHeight }}
           onMouseDown={handleWaveformMouseDown}

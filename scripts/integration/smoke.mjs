@@ -40,6 +40,7 @@ import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
 import { assertLoopLengthResetsOnSampleChange } from "../../tests/loop-length-resets-on-sample-change.mjs";
 import { assertSpaceBarPlaysCurrentSample } from "../../tests/space-bar-plays-current-sample.mjs";
 import { assertAudioLoadAiffAndWav } from "../../tests/audio-load-aiff-wav.mjs";
+import { assertWaveformRendersStereoChannels } from "../../tests/waveform-stereo-render.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
 import { assertVolumeSliderRealTime } from "../../tests/volume-slider-real-time.mjs";
@@ -202,6 +203,7 @@ try {
   await assertSpaceBarPlaysCurrentSample(page);
   await assertWaveformTimeModeToggle(page);
   await assertAudioLoadAiffAndWav(page);
+  await assertWaveformRendersStereoChannels(page);
   // Navigate back to Alpha folder after assertAudioLoadAiffAndWav navigated to root/Fixtures
   const alphaNode = page.getByTestId("tree-node-source-_Alpha");
   await alphaNode.waitFor({ state: "visible" });
