@@ -4,7 +4,7 @@
 # Usage: ./symbolicate_crash.sh <crash_log.ips> [path_to_app.app]
 
 CRASH_LOG="$1"
-APP_PATH="${2:-release/mas-arm64/OctaCard.app}"
+APP_PATH="${2:-release/mas-arm64/octacard.live}"
 
 if [ -z "$CRASH_LOG" ]; then
     echo "Usage: $0 <crash_log.ips> [path_to_app.app]"

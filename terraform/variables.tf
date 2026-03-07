@@ -17,7 +17,7 @@ variable "aws_region" {
 variable "cors_allowed_origins" {
   description = "CORS allowed origins for S3"
   type        = list(string)
-  default     = ["https://*.vercel.app", "https://*.octacard.app"]
+  default     = ["https://*.vercel.app", "https://*.octacard.live"]
 }
 
 variable "db_instance_class" {
@@ -78,4 +78,16 @@ variable "ecs_desired_count" {
   description = "ECS service desired task count"
   type        = number
   default     = 1
+}
+
+variable "domain_name" {
+  description = "Domain for HTTPS (e.g. staging.octacard.live). Required for File System Access API."
+  type        = string
+  default     = ""
+}
+
+variable "route53_zone_id" {
+  description = "Route 53 hosted zone ID for domain_name (for ACM validation and A record)"
+  type        = string
+  default     = ""
 }

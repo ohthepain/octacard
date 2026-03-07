@@ -65,6 +65,19 @@ terraform apply -var-file=environments/staging/terraform.tfvars
 3. **S3 bucket** for Terraform state (create manually or use bootstrap)
 4. **DynamoDB table** for state locking (optional but recommended)
 
+## Shared network (one-time, before first staging/production apply)
+
+Creates 1 shared VPC for both staging and production:
+
+```bash
+pnpm run terraform:network:init
+pnpm run terraform:network:apply
+```
+
+Then apply staging or production as usual.
+
+**Migration from separate VPCs:** If you have existing staging/production with their own VPCs, destroy them first (`terraform:destroy:staging`, `terraform:destroy:production`), then apply the network, then re-apply staging and production. This frees the VPC limit and consolidates to the shared VPC.
+
 ## Bootstrap (one-time)
 
 **Recommended:** Use the AWS CLI script (avoids Terraform S3 provider bug):
@@ -135,24 +148,37 @@ pnpm run terraform:force-unlock:staging
 
 - `s3_bucket_name` – Use for `S3_BUCKET` in Vercel env vars
 - `s3_bucket_arn` – For IAM policies
+- `app_url` – App URL (HTTPS when domain configured, else HTTP ALB DNS)
 
 ## ECS Fargate + RDS + ElastiCache
 
-Standalone VPC with ALB, ECS Fargate, RDS Postgres, ElastiCache Redis. Pass required secrets when applying:
+Standalone VPC with ALB, ECS Fargate, RDS Postgres, ElastiCache Redis.
+
+**Secrets:** Edit `terraform/environments/staging/terraform.tfvars` and replace `REPLACE_ME` with your `db_password` and `better_auth_secret` (generate with `openssl rand -hex 32`). The tfvars files are gitignored. If they were previously committed, run `git rm --cached terraform/environments/*/terraform.tfvars` once to stop tracking them.
+
+Then apply:
 
 ```bash
-TF_VAR_db_password='your-secure-password' \
-TF_VAR_better_auth_secret='$(openssl rand -hex 32)' \
 pnpm run terraform:apply:staging
 ```
 
 After apply:
 
 ```bash
-terraform output alb_dns_name        # App URL: http://<alb-dns>/
+terraform output app_url             # App URL (HTTPS when domain set)
 terraform output ecr_repository_url  # For Docker push
 terraform output -raw database_url   # Run migrations
 ```
+
+### HTTPS (File System Access API)
+
+The File System Access API (`showDirectoryPicker`) requires HTTPS. To enable it on AWS:
+
+1. Add `domain_name` and `route53_zone_id` to your tfvars (e.g. `staging.octacard.live` and the hosted zone ID for `octacard.live`).
+2. Add `https://<domain_name>` to `cors_allowed_origins`.
+3. Re-apply. Terraform creates: ACM cert (us-east-1 for CloudFront), CloudFront distribution, Route 53 A record pointing to CloudFront. `BETTER_AUTH_URL` uses `https://<domain_name>`.
+
+**Quick deploy without domain:** To get a stack up without waiting for ACM validation, temporarily set `domain_name = ""` and `route53_zone_id = ""` in tfvars. You get HTTP-only (ALB URL). Add domain back later and re-apply for HTTPS/CloudFront.
 
 ### Import existing secrets
 
@@ -168,10 +194,12 @@ terraform import aws_secretsmanager_secret.redis_url octacard-staging/redis-url
 terraform import aws_secretsmanager_secret.better_auth_secret octacard-staging/better-auth-secret
 
 # Then apply again
-TF_VAR_db_password='...' TF_VAR_better_auth_secret='...' terraform apply -var-file=environments/staging/terraform.tfvars
+pnpm run terraform:apply:staging
 ```
 
 For **redis-url** "scheduled for deletion": restore it in AWS Console (Secrets Manager → select secret → Cancel deletion) before importing.
+
+**DuplicateListener:** If a previous apply failed partway, an orphaned HTTP listener may exist. Delete it in AWS Console (EC2 → Load Balancers → your ALB → Listeners → remove the HTTP:80 listener), then run apply again.
 
 ### Deploy the app
 
@@ -196,24 +224,41 @@ For **redis-url** "scheduled for deletion": restore it in AWS Console (Secrets M
    aws ecs update-service --cluster octacard-staging-cluster --service octacard-staging-service --force-new-deployment --region eu-central-1
    ```
 
-4. **Add ALB URL to S3 CORS** (for uploads): Add `http://<alb-dns-name>/` to `cors_allowed_origins` in tfvars and re-apply.
+3. **Add app URL to S3 CORS** (for uploads): Add `http://<alb-dns-name>/` or `https://<domain>/` to `cors_allowed_origins` in tfvars and re-apply.
 
 ### Destroy and recreate
 
 Secrets have `prevent_destroy` so Terraform won't delete them. To destroy cleanly:
 
 ```bash
-# 1. Remove secrets from state
-terraform state rm aws_secretsmanager_secret_version.database_url aws_secretsmanager_secret_version.redis_url aws_secretsmanager_secret_version.better_auth_secret
-terraform state rm aws_secretsmanager_secret.database_url aws_secretsmanager_secret.redis_url aws_secretsmanager_secret.better_auth_secret
+# 1. Remove secrets from state (required before destroy)
+pnpm run terraform:state:rm-secrets:staging
 
 # 2. Delete secrets in AWS (immediate, no recovery window)
-aws secretsmanager delete-secret --secret-id octacard-staging/database-url --force-delete-without-recovery --region eu-central-1
-aws secretsmanager delete-secret --secret-id octacard-staging/redis-url --force-delete-without-recovery --region eu-central-1
-aws secretsmanager delete-secret --secret-id octacard-staging/better-auth-secret --force-delete-without-recovery --region eu-central-1
+pnpm run aws:delete:secret:staging:database-url
+pnpm run aws:delete:secret:staging:redis-url
+pnpm run aws:delete:secret:staging:better-auth-secret
 
 # 3. Destroy the rest
 pnpm run terraform:destroy:staging
 ```
 
 Recreate with a normal apply (secrets are gone, so they'll be created fresh).
+
+### Stuck destroy (DependencyViolation / AuthFailure on RDS ENI)
+
+If destroy fails with subnet/security group/IGW dependency errors, destroy in order:
+
+```bash
+cd terraform
+terraform workspace select staging
+
+# 1. Destroy RDS first (releases the ENI blocking subnets/SGs)
+terraform destroy -target=aws_db_instance.postgres -var-file=environments/staging/terraform.tfvars -auto-approve
+
+# 2. Destroy Redis, ECS, ALB, etc.
+terraform destroy -target=aws_elasticache_cluster.redis -target=aws_ecs_service.app -var-file=environments/staging/terraform.tfvars -auto-approve
+
+# 3. Full destroy for the rest
+terraform destroy -var-file=environments/staging/terraform.tfvars -auto-approve
+```
