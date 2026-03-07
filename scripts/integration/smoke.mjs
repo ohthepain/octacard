@@ -70,10 +70,10 @@ try {
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
   await assertHeaderDoesNotShowSelectDirectory(page);
   const convertButton = page.getByRole("button", { name: "Convert" });
-  const devModeButton = page.getByTestId("dev-mode-button");
+  const userMenuButton = page.getByTestId("user-menu");
   const formatButton = page.getByTestId("format-settings-button");
   await convertButton.waitFor({ state: "visible" });
-  await devModeButton.waitFor({ state: "visible" });
+  await userMenuButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
   await assertMultiModeToggle(page);

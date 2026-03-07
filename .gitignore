@@ -35,3 +35,9 @@ dist-electron
 test-results
 coverage
 .nyc_output
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl

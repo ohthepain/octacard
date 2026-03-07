@@ -1,0 +1,6 @@
+# Temporary: use to destroy production infra in us-east-1.
+bucket         = "octacard-tf-state"
+key            = "production/terraform.tfstate"
+region         = "us-east-1"
+encrypt        = true
+dynamodb_table = "octacard-terraform-locks"

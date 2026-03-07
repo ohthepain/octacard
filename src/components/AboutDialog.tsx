@@ -1,5 +1,6 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Link } from "@tanstack/react-router";
 import { ExternalLink, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 import { capture } from "@/lib/analytics";
@@ -19,8 +20,6 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
     await loadAndStart();
   };
 
-  const termsUrl = "/terms-of-service.html";
-  const privacyUrl = "/privacy-policy.html";
   const vibeCodingUrl = "/vibe-coding-rules.html";
 
   useEffect(() => {
@@ -78,14 +77,10 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
             </Button>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" className="w-full" asChild>
-                <a href={termsUrl} target="_blank" rel="noopener noreferrer">
-                  Terms of Service
-                </a>
+                <Link to="/legal/terms">Terms of Service</Link>
               </Button>
               <Button variant="outline" className="w-full" asChild>
-                <a href={privacyUrl} target="_blank" rel="noopener noreferrer">
-                  Privacy Policy
-                </a>
+                <Link to="/legal/privacy">Privacy Policy</Link>
               </Button>
               <Button variant="outline" className="w-full col-span-2 gap-2" asChild>
                 <a href={vibeCodingUrl} target="_blank" rel="noopener noreferrer">

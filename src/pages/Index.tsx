@@ -31,6 +31,7 @@ import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
 import { useAppOptionsStore } from "@/stores/app-options-store";
+import { UserMenu } from "@/components/UserMenu";
 import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { capture } from "@/lib/analytics";
 import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
@@ -155,8 +156,6 @@ const Index = () => {
   useUnifiedPlayer();
 
   const [aboutOpen, setAboutOpen] = useState(false);
-  const devMode = useAppOptionsStore((s) => s.devMode);
-  const setDevMode = useAppOptionsStore((s) => s.setDevMode);
   const previewMode = useMultiSampleStore((s) => s.previewMode);
   const setPreviewMode = useMultiSampleStore((s) => s.setPreviewMode);
   const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
@@ -855,20 +854,6 @@ const Index = () => {
           Convert
         </Button>
         <div className="flex items-center gap-2 justify-self-end">
-          <Button
-            variant={devMode ? "default" : "outline"}
-            size="sm"
-            data-testid="dev-mode-button"
-            aria-pressed={devMode}
-            onClick={() => setDevMode(!devMode)}
-            className={
-              devMode
-                ? "border-orange-500 bg-orange-500 text-white hover:bg-orange-600 hover:text-white"
-                : "border-orange-500 text-orange-600 hover:border-orange-600 hover:bg-orange-50 hover:text-orange-700"
-            }
-          >
-            Dev Mode
-          </Button>
           <FormatDropdown />
           <Button
             variant="ghost"
@@ -890,6 +875,7 @@ const Index = () => {
             About
           </Button>
           <ThemeToggle />
+          <UserMenu />
         </div>
       </header>
 

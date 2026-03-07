@@ -21,13 +21,14 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"],
+      "@server/*": ["./server/*"]
     }
   },
   "include": [
     "src",
+    "routes",
+    "server",
     ".backup"
   ],
   "references": [

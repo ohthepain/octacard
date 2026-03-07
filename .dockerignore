@@ -1,0 +1,12 @@
+node_modules
+dist
+.tanstack
+.git
+.env
+.env.*
+*.log
+coverage
+test-results
+.terraform
+*.tfstate*
+.DS_Store
