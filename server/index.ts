@@ -4,12 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { auth } from "./auth.js";
-import {
-  errorHandler,
-  requestLogger,
-  versionCheck,
-  requireAuth,
-} from "./middleware/index.js";
+import { errorHandler, requestLogger, versionCheck, requireAuth } from "./middleware/index.js";
 import { healthApp } from "./routes/health.js";
 import { uploadApp } from "./routes/upload.js";
 import type { AppVariables } from "./types.js";
@@ -35,14 +30,14 @@ app.use(
       "http://127.0.0.1:3000",
       "http://localhost:5173",
       "http://127.0.0.1:5173",
-      /^https:\/\/.*\.vercel\.app$/,
+      "https://*.vercel.app",
       /^https?:\/\/.*\.elb\.amazonaws\.com$/, // ALB
-      /^https?:\/\/.*\.octacard\.app$/,
+      "https://*.octacard.live",
     ],
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "X-Client-Version"],
-  })
+  }),
 );
 app.use("*", versionCheck);
 
@@ -57,7 +52,7 @@ app.get("/api/version", (c) =>
   c.json({
     apiVersion: process.env.API_VERSION ?? "1.0.0",
     minClientVersion: process.env.API_MIN_CLIENT_VERSION ?? "1.0.0",
-  })
+  }),
 );
 
 // /api/upload/* - requires auth, body limit for future uploads

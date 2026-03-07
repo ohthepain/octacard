@@ -35,65 +35,41 @@ provider "aws" {
   }
 }
 
-# Data sources
-data "aws_availability_zones" "available" {
-  state = "available"
-}
+# CloudFront requires ACM certs in us-east-1
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
 
-# VPC
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = { Name = "${local.name_prefix}-vpc" }
-}
-
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-  tags   = { Name = "${local.name_prefix}-igw" }
-}
-
-# Public subnets (2 AZs for ALB, RDS, ECS)
-resource "aws_subnet" "public_1" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.10.0/24"
-  availability_zone        = data.aws_availability_zones.available.names[0]
-  map_public_ip_on_launch = true
-  tags                    = { Name = "${local.name_prefix}-public-1" }
-}
-
-resource "aws_subnet" "public_2" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.20.0/24"
-  availability_zone        = data.aws_availability_zones.available.names[1]
-  map_public_ip_on_launch = true
-  tags                    = { Name = "${local.name_prefix}-public-2" }
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+  default_tags {
+    tags = {
+      Project     = local.project
+      Environment = local.environment
+      ManagedBy   = "terraform"
+    }
   }
-  tags = { Name = "${local.name_prefix}-public-rt" }
 }
 
-resource "aws_route_table_association" "public_1" {
-  subnet_id      = aws_subnet.public_1.id
-  route_table_id = aws_route_table.public.id
+# Shared network (1 VPC, 1 NAT) - apply terraform/network/ first
+data "terraform_remote_state" "network" {
+  backend = "s3"
+  config = {
+    bucket         = "octacard-tf-state"
+    key            = "network/terraform.tfstate"
+    region         = "eu-central-1"
+    dynamodb_table = "octacard-terraform-locks"
+  }
+  workspace = "default"
 }
 
-resource "aws_route_table_association" "public_2" {
-  subnet_id      = aws_subnet.public_2.id
-  route_table_id = aws_route_table.public.id
+locals {
+  vpc_id            = data.terraform_remote_state.network.outputs.vpc_id
+  public_subnet_ids = data.terraform_remote_state.network.outputs.public_subnet_ids
 }
 
 # Security group: ALB
 resource "aws_security_group" "alb" {
   name_prefix = "${local.name_prefix}-alb-"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   description = "ALB for ${local.name_prefix}"
 
   ingress {
@@ -120,7 +96,7 @@ resource "aws_security_group" "alb" {
 # Security group: ECS tasks
 resource "aws_security_group" "ecs_tasks" {
   name_prefix = "${local.name_prefix}-ecs-"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   description = "ECS tasks for ${local.name_prefix}"
 
   ingress {
@@ -141,7 +117,7 @@ resource "aws_security_group" "ecs_tasks" {
 # Security group: RDS (Postgres 5432)
 resource "aws_security_group" "db" {
   name_prefix = "${local.name_prefix}-db-"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   description = "Postgres for ${local.name_prefix}"
 
   ingress {
@@ -162,7 +138,7 @@ resource "aws_security_group" "db" {
 # Security group: ElastiCache Redis (6379)
 resource "aws_security_group" "redis" {
   name_prefix = "${local.name_prefix}-redis-"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   description = "Redis for ${local.name_prefix}"
 
   ingress {
@@ -180,17 +156,17 @@ resource "aws_security_group" "redis" {
   tags = { Name = "${local.name_prefix}-redis" }
 }
 
-# DB subnet group (RDS requires 2+ AZs)
+# DB subnet group (RDS, 2+ AZs)
 resource "aws_db_subnet_group" "main" {
   name       = "${local.name_prefix}-db-subnets"
-  subnet_ids = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  subnet_ids = local.public_subnet_ids
   tags       = { Name = "${local.name_prefix}-db-subnets" }
 }
 
-# ElastiCache subnet group
+# ElastiCache subnet group (Redis)
 resource "aws_elasticache_subnet_group" "main" {
   name       = "${local.name_prefix}-redis-subnets"
-  subnet_ids = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  subnet_ids = local.public_subnet_ids
 }
 
 # S3 bucket for uploads (required)
@@ -206,8 +182,9 @@ resource "aws_s3_bucket_versioning" "uploads" {
   bucket = aws_s3_bucket.uploads.id
 
   versioning_configuration {
-    status = local.environment == "production" ? "Enabled" : "Disabled"
+    status = "Enabled"
   }
+  # AWS doesn't allow changing Enabled→Disabled; use Enabled for both
 }
 
 resource "aws_s3_bucket_cors_configuration" "uploads" {
@@ -276,6 +253,7 @@ resource "aws_elasticache_cluster" "redis" {
 resource "aws_ecr_repository" "app" {
   name                 = "${local.name_prefix}-app"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
   image_scanning_configuration { scan_on_push = true }
   tags = { Name = "${local.name_prefix}-ecr" }
 }
@@ -400,7 +378,7 @@ resource "aws_lb" "main" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  subnets            = local.public_subnet_ids
   tags               = { Name = "${local.name_prefix}-alb" }
 }
 
@@ -408,7 +386,7 @@ resource "aws_lb_target_group" "app" {
   name        = "${local.name_prefix}-tg"
   port        = 3000
   protocol    = "HTTP"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
   target_type = "ip"
 
   health_check {
@@ -424,6 +402,110 @@ resource "aws_lb_target_group" "app" {
   tags = { Name = "${local.name_prefix}-tg" }
 }
 
+# ACM Certificate in us-east-1 (required for CloudFront)
+resource "aws_acm_certificate" "cloudfront" {
+  count             = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  provider          = aws.us_east_1
+  domain_name       = var.domain_name
+  validation_method = "DNS"
+
+  lifecycle { create_before_destroy = true }
+  tags = { Name = "${local.name_prefix}-cloudfront-cert" }
+}
+
+resource "aws_route53_record" "cert_validation" {
+  for_each = var.domain_name != "" && var.route53_zone_id != "" ? {
+    for dvo in aws_acm_certificate.cloudfront[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  } : {}
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = var.route53_zone_id
+}
+
+resource "aws_acm_certificate_validation" "cloudfront" {
+  count                   = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  provider                = aws.us_east_1
+  certificate_arn         = aws_acm_certificate.cloudfront[0].arn
+  validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
+}
+
+# CloudFront distribution (when domain configured)
+resource "aws_cloudfront_distribution" "main" {
+  count    = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  enabled  = true
+  comment  = "${local.name_prefix} app"
+  aliases  = [var.domain_name]
+
+  origin {
+    domain_name = aws_lb.main.dns_name
+    origin_id   = "alb"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "alb"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods         = ["GET", "HEAD", "OPTIONS"]
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Host", "Origin", "Authorization"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = aws_acm_certificate_validation.cloudfront[0].certificate_arn
+    ssl_support_method      = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  tags = { Name = "${local.name_prefix}-cdn" }
+}
+
+# Route 53: A record points to CloudFront (not ALB)
+resource "aws_route53_record" "main" {
+  count          = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  zone_id        = var.route53_zone_id
+  name           = var.domain_name
+  type           = "A"
+  allow_overwrite = true
+
+  alias {
+    name                   = aws_cloudfront_distribution.main[0].domain_name
+    zone_id                = aws_cloudfront_distribution.main[0].hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# ALB: HTTP only (CloudFront terminates HTTPS)
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
@@ -460,7 +542,7 @@ resource "aws_ecs_task_definition" "app" {
       { name = "NODE_ENV", value = "production" },
       { name = "AWS_REGION", value = var.aws_region },
       { name = "S3_BUCKET", value = aws_s3_bucket.uploads.id },
-      { name = "BETTER_AUTH_URL", value = "http://${aws_lb.main.dns_name}" }
+      { name = "BETTER_AUTH_URL", value = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}" }
     ]
 
     secrets = [
@@ -499,7 +581,7 @@ resource "aws_ecs_service" "app" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+    subnets          = local.public_subnet_ids
     security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = true
   }
@@ -543,7 +625,17 @@ output "redis_url" {
 
 output "alb_dns_name" {
   value       = aws_lb.main.dns_name
-  description = "ALB DNS name (use for BETTER_AUTH_URL until domain is configured)"
+  description = "ALB DNS name (use when domain not configured)"
+}
+
+output "app_url" {
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
+  description = "App URL (HTTPS via CloudFront when domain configured, else HTTP ALB DNS)"
+}
+
+output "cloudfront_domain" {
+  value       = var.domain_name != "" && var.route53_zone_id != "" ? aws_cloudfront_distribution.main[0].domain_name : null
+  description = "CloudFront distribution domain (when domain configured)"
 }
 
 output "ecr_repository_url" {

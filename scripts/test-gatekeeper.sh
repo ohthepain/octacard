@@ -5,7 +5,7 @@
 
 set -e
 
-APP_PATH="${1:-release/mas-arm64/OctaCard.app}"
+APP_PATH="${1:-release/mas-arm64/octacard.live}"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "❌ App not found at $APP_PATH"
