@@ -17,9 +17,15 @@ export async function assertSearchModesAllFoldersFiles(page) {
   const filesButton = sourcePanel.getByRole("button", { name: "Files" });
   await allButton.waitFor({ state: "visible" });
 
-  // All mode is default
-  const allVariant = await allButton.getAttribute("class");
-  assert.ok(allVariant?.includes("secondary"), "Expected All mode to be active by default.");
+  // Ensure button order is Files, Folders, All.
+  const modeLabels = await sourcePanel
+    .locator('button[title="Show matching files and folders that contain matching files"], button[title="Show folders only"], button[title="Show files and folders"]')
+    .allTextContents();
+  assert.deepEqual(modeLabels.map((label) => label.trim()), ["Files", "Folders", "All"]);
+
+  // Files mode is default
+  const filesVariantDefault = await filesButton.getAttribute("class");
+  assert.ok(filesVariantDefault?.includes("secondary"), "Expected Files mode to be active by default.");
 
   // Switch to Folders mode
   await foldersButton.click();
@@ -33,9 +39,9 @@ export async function assertSearchModesAllFoldersFiles(page) {
   const filesVariant = await filesButton.getAttribute("class");
   assert.ok(filesVariant?.includes("secondary"), "Expected Files mode to be active.");
 
-  // Switch back to All
+  // Switch to All
   await allButton.click();
   await page.waitForTimeout(150);
   const allVariantAgain = await allButton.getAttribute("class");
-  assert.ok(allVariantAgain?.includes("secondary"), "Expected All mode after switching back.");
+  assert.ok(allVariantAgain?.includes("secondary"), "Expected All mode to be active.");
 }
