@@ -50,6 +50,7 @@
     "terraform:destroy:production": "cd terraform && terraform workspace select production && terraform destroy -var-file=environments/production/terraform.tfvars",
     "terraform:state:rm-secrets:staging": "cd terraform && terraform workspace select staging && terraform state rm aws_secretsmanager_secret_version.database_url aws_secretsmanager_secret_version.redis_url aws_secretsmanager_secret_version.better_auth_secret aws_secretsmanager_secret.database_url aws_secretsmanager_secret.redis_url aws_secretsmanager_secret.better_auth_secret",
     "terraform:state:rm-secrets:production": "cd terraform && terraform workspace select production && terraform state rm aws_secretsmanager_secret_version.database_url aws_secretsmanager_secret_version.redis_url aws_secretsmanager_secret_version.better_auth_secret aws_secretsmanager_secret.database_url aws_secretsmanager_secret.redis_url aws_secretsmanager_secret.better_auth_secret",
+    "terraform:state:rm-rds:production": "cd terraform && terraform workspace select production && terraform state rm aws_db_instance.postgres",
     "terraform:workspace:staging": "cd terraform && terraform workspace select staging 2>/dev/null || terraform workspace new staging",
     "terraform:workspace:production": "cd terraform && terraform workspace select production 2>/dev/null || terraform workspace new production",
     "terraform:plan:staging": "cd terraform && terraform workspace select staging && terraform plan -var-file=environments/staging/terraform.tfvars",

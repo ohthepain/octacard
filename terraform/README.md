@@ -245,6 +245,25 @@ pnpm run terraform:destroy:staging
 
 Recreate with a normal apply (secrets are gone, so they'll be created fresh).
 
+### RDS destroy: "final_snapshot_identifier is required"
+
+The AWS provider uses **state** values for destroy, not config. If production RDS was created without `final_snapshot_identifier`, destroy fails even with `-var="skip_final_snapshot=true"`. Workaround:
+
+```bash
+cd terraform
+terraform workspace select production
+
+# 1. Delete RDS in AWS Console: RDS → Databases → octacard-production-db → Delete
+#    Check "Skip final snapshot" (no backup needed) or provide a snapshot name.
+
+# 2. Remove RDS from Terraform state (it's already gone in AWS)
+pnpm run terraform:state:rm-rds:production
+# Or: terraform state rm aws_db_instance.postgres
+
+# 3. Destroy the rest
+terraform destroy -var-file=environments/production/terraform.tfvars -auto-approve
+```
+
 ### Stuck destroy (DependencyViolation / AuthFailure on RDS ENI)
 
 If destroy fails with subnet/security group/IGW dependency errors, destroy in order:
