@@ -3,6 +3,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+function resolveAppVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
+    return pkg.version ?? "1.0.0";
+  } catch {
+    return "1.0.0";
+  }
+}
 
 function resolveGitSha(): string {
   const envSha =
@@ -28,6 +38,7 @@ export default defineConfig(({ command }) => {
   const debugBuild = command === "build" && process.env.VITE_DEBUG_BUILD === "1";
   const gitSha = resolveGitSha();
   const gitShaShort = gitSha === "unknown" ? gitSha : gitSha.slice(0, 7);
+  const appVersion = resolveAppVersion();
 
   return {
     plugins: [react()],
@@ -61,6 +72,7 @@ export default defineConfig(({ command }) => {
     define: {
       __GIT_SHA__: JSON.stringify(gitSha),
       __GIT_SHA_SHORT__: JSON.stringify(gitShaShort),
+      __APP_VERSION__: JSON.stringify(appVersion),
       ...(debugBuild
         ? {
             // Force React development runtime so invariant errors are not minified.
@@ -93,6 +105,11 @@ export default defineConfig(({ command }) => {
         "Cross-Origin-Embedder-Policy": "require-corp",
       },
       proxy: {
+        // API - Hono server runs on 3001 in dev
+        "/api": {
+          target: "http://127.0.0.1:3001",
+          changeOrigin: true,
+        },
         // PostHog reverse proxy - avoids ad blockers, use /ph path (not /analytics etc)
         "/ph/static": {
           target: "https://eu-assets.i.posthog.com",

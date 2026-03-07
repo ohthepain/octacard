@@ -12,21 +12,23 @@ export async function assertTermsAndPrivacyLinks(page, { baseUrl }) {
 
   const termsHref = await termsLink.getAttribute("href");
   const privacyHref = await privacyLink.getAttribute("href");
-  assert.equal(termsHref, "/terms-of-service.html", "Terms link should point to static terms page.");
-  assert.equal(privacyHref, "/privacy-policy.html", "Privacy link should point to static privacy page.");
+  assert.equal(termsHref, "/legal/terms", "Terms link should point to /legal/terms.");
+  assert.equal(privacyHref, "/legal/privacy", "Privacy link should point to /legal/privacy.");
 
-  const termsResponse = await page.request.get(new URL(termsHref, baseUrl).toString());
-  const termsBody = await termsResponse.text();
-  assert.equal(termsResponse.ok(), true, "Terms page should return HTTP 200.");
-  assert.match(termsBody, /<h1>Terms of Service<\/h1>/, "Terms page should include heading.");
-  assert.match(termsBody, /spamming the GitHub Issues section/, "Terms page should prohibit issue spam.");
+  // Navigate to terms page and verify content
+  await termsLink.click();
+  await page.waitForURL(/\/legal\/terms/);
+  await page.getByRole("heading", { name: "Terms of Service" }).waitFor({ state: "visible" });
+  assert.ok(
+    await page.locator("text=Acceptance of Terms").isVisible(),
+    "Terms page should include Acceptance of Terms section."
+  );
 
-  const privacyResponse = await page.request.get(new URL(privacyHref, baseUrl).toString());
-  const privacyBody = await privacyResponse.text();
-  assert.equal(privacyResponse.ok(), true, "Privacy page should return HTTP 200.");
-  assert.match(privacyBody, /<h1>Privacy Policy<\/h1>/, "Privacy page should include heading.");
-  assert.match(privacyBody, /do not store your personal files or account data/, "Privacy page should state no storage.");
-
-  await page.keyboard.press("Escape");
-  await aboutDialog.waitFor({ state: "hidden" });
+  // Navigate to privacy page and verify content
+  await page.goto(new URL(privacyHref, baseUrl).toString());
+  await page.getByRole("heading", { name: "Privacy Policy" }).waitFor({ state: "visible" });
+  assert.ok(
+    await page.locator("text=Information We Collect").isVisible(),
+    "Privacy page should include Information We Collect section."
+  );
 }
