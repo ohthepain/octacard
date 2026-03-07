@@ -228,7 +228,8 @@ resource "aws_db_instance" "postgres" {
   backup_retention_period = local.environment == "production" ? 7 : 1
   multi_az                = local.environment == "production"
 
-  skip_final_snapshot = local.environment != "production"
+  skip_final_snapshot     = local.environment != "production"
+  final_snapshot_identifier = local.environment == "production" ? "${local.name_prefix}-db-final" : null
 
   tags = { Name = "${local.name_prefix}-db" }
 }
