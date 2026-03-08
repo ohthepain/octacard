@@ -28,7 +28,7 @@ export async function assertTermsAndPrivacyLinks(page, { baseUrl }) {
   await page.goto(new URL(privacyHref, baseUrl).toString());
   await page.getByRole("heading", { name: "Privacy Policy" }).waitFor({ state: "visible" });
   assert.ok(
-    await page.locator("text=Information We Collect").isVisible(),
+    await page.getByRole("heading", { name: /Information We Collect/ }).isVisible(),
     "Privacy page should include Information We Collect section."
   );
 }
