@@ -85,6 +85,8 @@ try {
   await assertExportPromptsFilenameInEmptyState(page);
   await assertFormatMenuCategories(page);
   await assertTermsAndPrivacyLinks(page, { baseUrl });
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
   await assertSampleRateOptions(page);
   await assertSp404Mk2PresetDefaults(page);
   await assertFilenameShortener(page);
