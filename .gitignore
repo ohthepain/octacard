@@ -1,6 +1,12 @@
+# Environment (never commit secrets)
+.env
+.env.*
+!.env.example
+
 .openclaw_last_github_check
 output/playwright
 output/release-notes-screenshots
+
 
 # Logs
 logs
