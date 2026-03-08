@@ -1,0 +1,156 @@
+# Deploy to ECS: staging from dev, production from main
+# Requires: AWS OIDC role with ECR push + ECS update + S3 read (terraform state)
+# See: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+
+name: deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build and integration tests
+        run: pnpm run test:it
+
+      - name: Upload Playwright output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-output-${{ github.job }}
+          path: output/playwright
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: eu-central-1
+
+      - name: Terraform init
+        run: |
+          cd terraform
+          terraform init -backend-config=backend.hcl
+          terraform workspace select staging 2>/dev/null || terraform workspace new staging
+
+      - name: Login to ECR
+        run: |
+          ECR_URL=$(cd terraform && terraform output -raw ecr_repository_url)
+          aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin "${ECR_URL%/*}"
+
+      - name: Build and push Docker image
+        run: |
+          ECR_URL=$(cd terraform && terraform output -raw ecr_repository_url)
+          docker build --platform linux/arm64 -t "$ECR_URL:staging" .
+          docker push "$ECR_URL:staging"
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster octacard-staging-cluster \
+            --service octacard-staging-service \
+            --force-new-deployment \
+            --region eu-central-1 \
+            --output text --query 'service.deployments[0].status'
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build and integration tests
+        run: pnpm run test:it
+
+      - name: Upload Playwright output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-output-${{ github.job }}
+          path: output/playwright
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region: eu-central-1
+
+      - name: Terraform init
+        run: |
+          cd terraform
+          terraform init -backend-config=backend.hcl
+          terraform workspace select production 2>/dev/null || terraform workspace new production
+
+      - name: Login to ECR
+        run: |
+          ECR_URL=$(cd terraform && terraform output -raw ecr_repository_url)
+          aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin "${ECR_URL%/*}"
+
+      - name: Build and push Docker image
+        run: |
+          ECR_URL=$(cd terraform && terraform output -raw ecr_repository_url)
+          docker build --platform linux/arm64 -t "$ECR_URL:production" .
+          docker push "$ECR_URL:production"
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster octacard-production-cluster \
+            --service octacard-production-service \
+            --force-new-deployment \
+            --region eu-central-1 \
+            --output text --query 'service.deployments[0].status'
