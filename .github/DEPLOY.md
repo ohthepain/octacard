@@ -1,9 +1,11 @@
 # GitHub Actions Deployment
 
-The `deploy.yml` workflow auto-deploys:
+The `ci.yml` workflow builds, tests, then deploys (deploy jobs run only after build-and-test succeeds):
 
 - **dev** branch → staging (ECS)
 - **main** branch → production (ECS)
+
+Deploy jobs run only on push (not PR) and only after build-and-test succeeds. OIDC uses the branch ref from the push, so credentials work correctly.
 
 ## Prerequisites: AWS OIDC
 
