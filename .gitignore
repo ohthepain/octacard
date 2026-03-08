@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 
+terraform/environments/*/secrets.tfvars
+
 .openclaw_last_github_check
 output/playwright
 output/release-notes-screenshots
