@@ -18,7 +18,7 @@ RUN pnpm exec prisma generate --schema=./prisma/schema.prisma
 
 RUN pnpm run build
 
-# Production - copy node_modules from builder (includes generated Prisma client)
+# Production
 FROM node:20
 
 WORKDIR /app
@@ -29,12 +29,13 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
-# Overlay generated Prisma client from builder (avoids running prisma generate in prod)
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/prisma ./prisma
+
+# Generate Prisma client (pnpm stores it in .pnpm; copying from builder doesn't work)
+ENV DATABASE_URL="postgresql://localhost:5432/dummy"
+RUN pnpm exec prisma generate --schema=./prisma/schema.prisma
 
 EXPOSE 3000
 
