@@ -1,9 +1,9 @@
 # OctaCard - ECS Fargate deployment (linux/arm64 for Graviton)
-FROM --platform=linux/arm64 node:20-alpine AS builder
+FROM --platform=linux/arm64 node:20-slim AS builder
 
 WORKDIR /app
 
-# Install pnpm (npm -g avoids corepack signature validation issues in Alpine)
+# Install pnpm (slim has glibc; Alpine/musl causes pnpm install failures)
 RUN npm install -g pnpm@9.15.0
 
 # Dependencies (patches required for pnpm patchedDependencies)
@@ -16,7 +16,7 @@ COPY . .
 RUN pnpm run build
 
 # Production image
-FROM --platform=linux/arm64 node:20-alpine
+FROM --platform=linux/arm64 node:20-slim
 
 WORKDIR /app
 
