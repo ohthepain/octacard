@@ -20,6 +20,8 @@ locals {
   environment = var.environment
   project     = "octacard"
   name_prefix = "${local.project}-${local.environment}"
+  # SES config set: explicit var, or per-environment (octacard-production, octacard-staging)
+  ses_configuration_set_name = var.ses_configuration_set != "" ? var.ses_configuration_set : local.name_prefix
 }
 
 # Provider
@@ -659,4 +661,47 @@ output "cloudfront_domain" {
 output "ecr_repository_url" {
   value       = aws_ecr_repository.app.repository_url
   description = "ECR repository URL for Docker push"
+}
+
+output "auth_superadmin_emails" {
+  value       = var.auth_superadmin_emails
+  description = "Superadmin emails"
+}
+
+output "ses_from_email" {
+  value       = var.ses_from_email
+  description = "SES from email"
+}
+
+output "ses_configuration_set" {
+  value       = local.ses_configuration_set_name
+  description = "SES configuration set"
+}
+
+# SES Configuration Set (optional - for event publishing)
+resource "aws_sesv2_configuration_set" "main" {
+  count                   = local.ses_configuration_set_name != "" ? 1 : 0
+  configuration_set_name  = local.ses_configuration_set_name
+  reputation_options {
+    reputation_metrics_enabled = true
+  }
+  delivery_options {
+    tls_policy = "REQUIRE"
+  }
+}
+
+# Domain identity (verify octacard.live so you can send from no-reply@octacard.live)
+# Uses Easy DKIM - omit dkim_signing_attributes or use next_signing_key_length only
+resource "aws_sesv2_email_identity" "domain" {
+  count = var.domain_name != "" ? 1 : 0
+
+  email_identity         = var.domain_name
+  configuration_set_name = local.ses_configuration_set_name != "" ? local.ses_configuration_set_name : null
+
+  # Wait for config set to exist before attaching (avoids SES eventual consistency 404)
+  depends_on = [aws_sesv2_configuration_set.main]
+
+  dkim_signing_attributes {
+    next_signing_key_length = "RSA_2048_BIT"
+  }
 }
