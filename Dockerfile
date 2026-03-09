@@ -1,16 +1,14 @@
 # OctaCard - ECS Fargate deployment (linux/arm64 for Graviton)
-FROM --platform=linux/arm64 node:20-slim AS builder
-
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+# TARGETPLATFORM set by `docker build --platform`; default for local builds
+ARG TARGETPLATFORM=linux/arm64
+FROM --platform=$TARGETPLATFORM node:20 AS builder
 
 WORKDIR /app
 
-# package.json must be present so corepack reads packageManager field
+RUN npm install -g pnpm@9.15.0
+
 COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
-RUN corepack enable
-
 RUN pnpm install --frozen-lockfile
 
 # Build
@@ -18,17 +16,15 @@ COPY . .
 RUN pnpm run build
 
 # Production image
-FROM --platform=linux/arm64 node:20-slim
-
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+ARG TARGETPLATFORM=linux/arm64
+FROM --platform=$TARGETPLATFORM node:20
 
 WORKDIR /app
 
+RUN npm install -g pnpm@9.15.0
+
 COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
-RUN corepack enable
-
 RUN pnpm install --frozen-lockfile
 
 # Built assets and server
