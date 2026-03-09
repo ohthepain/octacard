@@ -97,3 +97,21 @@ variable "domain_aliases" {
   type        = list(string)
   default     = []
 }
+
+variable "auth_superadmin_emails" {
+  description = "Superadmin emails"
+  type        = list(string)
+  default     = ["cremoni@gmail.com"]
+}
+
+variable "ses_from_email" {
+  description = "SES from email"
+  type        = string
+  default     = "no-reply@octacard.live"
+}
+
+variable "ses_configuration_set" {
+  description = "SES configuration set name. Empty = use name_prefix (octacard-{environment}). Set explicitly to share or use existing (e.g. octacard-live for production)."
+  type        = string
+  default     = ""
+}

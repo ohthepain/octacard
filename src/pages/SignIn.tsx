@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signIn, signUp } from "@/lib/auth-client";
+import { authClient, signIn, signUp } from "@/lib/auth-client";
 import { toast } from "sonner";
 
 export default function SignIn() {
@@ -11,6 +11,8 @@ export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -26,7 +28,7 @@ export default function SignIn() {
         toast.success("Signed in");
         window.location.href = "/";
       } else {
-        const result = await signUp.email({ email, password, name: name || undefined });
+        const result = await signUp.email({ email, password, name: name || email });
         if (result.error) {
           toast.error(result.error.message ?? "Sign up failed");
           return;
@@ -34,6 +36,80 @@ export default function SignIn() {
         toast.success("Account created");
         window.location.href = "/";
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMagicLink = async () => {
+    if (!email) {
+      toast.error("Enter your email first");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await authClient.$fetch("/sign-in/magic-link", {
+        method: "POST",
+        body: {
+          email,
+          callbackURL: "/",
+        },
+      });
+      if (result.error) {
+        toast.error(result.error.message ?? "Magic link failed");
+        return;
+      }
+      toast.success("Magic link sent");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    if (!email) {
+      toast.error("Enter your email first");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await authClient.$fetch("/email-otp/send-verification-otp", {
+        method: "POST",
+        body: {
+          email,
+          type: "sign-in",
+        },
+      });
+      if (result.error) {
+        toast.error(result.error.message ?? "Failed to send OTP");
+        return;
+      }
+      setOtpSent(true);
+      toast.success("OTP sent");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOtpSignIn = async () => {
+    if (!email || !otp) {
+      toast.error("Enter email and OTP");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await authClient.$fetch("/sign-in/email-otp", {
+        method: "POST",
+        body: {
+          email,
+          otp,
+        },
+      });
+      if (result.error) {
+        toast.error(result.error.message ?? "OTP sign in failed");
+        return;
+      }
+      toast.success("Signed in");
+      window.location.href = "/";
     } finally {
       setLoading(false);
     }
@@ -91,6 +167,36 @@ export default function SignIn() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}
           </Button>
+          {mode === "sign-in" && (
+            <>
+              <Button type="button" variant="outline" className="w-full" onClick={handleMagicLink} disabled={loading}>
+                Send magic link
+              </Button>
+              <Button type="button" variant="outline" className="w-full" onClick={handleSendOtp} disabled={loading}>
+                Send OTP code
+              </Button>
+              {otpSent && (
+                <div className="space-y-2">
+                  <Label htmlFor="otp">One-time code</Label>
+                  <Input
+                    id="otp"
+                    type="text"
+                    placeholder="123456"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                  />
+                  <Button type="button" className="w-full" onClick={handleOtpSignIn} disabled={loading}>
+                    Sign in with OTP
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground text-center">
+                Passkey support is planned next.
+              </p>
+            </>
+          )}
         </form>
 
         <p className="text-center text-sm text-muted-foreground">

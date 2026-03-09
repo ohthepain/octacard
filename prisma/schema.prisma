@@ -18,9 +18,27 @@ model User {
   updatedAt     DateTime
   sessions      Session[]
   accounts      Account[]
+  roles         UserRole[]
 
   @@unique([email])
   @@map("user")
+}
+
+enum RoleName {
+  ADMIN
+  SUPERADMIN
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  role      RoleName
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([role])
+  @@map("user_role")
 }
 
 model Session {
