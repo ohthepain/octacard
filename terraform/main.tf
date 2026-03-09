@@ -405,10 +405,11 @@ resource "aws_lb_target_group" "app" {
 
 # ACM Certificate in us-east-1 (required for CloudFront)
 resource "aws_acm_certificate" "cloudfront" {
-  count             = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
-  provider          = aws.us_east_1
-  domain_name       = var.domain_name
-  validation_method = "DNS"
+  count                    = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  provider                 = aws.us_east_1
+  domain_name              = var.domain_name
+  subject_alternative_names = var.domain_aliases
+  validation_method        = "DNS"
 
   lifecycle { create_before_destroy = true }
   tags = { Name = "${local.name_prefix}-cloudfront-cert" }
@@ -443,7 +444,7 @@ resource "aws_cloudfront_distribution" "main" {
   count    = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
   enabled  = true
   comment  = "${local.name_prefix} app"
-  aliases  = [var.domain_name]
+  aliases  = concat([var.domain_name], var.domain_aliases)
 
   origin {
     domain_name = aws_lb.main.dns_name
@@ -491,12 +492,28 @@ resource "aws_cloudfront_distribution" "main" {
   tags = { Name = "${local.name_prefix}-cdn" }
 }
 
-# Route 53: A record points to CloudFront (not ALB)
+# Route 53: A records point to CloudFront (not ALB)
 resource "aws_route53_record" "main" {
   count          = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
   zone_id        = var.route53_zone_id
   name           = var.domain_name
   type           = "A"
+  allow_overwrite = true
+
+  alias {
+    name                   = aws_cloudfront_distribution.main[0].domain_name
+    zone_id                = aws_cloudfront_distribution.main[0].hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# Route 53: A records for domain aliases (e.g. www)
+resource "aws_route53_record" "aliases" {
+  for_each = var.domain_name != "" && var.route53_zone_id != "" ? toset(var.domain_aliases) : toset([])
+
+  zone_id         = var.route53_zone_id
+  name            = replace(each.value, ".${var.domain_name}", "") # "www.octacard.live" -> "www"
+  type            = "A"
   allow_overwrite = true
 
   alias {
