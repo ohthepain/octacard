@@ -105,7 +105,7 @@ importers:
         version: 1.166.2(@tanstack/react-router@1.166.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
       '@tanstack/start':
         specifier: ^1.120.20
-        version: 1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)
+        version: 1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)
       '@tanstack/start-plugin':
         specifier: ^1.111.2
         version: 1.111.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
@@ -128,8 +128,8 @@ importers:
         specifier: ^4.6.12
         version: 4.12.5
       ioredis:
-        specifier: ^5.4.1
-        version: 5.9.3
+        specifier: ^5.10.0
+        version: 5.10.0
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.4)
@@ -1361,8 +1361,8 @@ packages:
       hono: '>=3.9.0'
       zod: ^3.19.1
 
-  '@ioredis/commands@1.5.0':
-    resolution: {integrity: sha512-eUgLqrMf8nJkZxT24JvVRrQya1vZkQh8BBeYNwGDqa5I0VUi8ACx7uFvAaLxintokpTenkK6DASvo/bvNbBGow==}
+  '@ioredis/commands@1.5.1':
+    resolution: {integrity: sha512-JH8ZL/ywcJyR9MmJ5BNqZllXNZQqQbnVZOqpPQqE1vHiFgAw4NHbvE0FOduNU8IX9babitBT46571OnPTT0Zcw==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -4447,8 +4447,8 @@ packages:
     resolution: {integrity: sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw==}
     engines: {node: '>= 0.4'}
 
-  ioredis@5.9.3:
-    resolution: {integrity: sha512-VI5tMCdeoxZWU5vjHWsiE/Su76JGhBvWF1MJnV9ZtGltHk9BmD48oDq8Tj8haZ85aceXZMxLNDQZRVo5QKNgXA==}
+  ioredis@5.10.0:
+    resolution: {integrity: sha512-HVBe9OFuqs+Z6n64q09PQvP1/R4Bm+30PAyyD4wIEqssh3v9L21QjCVk4kRLucMBcDokJTcLjsGeVRlq/nH6DA==}
     engines: {node: '>=12.22.0'}
 
   iron-webcrypto@1.2.1:
@@ -7616,7 +7616,7 @@ snapshots:
       hono: 4.12.5
       zod: 3.25.76
 
-  '@ioredis/commands@1.5.0': {}
+  '@ioredis/commands@1.5.1': {}
 
   '@isaacs/cliui@8.0.2':
     dependencies:
@@ -9211,11 +9211,11 @@ snapshots:
       - webpack
       - xml2js
 
-  '@tanstack/react-start-router-manifest@1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)':
+  '@tanstack/react-start-router-manifest@1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)':
     dependencies:
       '@tanstack/router-core': 1.163.3
       tiny-invariant: 1.3.3
-      vinxi: 0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vinxi: 0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'
@@ -9504,11 +9504,11 @@ snapshots:
       - supports-color
       - vite
 
-  '@tanstack/start-api-routes@1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)':
+  '@tanstack/start-api-routes@1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)':
     dependencies:
       '@tanstack/router-core': 1.163.3
       '@tanstack/start-server-core': 1.163.2
-      vinxi: 0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vinxi: 0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'
@@ -9572,7 +9572,7 @@ snapshots:
       tiny-invariant: 1.3.3
       tiny-warning: 1.0.3
 
-  '@tanstack/start-config@1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)':
+  '@tanstack/start-config@1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)':
     dependencies:
       '@tanstack/react-router': 1.166.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-start-plugin': 1.131.50(@tanstack/react-router@1.166.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@vitejs/plugin-react@4.7.0(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
@@ -9586,7 +9586,7 @@ snapshots:
       ofetch: 1.5.1
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      vinxi: 0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      vinxi: 0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       vite: 7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       zod: 3.25.76
     transitivePeerDependencies:
@@ -9799,13 +9799,13 @@ snapshots:
     dependencies:
       '@tanstack/router-core': 1.163.2
 
-  '@tanstack/start@1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)':
+  '@tanstack/start@1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)':
     dependencies:
       '@tanstack/react-start-client': 1.163.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@tanstack/react-start-router-manifest': 1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      '@tanstack/react-start-router-manifest': 1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       '@tanstack/react-start-server': 1.163.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@tanstack/start-api-routes': 1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
-      '@tanstack/start-config': 1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)
+      '@tanstack/start-api-routes': 1.120.19(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+      '@tanstack/start-config': 1.120.20(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(terser@5.46.0)(tsx@4.21.0)(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(yaml@2.8.2)
       '@tanstack/start-server-functions-client': 1.131.50(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
       '@tanstack/start-server-functions-handler': 1.120.19
       '@tanstack/start-server-functions-server': 1.131.2(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
@@ -11383,9 +11383,9 @@ snapshots:
       hasown: 2.0.2
       side-channel: 1.1.0
 
-  ioredis@5.9.3:
+  ioredis@5.10.0:
     dependencies:
-      '@ioredis/commands': 1.5.0
+      '@ioredis/commands': 1.5.1
       cluster-key-slot: 1.1.2
       debug: 4.4.3
       denque: 2.1.0
@@ -11958,7 +11958,7 @@ snapshots:
       h3: 1.15.5
       hookable: 5.5.3
       httpxy: 0.1.7
-      ioredis: 5.9.3
+      ioredis: 5.10.0
       jiti: 2.6.1
       klona: 2.0.6
       knitwork: 1.3.0
@@ -11991,7 +11991,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unimport: 5.6.0
       unplugin-utils: 0.3.1
-      unstorage: 1.17.4(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(ioredis@5.9.3)
+      unstorage: 1.17.4(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(ioredis@5.10.0)
       untyped: 2.0.0
       unwasm: 0.5.3
       youch: 4.1.0
@@ -13104,7 +13104,7 @@ snapshots:
       picomatch: 4.0.3
       webpack-virtual-modules: 0.6.2
 
-  unstorage@1.17.4(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(ioredis@5.9.3):
+  unstorage@1.17.4(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(ioredis@5.10.0):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -13116,7 +13116,7 @@ snapshots:
       ufo: 1.6.3
     optionalDependencies:
       db0: 0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))
-      ioredis: 5.9.3
+      ioredis: 5.10.0
 
   untun@0.1.3:
     dependencies:
@@ -13178,7 +13178,7 @@ snapshots:
       '@types/istanbul-lib-coverage': 2.0.6
       convert-source-map: 2.0.0
 
-  vinxi@0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.9.3)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
+  vinxi@0.5.3(@types/node@25.3.5)(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3)))(ioredis@5.10.0)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-syntax-jsx': 7.28.6(@babel/core@7.29.0)
@@ -13211,7 +13211,7 @@ snapshots:
       ufo: 1.6.3
       unctx: 2.5.0
       unenv: 1.10.0
-      unstorage: 1.17.4(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(ioredis@5.9.3)
+      unstorage: 1.17.4(db0@0.3.4(drizzle-orm@0.45.1(@opentelemetry/api@1.9.0)(@prisma/client@6.19.2(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))(typescript@5.9.3))(kysely@0.28.11)(prisma@6.19.2(magicast@0.5.2)(typescript@5.9.3))))(ioredis@5.10.0)
       vite: 6.4.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
       zod: 3.25.76
     transitivePeerDependencies:
