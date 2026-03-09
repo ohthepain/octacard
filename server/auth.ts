@@ -13,6 +13,9 @@ const SUPERADMIN_EMAILS = new Set(
     .filter(Boolean),
 );
 
+// When SES is not configured (local dev), skip email verification so registration works
+const sesConfigured = Boolean(process.env.SES_FROM_EMAIL);
+
 async function applyUserRolesOnCreate(userId: string, email: string): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
   const roles: RoleName[] = SUPERADMIN_EMAILS.has(normalizedEmail)
@@ -33,7 +36,7 @@ export const auth = betterAuth({
   basePath: "/api/auth",
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: true,
+    requireEmailVerification: sesConfigured,
     sendResetPassword: async ({ user, url }) => {
       const { html, text } = renderAuthEmailTemplate({
         heading: "Reset your password",

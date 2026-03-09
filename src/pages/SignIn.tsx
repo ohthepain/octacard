@@ -13,6 +13,7 @@ export default function SignIn() {
   const [name, setName] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,9 +34,29 @@ export default function SignIn() {
           toast.error(result.error.message ?? "Sign up failed");
           return;
         }
-        toast.success("Account created");
-        window.location.href = "/";
+        toast.success("Account created. Check your email for the verification code.");
+        setNeedsVerification(true);
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !otp) {
+      toast.error("Enter the verification code from your email");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await authClient.emailOtp.verifyEmail({ email, otp });
+      if (result.error) {
+        toast.error(result.error.message ?? "Verification failed");
+        return;
+      }
+      toast.success("Email verified");
+      window.location.href = "/";
     } finally {
       setLoading(false);
     }
@@ -114,6 +135,53 @@ export default function SignIn() {
       setLoading(false);
     }
   };
+
+  if (needsVerification) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold">Verify your email</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              We sent a verification code to {email}. Enter it below.
+            </p>
+          </div>
+          <form onSubmit={handleVerifyEmail} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="verify-otp">Verification code</Label>
+              <Input
+                id="verify-otp"
+                type="text"
+                placeholder="123456"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={6}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Verifying…" : "Verify email"}
+            </Button>
+          </form>
+          <p className="text-center text-sm text-muted-foreground">
+            <button
+              type="button"
+              className="text-primary underline hover:no-underline"
+              onClick={() => setNeedsVerification(false)}
+            >
+              Back to sign up
+            </button>
+          </p>
+          <p className="text-center">
+            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
+              ← Back to OctaCard
+            </Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
