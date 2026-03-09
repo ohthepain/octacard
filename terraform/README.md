@@ -146,7 +146,7 @@ pnpm run terraform:force-unlock:staging
 
 ## Outputs
 
-- `s3_bucket_name` – Use for `S3_BUCKET` in Vercel env vars
+- `s3_bucket_name` – Use for `S3_BUCKET` secret
 - `s3_bucket_arn` – For IAM policies
 - `app_url` – App URL (HTTPS when domain configured, else HTTP ALB DNS)
 
@@ -203,28 +203,29 @@ For **redis-url** "scheduled for deletion": restore it in AWS Console (Secrets M
 
 ### Deploy the app
 
-1. **Run Prisma migrations:**
+Migrations run automatically when the container starts (see `scripts/start.sh`). For a one-off run (e.g. after recreating the database):
 
-   ```bash
-   DATABASE_URL="postgresql://..." pnpm prisma migrate deploy
-   ```
+```bash
+cd terraform && terraform workspace select staging
+DATABASE_URL="$(terraform output -raw database_url)" pnpm prisma migrate deploy --schema=../prisma/schema.prisma
+```
 
-2. **Build and push Docker image:**
+**Build and push Docker image:**
 
-   ```bash
-   pnpm run docker:build:staging
-   ```
+```bash
+pnpm run docker:build:staging
+```
 
-   Or manually:
+Or manually:
 
-   ```bash
-   aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin $(cd terraform && terraform output -raw ecr_repository_url | cut -d/ -f1)
-   docker build -t $(cd terraform && terraform output -raw ecr_repository_url):staging .
-   docker push $(cd terraform && terraform output -raw ecr_repository_url):staging
-   aws ecs update-service --cluster octacard-staging-cluster --service octacard-staging-service --force-new-deployment --region eu-central-1
-   ```
+```bash
+aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin $(cd terraform && terraform output -raw ecr_repository_url | cut -d/ -f1)
+docker build -t $(cd terraform && terraform output -raw ecr_repository_url):staging .
+docker push $(cd terraform && terraform output -raw ecr_repository_url):staging
+aws ecs update-service --cluster octacard-staging-cluster --service octacard-staging-service --force-new-deployment --region eu-central-1
+```
 
-3. **Add app URL to S3 CORS** (for uploads): Add `http://<alb-dns-name>/` or `https://<domain>/` to `cors_allowed_origins` in tfvars and re-apply.
+**Add app URL to S3 CORS** (for uploads): Add `http://<alb-dns-name>/` or `https://<domain>/` to `cors_allowed_origins` in tfvars and re-apply.
 
 ### Destroy and recreate
 
@@ -263,6 +264,35 @@ pnpm run terraform:state:rm-rds:production
 # 3. Destroy the rest
 terraform destroy -var-file=environments/production/terraform.tfvars -auto-approve
 ```
+
+### "Authentication failed" / database credentials not valid
+
+The secret in Secrets Manager has `ignore_changes` so Terraform won't update it when you change `db_password` in tfvars. If the secret is out of sync with RDS (e.g. after changing the password or recreating), update it manually:
+
+```bash
+cd terraform
+terraform workspace select staging
+
+# 1. Get the correct connection string (uses current tfvars, URL-encodes password)
+terraform output -raw database_url
+
+# 2. Update the secret in AWS Console: Secrets Manager → octacard-staging/database-url → Retrieve secret value → Edit → paste the URL → Save
+
+# 3. Force ECS to pick up the new secret
+aws ecs update-service --cluster octacard-staging-cluster --service octacard-staging-service --force-new-deployment --region eu-central-1
+```
+
+**Password with special characters:** If your `db_password` contains `@`, `:`, `/`, `#`, etc., Terraform now URL-encodes it. If the secret was created before that fix, update it manually with the output from `terraform output -raw database_url`.
+
+### Registration emails not received (staging/production)
+
+1. **SES env vars** – Ensure `SES_FROM_EMAIL` and `SES_CONFIGURATION_SET` are set in the ECS task (Terraform passes these from `ses_from_email` and `ses_configuration_set`).
+
+2. **From address matches verified domain** – `ses_from_email` must use the verified domain. For staging (`domain_name = "staging.octacard.live"`), use `no-reply@staging.octacard.live`. For production (`domain_name = "octacard.live"`), use `no-reply@octacard.live`.
+
+3. **SES Sandbox** – In sandbox mode, you can only send to verified addresses. Verify recipient emails in SES Console, or request production access.
+
+4. **DKIM verification** – After creating the domain identity, add the CNAME records from SES to your Route 53 zone. Until DKIM is verified, some providers may reject or spam-filter messages.
 
 ### Stuck destroy (DependencyViolation / AuthFailure on RDS ENI)
 

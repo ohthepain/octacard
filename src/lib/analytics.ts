@@ -3,7 +3,7 @@ import posthog from "posthog-js";
 type Properties = Record<string, unknown>;
 
 const POSTHOG_KEY = import.meta.env.VITE_PUBLIC_POSTHOG_KEY as string | undefined;
-// Reverse proxy at /ph avoids ad blockers. Configured in vite.config.ts (dev) and vercel.json (prod).
+// Reverse proxy at /ph avoids ad blockers. Configured in vite.config.ts (dev) and terraform (prod).
 const POSTHOG_PROXY_PATH = "/ph";
 
 const SESSION_ID_KEY = "octacard_session_id";
@@ -93,4 +93,3 @@ export function capture(event: string, properties: Properties = {}): void {
     ...properties,
   });
 }
-

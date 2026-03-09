@@ -17,7 +17,7 @@ variable "aws_region" {
 variable "cors_allowed_origins" {
   description = "CORS allowed origins for S3"
   type        = list(string)
-  default     = ["https://*.vercel.app", "https://*.octacard.live"]
+  default     = ["https://*.elb.amazonaws.com", "https://*.octacard.live"]
 }
 
 variable "db_instance_class" {
