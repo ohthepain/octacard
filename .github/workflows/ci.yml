@@ -81,8 +81,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
           aws-region: eu-central-1
+          audience: sts.amazonaws.com
 
       - name: Terraform init
         run: |
@@ -141,6 +142,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
           aws-region: eu-central-1
+          audience: sts.amazonaws.com
 
       - name: Terraform init
         run: |
