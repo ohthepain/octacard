@@ -18,9 +18,9 @@ If not already done, add GitHub as an OIDC provider in IAM:
 - Provider URL: `https://token.actions.githubusercontent.com`
 - Audience: `sts.amazonaws.com`
 
-### 2. Create IAM roles for staging and production
+### 2. Create IAM role for deployments
 
-Each environment needs an IAM role with a trust policy for your repo. Example for staging:
+Create one IAM role (e.g. `aws-github-deploy`) with a trust policy that allows both `main` and `dev`:
 
 ```json
 {
@@ -37,7 +37,7 @@ Each environment needs an IAM role with a trust policy for your repo. Example fo
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:YOUR_ORG/octacard:ref:refs/heads/dev"
+          "token.actions.githubusercontent.com:sub": "repo:YOUR_ORG/octacard:*"
         }
       }
     }
@@ -45,11 +45,11 @@ Each environment needs an IAM role with a trust policy for your repo. Example fo
 }
 ```
 
-For production, use `ref:refs/heads/main` in the `sub` condition.
+The `repo:YOUR_ORG/octacard:*` pattern allows pushes to any branch (main, dev, etc.).
 
-### 3. Attach permissions to each role
+### 3. Attach permissions to the role
 
-Each role needs:
+The role needs:
 
 - **ECR**: `GetAuthorizationToken`, `BatchGetImage`, `BatchCheckLayerAvailability`, `PutImage`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`
 - **ECS**: `UpdateService`, `DescribeServices`, `DescribeTaskDefinition`, `RegisterTaskDefinition`
@@ -57,14 +57,15 @@ Each role needs:
 
 Or use a policy like `AmazonEC2ContainerRegistryPowerUser` + `AmazonECS_FullAccess` + S3 read on the state bucket.
 
-### 4. Add repository secrets
+### 4. Add repository secret
 
 In GitHub: **Settings → Secrets and variables → Actions**, add:
 
 | Secret | Value |
 |--------|-------|
-| `AWS_ROLE_ARN_STAGING` | `arn:aws:iam::ACCOUNT_ID:role/github-actions-octacard-staging` |
-| `AWS_ROLE_ARN_PRODUCTION` | `arn:aws:iam::ACCOUNT_ID:role/github-actions-octacard-production` |
+| `AWS_ROLE_ARN_DEPLOY` | `arn:aws:iam::ACCOUNT_ID:role/aws-github-deploy` (or your IAM role ARN) |
+
+Both staging and production deploy jobs use this single role.
 
 ### 5. Create the dev branch (if needed)
 
