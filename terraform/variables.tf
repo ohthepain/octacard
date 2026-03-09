@@ -91,3 +91,9 @@ variable "route53_zone_id" {
   type        = string
   default     = ""
 }
+
+variable "domain_aliases" {
+  description = "Additional domain aliases (e.g. www.example.com). Must be in same Route53 zone. Adds to ACM cert and CloudFront."
+  type        = list(string)
+  default     = []
+}
