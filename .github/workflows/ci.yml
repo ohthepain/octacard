@@ -56,7 +56,7 @@ jobs:
     needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     environment: staging
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-arm  # Native arm64 - avoids npm/pnpm failures in QEMU cross-build
     timeout-minutes: 25
     permissions:
       id-token: write
@@ -121,7 +121,7 @@ jobs:
     needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-arm  # Native arm64 - avoids npm/pnpm failures in QEMU cross-build
     timeout-minutes: 25
     permissions:
       id-token: write
