@@ -18,9 +18,7 @@ const sesConfigured = Boolean(process.env.SES_FROM_EMAIL);
 
 async function applyUserRolesOnCreate(userId: string, email: string): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
-  const roles: RoleName[] = SUPERADMIN_EMAILS.has(normalizedEmail)
-    ? [RoleName.ADMIN, RoleName.SUPERADMIN]
-    : [];
+  const roles: RoleName[] = SUPERADMIN_EMAILS.has(normalizedEmail) ? [RoleName.ADMIN, RoleName.SUPERADMIN] : [];
   if (roles.length === 0) return;
 
   await prisma.userRole.createMany({
@@ -128,11 +126,17 @@ export const auth = betterAuth({
       sendVerificationOnSignUp: true,
     }),
   ],
-  trustedOrigins: [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://*.vercel.app",
-  ],
+  trustedOrigins: (() => {
+    const base = ["http://localhost:3000", "http://127.0.0.1:3000"];
+    const baseUrl = process.env.BETTER_AUTH_URL;
+    if (baseUrl && !baseUrl.includes("localhost") && !baseUrl.includes("127.0.0.1")) {
+      base.push(baseUrl.replace(/\/$/, "")); // trim trailing slash
+    }
+    const extra = process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",")
+      .map((o) => o.trim())
+      .filter(Boolean);
+    return [...base, ...(extra ?? [])];
+  })(),
 });
 
 export type Auth = typeof auth;
