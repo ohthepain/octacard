@@ -1,9 +1,9 @@
 /**
- * Polling helpers to avoid page.waitForFunction() which uses Function constructor
- * internally and triggers security scanners (e.g. H1 "Function constructor").
+ * Polling helpers to avoid page.waitForFunction(), which can trigger eval-like
+ * scanner findings in test environments.
  *
  * These helpers use page.evaluate() with string expressions or locator APIs
- * instead of passing function callbacks.
+ * instead of function callbacks.
  */
 
 /**

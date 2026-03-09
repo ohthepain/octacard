@@ -101,7 +101,7 @@ ${colorConfig
     )
     .join("\n");
 
-  return <style dangerouslySetInnerHTML={{ __html: cssContent }} />;
+  return <style>{cssContent}</style>;
 };
 
 const ChartTooltip = RechartsPrimitive.Tooltip;

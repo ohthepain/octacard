@@ -89,6 +89,7 @@ export default defineConfig(({ command }) => {
     },
     server: {
       port: 3000,
+      allowedHosts: ["dithionous-shantelle-uncleft.ngrok-free.dev"],
       headers: {
         // Required for FFmpeg WASM (SharedArrayBuffer) - cross-origin isolation
         "Cross-Origin-Opener-Policy": "same-origin",

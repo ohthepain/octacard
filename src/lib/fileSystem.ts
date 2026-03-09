@@ -993,7 +993,8 @@ class FileSystemService {
   ): Promise<FileSystemResult> {
     try {
       const dirPath = virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
-      const fileName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
+      const rawFileName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
+      const fileName = sanitizeFilenameMinimal(rawFileName) || "export.wav";
       const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(dirPath);
       const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
       const writable = await fileHandle.createWritable();
@@ -1351,13 +1352,14 @@ class FileSystemService {
     paneType: PaneType = "dest",
   ): Promise<FileSystemResult<string>> {
     try {
+      const safeName = sanitizeFilenameMinimal(file.name) || "upload";
       const destDirHandle = await this.getRegistry(paneType).getDirectoryHandle(destVirtualPath);
-      const fileHandle = await destDirHandle.getFileHandle(file.name, { create: true });
+      const fileHandle = await destDirHandle.getFileHandle(safeName, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(file);
       await writable.close();
 
-      const newPath = destVirtualPath === "/" ? `/${file.name}` : `${destVirtualPath}/${file.name}`;
+      const newPath = destVirtualPath === "/" ? `/${safeName}` : `${destVirtualPath}/${safeName}`;
       await this.reindexSubtree(destVirtualPath, paneType);
 
       return {
