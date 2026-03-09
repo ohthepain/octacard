@@ -1,5 +1,5 @@
 # OctaCard - ECS Fargate deployment (linux/arm64 for Graviton)
-# TARGETPLATFORM set by `docker build --platform`; default for local builds
+# Use ubuntu-22.04-arm runner in CI for native arm64 build (npm/pnpm work; no QEMU)
 ARG TARGETPLATFORM=linux/arm64
 FROM --platform=$TARGETPLATFORM node:20 AS builder
 
@@ -11,12 +11,10 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
-# Build
 COPY . .
 RUN pnpm run build
 
-# Production image
-ARG TARGETPLATFORM=linux/arm64
+# Production
 FROM --platform=$TARGETPLATFORM node:20
 
 WORKDIR /app
@@ -27,12 +25,10 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
-# Built assets and server
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/prisma ./prisma
 
-# Generate Prisma client
 RUN pnpm exec prisma generate
 
 EXPOSE 3000
