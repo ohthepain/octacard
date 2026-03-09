@@ -89,4 +89,4 @@ npm run test:it
 
 ## How can I deploy this project?
 
-For web deployment, you can use platforms like Vercel, Netlify, or Cloudflare Pages. Build the project with `pnpm run build` and deploy the output from the `dist` directory.
+For web deployment, build with `pnpm run build` and deploy the output from the `dist` directory. This project uses AWS (ECS Fargate, RDS, ElastiCache, SES)—see `terraform/` and `.github/DEPLOY.md`. Alternatives include Netlify or Cloudflare Pages.

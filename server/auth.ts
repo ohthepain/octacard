@@ -57,8 +57,8 @@ export const auth = betterAuth({
     sendVerificationEmail: async ({ user, url }) => {
       const { html, text } = renderAuthEmailTemplate({
         heading: "Verify your email",
-        intro: "Please verify your email address to finish setting up your OctaCard account.",
-        actionLabel: "Verify email",
+        intro: "Click the button below to verify your email and activate your OctaCard account. No password needed.",
+        actionLabel: "Verify & activate account",
         actionUrl: url,
       });
       await sendAuthEmail({
