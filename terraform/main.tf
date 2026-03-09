@@ -296,7 +296,17 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = [aws_secretsmanager_secret.database_url.arn, aws_secretsmanager_secret.redis_url.arn, aws_secretsmanager_secret.better_auth_secret.arn]
+      Resource = concat(
+        [
+          aws_secretsmanager_secret.database_url.arn,
+          aws_secretsmanager_secret.redis_url.arn,
+          aws_secretsmanager_secret.better_auth_secret.arn
+        ],
+        var.google_client_id != "" && var.google_client_secret != "" ? [
+          aws_secretsmanager_secret.google_client_id[0].arn,
+          aws_secretsmanager_secret.google_client_secret[0].arn
+        ] : []
+      )
     }]
   })
 }
@@ -376,6 +386,32 @@ resource "aws_secretsmanager_secret" "better_auth_secret" {
 resource "aws_secretsmanager_secret_version" "better_auth_secret" {
   secret_id     = aws_secretsmanager_secret.better_auth_secret.id
   secret_string = var.better_auth_secret
+}
+
+resource "aws_secretsmanager_secret" "google_client_id" {
+  count  = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
+  name   = "${local.name_prefix}/google-client-id"
+  tags   = { Name = "${local.name_prefix}-google-client-id" }
+  lifecycle { prevent_destroy = true }
+}
+
+resource "aws_secretsmanager_secret_version" "google_client_id" {
+  count         = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.google_client_id[0].id
+  secret_string = var.google_client_id
+}
+
+resource "aws_secretsmanager_secret" "google_client_secret" {
+  count  = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
+  name   = "${local.name_prefix}/google-client-secret"
+  tags   = { Name = "${local.name_prefix}-google-client-secret" }
+  lifecycle { prevent_destroy = true }
+}
+
+resource "aws_secretsmanager_secret_version" "google_client_secret" {
+  count         = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.google_client_secret[0].id
+  secret_string = var.google_client_secret
 }
 
 # ECS Cluster
@@ -581,11 +617,17 @@ resource "aws_ecs_task_definition" "app" {
       { name = "SES_CONFIGURATION_SET", value = local.ses_configuration_set_name }
     ]
 
-    secrets = [
-      { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url.arn },
-      { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.redis_url.arn },
-      { name = "BETTER_AUTH_SECRET", valueFrom = aws_secretsmanager_secret.better_auth_secret.arn }
-    ]
+    secrets = concat(
+      [
+        { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url.arn },
+        { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.redis_url.arn },
+        { name = "BETTER_AUTH_SECRET", valueFrom = aws_secretsmanager_secret.better_auth_secret.arn }
+      ],
+      var.google_client_id != "" && var.google_client_secret != "" ? [
+        { name = "GOOGLE_CLIENT_ID", valueFrom = aws_secretsmanager_secret.google_client_id[0].arn },
+        { name = "GOOGLE_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.google_client_secret[0].arn }
+      ] : []
+    )
 
     logConfiguration = {
       logDriver = "awslogs"

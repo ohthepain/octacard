@@ -15,6 +15,8 @@ const SUPERADMIN_EMAILS = new Set(
 
 // When SES is not configured (local dev), skip email verification so registration works
 const sesConfigured = Boolean(process.env.SES_FROM_EMAIL);
+const googleClientId = process.env.BETTER_AUTH_GOOGLE_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.BETTER_AUTH_GOOGLE_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
 
 async function applyUserRolesOnCreate(userId: string, email: string): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
@@ -51,6 +53,15 @@ export const auth = betterAuth({
       });
     },
   },
+  socialProviders:
+    googleClientId && googleClientSecret
+      ? {
+          google: {
+            clientId: googleClientId,
+            clientSecret: googleClientSecret,
+          },
+        }
+      : undefined,
   emailVerification: {
     sendOnSignUp: true,
     sendOnSignIn: true,

@@ -62,6 +62,20 @@ variable "better_auth_secret" {
   sensitive   = true
 }
 
+variable "google_client_id" {
+  description = "Google OAuth client ID (optional). Leave empty to disable Google sign-in."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth client secret (optional)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "ecs_cpu" {
   description = "ECS task CPU units (256, 512, 1024, 2048, 4096)"
   type        = number

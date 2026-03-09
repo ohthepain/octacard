@@ -154,7 +154,7 @@ pnpm run terraform:force-unlock:staging
 
 Standalone VPC with ALB, ECS Fargate, RDS Postgres, ElastiCache Redis.
 
-**Secrets:** Edit `terraform/environments/staging/terraform.tfvars` and replace `REPLACE_ME` with your `db_password` and `better_auth_secret` (generate with `openssl rand -hex 32`). The tfvars files are gitignored. If they were previously committed, run `git rm --cached terraform/environments/*/terraform.tfvars` once to stop tracking them.
+**Secrets:** Edit `terraform/environments/staging/terraform.tfvars` and replace `REPLACE_ME` with your `db_password` and `better_auth_secret` (generate with `openssl rand -hex 32`). For Google sign-in, add `google_client_id` and `google_client_secret` (from Google Cloud Console → APIs & Services → Credentials). The tfvars files are gitignored. If they were previously committed, run `git rm --cached terraform/environments/*/terraform.tfvars` once to stop tracking them.
 
 Then apply:
 

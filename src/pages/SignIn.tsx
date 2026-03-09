@@ -136,6 +136,21 @@ export default function SignIn() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    try {
+      const result = await signIn.social({
+        provider: "google",
+        callbackURL: "/",
+      });
+      if (result.error) {
+        toast.error(result.error.message ?? "Google sign in failed");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (needsVerification) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -235,6 +250,11 @@ export default function SignIn() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}
           </Button>
+          {mode === "sign-in" && (
+            <Button type="button" variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={loading}>
+              Continue with Google
+            </Button>
+          )}
           {mode === "sign-in" && (
             <>
               <Button type="button" variant="outline" className="w-full" onClick={handleMagicLink} disabled={loading}>
