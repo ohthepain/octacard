@@ -3,8 +3,11 @@ FROM --platform=linux/arm64 node:20-slim AS builder
 
 WORKDIR /app
 
-# Install pnpm (slim has glibc; Alpine/musl causes pnpm install failures)
-RUN npm install -g pnpm@9.15.0
+# Install pnpm via standalone binary (avoids npm/corepack issues in CI Docker builds)
+RUN apt-get update -y && apt-get install -y --no-install-recommends curl ca-certificates \
+  && curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v9.15.0/pnpm-linuxstatic-arm64" -o /bin/pnpm \
+  && chmod +x /bin/pnpm \
+  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # Dependencies (patches required for pnpm patchedDependencies)
 COPY package.json pnpm-lock.yaml ./
@@ -20,7 +23,10 @@ FROM --platform=linux/arm64 node:20-slim
 
 WORKDIR /app
 
-RUN npm install -g pnpm@9.15.0
+RUN apt-get update -y && apt-get install -y --no-install-recommends curl ca-certificates \
+  && curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v9.15.0/pnpm-linuxstatic-arm64" -o /bin/pnpm \
+  && chmod +x /bin/pnpm \
+  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # Dependencies (include tsx for running TS server; patches for patchedDependencies)
 COPY package.json pnpm-lock.yaml ./
