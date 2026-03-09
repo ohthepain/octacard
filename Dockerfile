@@ -1,7 +1,6 @@
 # OctaCard - ECS Fargate deployment (linux/arm64 for Graviton)
 # Use ubuntu-22.04-arm runner in CI for native arm64 build (npm/pnpm work; no QEMU)
-ARG TARGETPLATFORM=linux/arm64
-FROM --platform=$TARGETPLATFORM node:20 AS builder
+FROM node:20 AS builder
 
 WORKDIR /app
 
@@ -15,7 +14,7 @@ COPY . .
 RUN pnpm run build
 
 # Production
-FROM --platform=$TARGETPLATFORM node:20
+FROM node:20
 
 WORKDIR /app
 
@@ -29,6 +28,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/prisma ./prisma
 
+# Prisma v7+ requires DATABASE_URL; dummy value for generate (no DB connection)
+ENV DATABASE_URL="postgresql://localhost:5432/dummy"
 RUN pnpm exec prisma generate
 
 EXPOSE 3000
