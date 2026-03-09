@@ -329,6 +329,19 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
   })
 }
 
+resource "aws_iam_role_policy" "ecs_task_ses" {
+  name = "${local.name_prefix}-ecs-task-ses"
+  role = aws_iam_role.ecs_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+      Resource = "*"
+    }]
+  })
+}
+
 # Secrets Manager (lifecycle: don't delete on destroy - secrets are cheap, deletion is slow)
 resource "aws_secretsmanager_secret" "database_url" {
   name = "${local.name_prefix}/database-url"
@@ -563,7 +576,9 @@ resource "aws_ecs_task_definition" "app" {
       { name = "AWS_REGION", value = var.aws_region },
       { name = "S3_BUCKET", value = aws_s3_bucket.uploads.id },
       { name = "BETTER_AUTH_URL", value = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}" },
-      { name = "BETTER_AUTH_TRUSTED_ORIGINS", value = var.domain_name != "" ? join(",", [for d in concat([var.domain_name], var.domain_aliases) : "https://${d}"]) : "" }
+      { name = "BETTER_AUTH_TRUSTED_ORIGINS", value = var.domain_name != "" ? join(",", [for d in concat([var.domain_name], var.domain_aliases) : "https://${d}"]) : "" },
+      { name = "SES_FROM_EMAIL", value = var.ses_from_email },
+      { name = "SES_CONFIGURATION_SET", value = local.ses_configuration_set_name }
     ]
 
     secrets = [

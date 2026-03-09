@@ -68,6 +68,8 @@
     "aws:delete:secret:production:database-url": "aws secretsmanager delete-secret --secret-id octacard-production/database-url --force-delete-without-recovery --region eu-central-1",
     "aws:delete:secret:production:redis-url": "aws secretsmanager delete-secret --secret-id octacard-production/redis-url --force-delete-without-recovery --region eu-central-1",
     "aws:delete:secret:production:better-auth-secret": "aws secretsmanager delete-secret --secret-id octacard-production/better-auth-secret --force-delete-without-recovery --region eu-central-1",
+    "aws:restart:staging": "aws ecs update-service --cluster octacard-staging-cluster --service octacard-staging-service --force-new-deployment --region eu-central-1",
+    "aws:restart:production": "aws ecs update-service --cluster octacard-production-cluster --service octacard-production-service --force-new-deployment --region eu-central-1",
     "build:push:staging": "./scripts/docker-build-push.sh staging",
     "build:push:production": "./scripts/docker-build-push.sh production"
   },
