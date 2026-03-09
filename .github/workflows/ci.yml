@@ -55,6 +55,7 @@ jobs:
   deploy-staging:
     needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    environment: staging
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -81,7 +82,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEPLOY }}
           aws-region: eu-central-1
           audience: sts.amazonaws.com
 
@@ -114,6 +115,7 @@ jobs:
   deploy-production:
     needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -137,10 +139,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Debug OIDC token subject (for trust policy)
+        run: |
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
+          PADDED="$PAYLOAD$(printf '=%.0s' $(seq 1 $(( (4 - ${#PAYLOAD} % 4) % 4 ))))"
+          echo "OIDC token subject (must match IAM trust policy StringLike):"
+          echo "$PADDED" | tr '_-' '/+' | base64 -d 2>/dev/null | jq -r '.sub'
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEPLOY }}
           aws-region: eu-central-1
           audience: sts.amazonaws.com
 
