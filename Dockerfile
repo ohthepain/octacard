@@ -12,7 +12,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-# Prisma generate in builder (has full deps); v7+ needs DATABASE_URL
+# Prisma generate in builder (has full deps); schema uses env("DATABASE_URL")
 ENV DATABASE_URL="postgresql://localhost:5432/dummy"
 RUN pnpm exec prisma generate --schema=./prisma/schema.prisma
 
@@ -30,7 +30,6 @@ COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
 # Overlay generated Prisma client from builder (avoids running prisma generate in prod)
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 COPY --from=builder /app/dist ./dist
