@@ -3,8 +3,8 @@ FROM --platform=linux/arm64 node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+# Install pnpm (npm -g avoids corepack signature validation issues in Alpine)
+RUN npm install -g pnpm@9.15.0
 
 # Dependencies (patches required for pnpm patchedDependencies)
 COPY package.json pnpm-lock.yaml ./
@@ -20,7 +20,7 @@ FROM --platform=linux/arm64 node:20-alpine
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+RUN npm install -g pnpm@9.15.0
 
 # Dependencies (include tsx for running TS server; patches for patchedDependencies)
 COPY package.json pnpm-lock.yaml ./
