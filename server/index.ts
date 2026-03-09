@@ -67,6 +67,14 @@ app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 if (isProduction) {
   app.use("/assets/*", serveStatic({ root: distDir }));
   app.use("/favicon.ico", serveStatic({ root: distDir }));
+  app.use("/favicon.png", serveStatic({ root: distDir }));
+  app.use("/favicon.svg", serveStatic({ root: distDir }));
+  app.use("/logo_white.png", serveStatic({ root: distDir }));
+  app.use("/placeholder.svg", serveStatic({ root: distDir }));
+  app.use("/robots.txt", serveStatic({ root: distDir }));
+  app.use("/privacy-policy.html", serveStatic({ root: distDir }));
+  app.use("/terms-of-service.html", serveStatic({ root: distDir }));
+  app.use("/release-notes/*", serveStatic({ root: distDir }));
   app.get("*", serveStatic({ root: distDir, rewriteRequestPath: () => "/index.html" }));
 }
 
