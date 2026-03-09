@@ -16,7 +16,7 @@ function resolveAppVersion(): string {
 
 function resolveGitSha(): string {
   const envSha =
-    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.GIT_COMMIT_SHA ||
     process.env.GITHUB_SHA ||
     process.env.CF_PAGES_COMMIT_SHA ||
     process.env.SOURCE_VERSION;
@@ -48,20 +48,10 @@ export default defineConfig(({ command }) => {
       include: ["src/**/*.{test,spec}.{ts,tsx}"],
       coverage: {
         provider: "v8",
-        reporter: [
-          "text",
-          "html",
-          "lcov",
-          ["json", { file: "coverage-final.json" }],
-        ],
+        reporter: ["text", "html", "lcov", ["json", { file: "coverage-final.json" }]],
         reportsDirectory: "./coverage/unit",
         include: ["src/**/*.{ts,tsx}"],
-        exclude: [
-          "src/**/*.d.ts",
-          "src/**/*.{test,spec}.{ts,tsx}",
-          "src/main.tsx",
-          "src/routeTree.gen.ts",
-        ],
+        exclude: ["src/**/*.d.ts", "src/**/*.{test,spec}.{ts,tsx}", "src/main.tsx", "src/routeTree.gen.ts"],
       },
     },
     resolve: {
@@ -76,7 +66,7 @@ export default defineConfig(({ command }) => {
       ...(debugBuild
         ? {
             // Force React development runtime so invariant errors are not minified.
-            // Only enabled for explicit debug builds (e.g. Vercel preview debugging).
+            // Only enabled for explicit debug builds (e.g. ALB debugging).
             "process.env.NODE_ENV": JSON.stringify("development"),
           }
         : {}),

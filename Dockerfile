@@ -32,6 +32,8 @@ RUN pnpm install --frozen-lockfile
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/prisma ./prisma
+COPY scripts/start.sh ./scripts/start.sh
+RUN chmod +x ./scripts/start.sh
 
 # Generate Prisma client (pnpm stores it in .pnpm; copying from builder doesn't work)
 ENV DATABASE_URL="postgresql://localhost:5432/dummy"
@@ -42,4 +44,4 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV PORT=3000
 
-CMD ["pnpm", "exec", "tsx", "server/index.ts"]
+CMD ["./scripts/start.sh"]
