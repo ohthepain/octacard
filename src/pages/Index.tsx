@@ -1043,7 +1043,9 @@ const Index = () => {
             }}
           />
         )}
-        {previewMode === "multi" && <MultiSampleStack className="shrink-0" />}
+        {previewMode === "multi" && (
+          <MultiSampleStack className="shrink-0" rootReloadToken={`${sourceRootVersion}:${destRootVersion}`} />
+        )}
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
