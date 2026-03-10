@@ -19,6 +19,9 @@ model User {
   sessions      Session[]
   accounts      Account[]
   roles         UserRole[]
+  ownedProjects Project[]          @relation("ProjectOwner")
+  ownedSamples  SampleFile[]       @relation("SampleOwner")
+  collection    SampleCollection[]
 
   @@unique([email])
   @@map("user")
@@ -84,4 +87,58 @@ model Verification {
   updatedAt  DateTime?
 
   @@map("verification")
+}
+
+model Project {
+  id         String    @id @default(cuid())
+  name       String
+  ownerId    String
+  parentId   String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  owner      User      @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  parent     Project?  @relation("ProjectHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children   Project[] @relation("ProjectHierarchy")
+  samples    SampleFile[]
+
+  @@index([ownerId])
+  @@index([parentId])
+  @@index([name])
+  @@map("project")
+}
+
+model SampleFile {
+  id          String             @id @default(cuid())
+  name        String
+  projectId   String
+  ownerId     String
+  s3Key       String             @unique
+  contentType String
+  sizeBytes   Int?
+  credits     Int                @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner       User               @relation("SampleOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  collections SampleCollection[]
+
+  @@index([projectId])
+  @@index([ownerId])
+  @@index([name])
+  @@index([credits])
+  @@map("sample_file")
+}
+
+model SampleCollection {
+  id          String     @id @default(cuid())
+  userId      String
+  sampleId    String
+  creditsPaid Int
+  createdAt   DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sample      SampleFile @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sampleId])
+  @@index([sampleId])
+  @@map("sample_collection")
 }

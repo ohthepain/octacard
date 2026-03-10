@@ -7,6 +7,7 @@ import { auth } from "./auth.js";
 import { errorHandler, requestLogger, versionCheck, requireAuth } from "./middleware/index.js";
 import { healthApp } from "./routes/health.js";
 import { uploadApp } from "./routes/upload.js";
+import { libraryApp } from "./routes/library.js";
 import type { AppVariables } from "./types.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,6 +59,11 @@ app.get("/api/version", (c) =>
 app.use("/api/upload/*", requireAuth);
 app.use("/api/upload/*", bodyLimit({ maxSize: 10 * 1024 * 1024 })); // 10MB
 app.route("/api/upload", uploadApp);
+
+// /api/library/* - authenticated sample/project APIs
+app.use("/api/library/*", requireAuth);
+app.use("/api/library/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
+app.route("/api/library", libraryApp);
 
 // 404 for /api/*
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
-import { Play, HelpCircle, Activity } from "lucide-react";
+import { Play, HelpCircle, Activity, Globe, House } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useMultiSampleStore, SLOT_ROW_SIZE } from "@/stores/multi-sample-store";
@@ -30,7 +30,6 @@ import { AudioPreview } from "@/components/AudioPreview";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
-import { useAppOptionsStore } from "@/stores/app-options-store";
 import { UserMenu } from "@/components/UserMenu";
 import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { capture } from "@/lib/analytics";
@@ -186,6 +185,8 @@ const Index = () => {
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
+  const [libraryMode, setLibraryMode] = useState<"local" | "global">("local");
+  const [globalScope, setGlobalScope] = useState<"mine" | "all">("all");
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const waveformEditor = useWaveformEditorStore(
     useShallow((s) => ({
@@ -362,33 +363,6 @@ const Index = () => {
   const handleRequestedDestPathHandled = useCallback(() => setRequestedDestPath(null), []);
   const handleRequestedSourceRevealPathHandled = useCallback(() => setRequestedSourceRevealPath(null), []);
   const handleRequestedDestRevealPathHandled = useCallback(() => setRequestedDestRevealPath(null), []);
-
-  const initializeRootDirectories = useCallback(async () => {
-    const result = await fileSystemService.requestRootDirectory();
-    if (result.success) {
-      setSourceRootVersion((v) => v + 1);
-      setDestRootVersion((v) => v + 1);
-      if (result.warning) {
-        toast.warning("Same Folder Selected", {
-          description: result.warning,
-          duration: 6000,
-        });
-      }
-      return true;
-    }
-    if (isUnsupportedBrowser()) {
-      toast.error("Browser Not Supported", {
-        description:
-          "OctaCard supports Brave, Chrome, and other Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
-        duration: 8000,
-      });
-    } else if (result.error !== "User cancelled directory selection") {
-      toast.error("Failed to Browse Folder", {
-        description: result.error || "Unable to open folder picker. Please try again.",
-      });
-    }
-    return false;
-  }, []);
 
   const handleFileTransfer = (sourcePath: string, destinationPath: string) => {
     console.log("File transfer completed:", { sourcePath, destinationPath });
@@ -848,8 +822,56 @@ const Index = () => {
             bpmAuto={bpmAuto}
             onBpmAutoChange={setBpmAuto}
           />
+          <div className="flex items-center rounded-md border border-border overflow-hidden">
+            <Button
+              size="sm"
+              variant={libraryMode === "global" ? "secondary" : "ghost"}
+              className="rounded-none h-8 px-2"
+              aria-label="Global library mode"
+              onClick={() => setLibraryMode("global")}
+              title="Global"
+            >
+              <Globe className="w-4 h-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant={libraryMode === "local" ? "secondary" : "ghost"}
+              className="rounded-none h-8 px-2"
+              aria-label="Local files mode"
+              onClick={() => setLibraryMode("local")}
+              title="Local"
+            >
+              <House className="w-4 h-4" />
+            </Button>
+          </div>
+          {libraryMode === "global" && (
+            <div className="flex items-center rounded-md border border-border overflow-hidden">
+              <Button
+                size="sm"
+                variant={globalScope === "mine" ? "secondary" : "ghost"}
+                className="rounded-none h-8 px-2 text-xs"
+                onClick={() => setGlobalScope("mine")}
+              >
+                Mine
+              </Button>
+              <Button
+                size="sm"
+                variant={globalScope === "all" ? "secondary" : "ghost"}
+                className="rounded-none h-8 px-2 text-xs"
+                onClick={() => setGlobalScope("all")}
+              >
+                All
+              </Button>
+            </div>
+          )}
         </div>
-        <Button onClick={handleStartConversion} className="gap-2 justify-self-center" data-testid="convert-button">
+        <Button
+          onClick={handleStartConversion}
+          className="gap-2 justify-self-center"
+          data-testid="convert-button"
+          disabled={libraryMode === "global"}
+          title={libraryMode === "global" ? "Switch to local mode to convert local files" : undefined}
+        >
           <Play className="w-4 h-4" />
           Convert
         </Button>
@@ -898,14 +920,20 @@ const Index = () => {
         >
           {/* Left: Source Favorites - only this separator affects favorites vs center */}
           <ResizablePanel id="left-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            <FavoritesColumn
-              paneType="source"
-              volumeId={sourceVolumeId}
-              currentPath={sourcePath}
-              onNavigate={setRequestedSourcePath}
-              onBrowseFromFavorite={(path) => handleBrowseFromFavorite("source", path)}
-              title="Source Favorites"
-            />
+            {libraryMode === "local" ? (
+              <FavoritesColumn
+                paneType="source"
+                volumeId={sourceVolumeId}
+                currentPath={sourcePath}
+                onNavigate={setRequestedSourcePath}
+                onBrowseFromFavorite={(path) => handleBrowseFromFavorite("source", path)}
+                title="Source Favorites"
+              />
+            ) : (
+              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
+                Global library mode is active. Drag projects or samples into the destination pane to download.
+              </div>
+            )}
           </ResizablePanel>
           <ResizableHandle withHandle />
 
@@ -915,7 +943,9 @@ const Index = () => {
               <FilePane
                 key={`source-${sourceRootVersion}`}
                 paneName="source"
-                title="Source"
+                title={libraryMode === "global" ? "Global Library" : "Source"}
+                mode={libraryMode === "global" ? "remote" : "local"}
+                remoteScope={globalScope}
                 showSidebar={false}
                 onPathChange={handleSourcePathChange}
                 onSelectionChange={setSelectedSourceItem}

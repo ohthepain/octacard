@@ -38,10 +38,12 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { useFavorites } from "@/hooks/use-favorites";
 import { VideoPreview } from "@/components/VideoPreview";
+import { RemoteFilePane } from "@/components/RemoteFilePane";
 import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
 import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
+import { downloadRemoteSampleBlob, getProjectDownloadManifest, type RemoteScope } from "@/lib/remote-library";
 import { toast } from "sonner";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
@@ -91,6 +93,23 @@ function isAudioFile(fileName: string): boolean {
 
 function isVideoFile(fileName: string): boolean {
   return /\.(mp4|mov|avi|mkv|webm|m4v|flv|wmv|3gp|ogv)$/i.test(fileName);
+}
+
+type RemoteDropItem =
+  | {
+      kind: "sample";
+      id: string;
+      name: string;
+    }
+  | {
+      kind: "project";
+      id: string;
+      name: string;
+    };
+
+function sanitizeFolderSegment(value: string): string {
+  const cleaned = value.replace(/[\\/]/g, "_").trim();
+  return cleaned.length > 0 ? cleaned : "folder";
 }
 
 function parseSampleRateToHz(sampleRate: string): number | undefined {
@@ -145,6 +164,8 @@ function formatFileSize(bytes: number): string {
 interface FilePaneProps {
   paneName: string;
   title?: string;
+  mode?: "local" | "remote";
+  remoteScope?: RemoteScope;
   onFileTransfer?: (sourcePath: string, destinationPath: string) => void;
   sampleRate?: string;
   sampleDepth?: string;
@@ -183,6 +204,8 @@ interface FilePaneProps {
 export const FilePane = ({
   paneName,
   title = "Files",
+  mode = "local",
+  remoteScope = "all",
   onFileTransfer,
   sampleRate = "dont-change",
   sampleDepth = "dont-change",
@@ -208,6 +231,16 @@ export const FilePane = ({
   onBrowseForFolder,
   refreshToken,
 }: FilePaneProps) => {
+  if (mode === "remote") {
+    return (
+      <RemoteFilePane
+        title={title}
+        scope={remoteScope}
+        onSelectionChange={onSelectionChange}
+      />
+    );
+  }
+
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -2502,6 +2535,73 @@ export const FilePane = ({
     ],
   );
 
+  const ensureFolderPath = useCallback(
+    async (basePath: string, relativePath: string): Promise<string> => {
+      if (!relativePath) return basePath;
+
+      const segments = relativePath
+        .split("/")
+        .map((segment) => sanitizeFolderSegment(segment))
+        .filter(Boolean);
+
+      let current = basePath;
+      for (const segment of segments) {
+        await fileSystemService.createFolder(current, segment, paneType);
+        current = joinPath(current, segment);
+      }
+      return current;
+    },
+    [paneType],
+  );
+
+  const copyRemoteItemsToDestination = useCallback(
+    async (items: RemoteDropItem[], destinationPath: string) => {
+      if (items.length === 0) return;
+
+      let copiedCount = 0;
+      for (const item of items) {
+        if (item.kind === "sample") {
+          const blob = await downloadRemoteSampleBlob(item.id);
+          const result = await fileSystemService.writeBlobToPath(
+            joinPath(destinationPath, item.name),
+            blob,
+            paneType,
+          );
+          if (!result.success) {
+            throw new Error(result.error || `Failed to write ${item.name}`);
+          }
+          copiedCount += 1;
+          continue;
+        }
+
+        const manifest = await getProjectDownloadManifest(item.id);
+        const projectRootName = sanitizeFolderSegment(manifest.project.name);
+        const projectRootPath = await ensureFolderPath(destinationPath, projectRootName);
+
+        for (const sample of manifest.samples) {
+          const parts = sample.relativePath.split("/").filter(Boolean);
+          const filename = parts.pop() ?? sample.name;
+          const relativeDir = parts.join("/");
+          const targetDir = await ensureFolderPath(projectRootPath, relativeDir);
+          const blob = await downloadRemoteSampleBlob(sample.id);
+          const writeResult = await fileSystemService.writeBlobToPath(joinPath(targetDir, filename), blob, paneType);
+          if (!writeResult.success) {
+            throw new Error(writeResult.error || `Failed to write ${filename}`);
+          }
+          copiedCount += 1;
+        }
+      }
+
+      if (copiedCount > 0) {
+        toast.success("Remote download complete", {
+          description: `${copiedCount} sample${copiedCount === 1 ? "" : "s"} copied`,
+        });
+        await loadDirectory(currentRootPath || rootPath, "root");
+      }
+    },
+    [currentRootPath, ensureFolderPath, loadDirectory, paneType, rootPath],
+  );
+
   const handleDrop = async (e: React.DragEvent, destinationNode?: FileNode) => {
     e.preventDefault();
     e.stopPropagation();
@@ -2510,6 +2610,35 @@ export const FilePane = ({
 
     if (!fileSystemService.hasRootForPane(paneType)) {
       console.error("No root directory selected");
+      return;
+    }
+
+    const remoteItemsPayload = e.dataTransfer.getData("octacardRemoteItems");
+    if (remoteItemsPayload && paneType === "dest") {
+      const destinationPath =
+        destinationNode && destinationNode.type === "folder" ? destinationNode.path : currentRootPath || rootPath;
+      if (!destinationPath) {
+        toast.error("No destination folder selected");
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(remoteItemsPayload) as RemoteDropItem[];
+        const validItems = Array.isArray(parsed)
+          ? parsed.filter(
+              (item): item is RemoteDropItem =>
+                Boolean(item) &&
+                (item.kind === "sample" || item.kind === "project") &&
+                typeof item.id === "string" &&
+                typeof item.name === "string",
+            )
+          : [];
+        await copyRemoteItemsToDestination(validItems, destinationPath);
+      } catch (error) {
+        toast.error("Remote copy failed", {
+          description: error instanceof Error ? error.message : "Could not copy remote items",
+        });
+      }
       return;
     }
 

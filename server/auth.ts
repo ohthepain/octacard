@@ -1,11 +1,11 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { emailOTP, magicLink } from "better-auth/plugins";
-import { PrismaClient, RoleName } from "@prisma/client";
+import { RoleName } from "@prisma/client";
 import { createRedisStorage } from "./redis.js";
 import { renderAuthEmailTemplate, sendAuthEmail } from "./auth-email.js";
+import { prisma } from "./db.js";
 
-const prisma = new PrismaClient();
 const SUPERADMIN_EMAILS = new Set(
   (process.env.AUTH_SUPERADMIN_EMAILS ?? "cremoni@gmail.com")
     .split(",")
