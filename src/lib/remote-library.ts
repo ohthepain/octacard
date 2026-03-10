@@ -1,16 +1,16 @@
 import { apiFetch } from "@/lib/api-client";
 
 export type RemoteScope = "mine" | "all";
-export type RemoteSearchType = "projects" | "samples" | "both";
+export type RemoteSearchType = "packs" | "samples" | "both";
 
-export interface RemoteProjectSummary {
+export interface RemotePackSummary {
   id: string;
   name: string;
   ownerId: string;
   isOwner: boolean;
   createdAt: string;
   updatedAt: string;
-  childProjectCount: number;
+  childPackCount: number;
   sampleCount: number;
 }
 
@@ -18,8 +18,8 @@ export interface RemoteSampleSummary {
   id: string;
   name: string;
   ownerId: string;
-  projectId: string;
-  projectName: string;
+  packId: string;
+  packName: string;
   credits: number;
   sizeBytes: number | null;
   contentType: string;
@@ -31,12 +31,12 @@ export interface RemoteSampleSummary {
 }
 
 export interface RemoteSearchResponse {
-  projects: RemoteProjectSummary[];
+  packs: RemotePackSummary[];
   samples: RemoteSampleSummary[];
 }
 
-export interface RemoteProjectDownloadManifest {
-  project: {
+export interface RemotePackDownloadManifest {
+  pack: {
     id: string;
     name: string;
     ownerId: string;
@@ -46,7 +46,7 @@ export interface RemoteProjectDownloadManifest {
     id: string;
     name: string;
     relativePath: string;
-    projectId: string;
+    packId: string;
     credits: number;
     sizeBytes: number | null;
     contentType: string;
@@ -54,7 +54,7 @@ export interface RemoteProjectDownloadManifest {
 }
 
 export interface CreateSampleUploadUrlInput {
-  projectId: string;
+  packId: string;
   fileName: string;
   contentType: string;
   sizeBytes?: number;
@@ -62,7 +62,7 @@ export interface CreateSampleUploadUrlInput {
 }
 
 export interface CreateSampleRecordInput {
-  projectId: string;
+  packId: string;
   name: string;
   s3Key: string;
   contentType: string;
@@ -106,12 +106,12 @@ export async function downloadRemoteSampleBlob(sampleId: string): Promise<Blob> 
   return await res.blob();
 }
 
-export async function getProjectDownloadManifest(projectId: string): Promise<RemoteProjectDownloadManifest> {
-  const res = await apiFetch(`/api/library/projects/${encodeURIComponent(projectId)}/download-manifest`);
+export async function getPackDownloadManifest(packId: string): Promise<RemotePackDownloadManifest> {
+  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}/download-manifest`);
   if (!res.ok) {
-    throw new Error(`Failed to get project manifest (${res.status})`);
+    throw new Error(`Failed to get pack manifest (${res.status})`);
   }
-  return (await res.json()) as RemoteProjectDownloadManifest;
+  return (await res.json()) as RemotePackDownloadManifest;
 }
 
 export async function createSampleUploadUrl(input: CreateSampleUploadUrlInput): Promise<{

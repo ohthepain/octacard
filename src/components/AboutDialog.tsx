@@ -104,7 +104,7 @@ export const AboutDialog = ({ open, onOpenChange }: AboutDialogProps) => {
           </div>
 
           <div className="pt-4 border-t border-border space-y-2">
-            <div className="font-semibold text-foreground">Other projects from the community!</div>
+            <div className="font-semibold text-foreground">Other packs from the community!</div>
             <Button variant="outline" className="w-full gap-2" asChild>
               <a
                 href="https://github.com/davidferlay/octatrack-manager/releases"

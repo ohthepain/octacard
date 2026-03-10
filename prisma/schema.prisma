@@ -19,7 +19,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
   roles         UserRole[]
-  ownedProjects Project[]          @relation("ProjectOwner")
+  ownedPacks    Pack[]              @relation("PackOwner")
   ownedSamples  SampleFile[]       @relation("SampleOwner")
   collection    SampleCollection[]
 
@@ -89,28 +89,28 @@ model Verification {
   @@map("verification")
 }
 
-model Project {
+model Pack {
   id         String    @id @default(cuid())
   name       String
   ownerId    String
   parentId   String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
-  owner      User      @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  parent     Project?  @relation("ProjectHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
-  children   Project[] @relation("ProjectHierarchy")
+  owner      User      @relation("PackOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  parent     Pack?     @relation("PackHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children   Pack[]    @relation("PackHierarchy")
   samples    SampleFile[]
 
   @@index([ownerId])
   @@index([parentId])
   @@index([name])
-  @@map("project")
+  @@map("pack")
 }
 
 model SampleFile {
   id          String             @id @default(cuid())
   name        String
-  projectId   String
+  packId      String
   ownerId     String
   s3Key       String             @unique
   contentType String
@@ -118,11 +118,11 @@ model SampleFile {
   credits     Int                @default(0)
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
-  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pack        Pack               @relation(fields: [packId], references: [id], onDelete: Cascade)
   owner       User               @relation("SampleOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   collections SampleCollection[]
 
-  @@index([projectId])
+  @@index([packId])
   @@index([ownerId])
   @@index([name])
   @@index([credits])

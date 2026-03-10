@@ -11,22 +11,22 @@ const libraryApp = new Hono<{ Variables: AppVariables }>();
 const searchSchema = z.object({
   q: z.string().trim().default(""),
   scope: z.enum(["mine", "all"]).default("all"),
-  types: z.enum(["projects", "samples", "both"]).default("both"),
+  types: z.enum(["packs", "samples", "both"]).default("both"),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-const createProjectSchema = z.object({
+const createPackSchema = z.object({
   name: z.string().trim().min(1).max(120),
   parentId: z.string().trim().min(1).optional(),
 });
 
-const updateProjectSchema = z.object({
+const updatePackSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   parentId: z.string().trim().min(1).nullable().optional(),
 });
 
 const uploadSampleSchema = z.object({
-  projectId: z.string().trim().min(1),
+  packId: z.string().trim().min(1),
   fileName: z.string().trim().min(1).max(255),
   contentType: z.string().trim().min(1).default("application/octet-stream"),
   sizeBytes: z.number().int().nonnegative().optional(),
@@ -34,7 +34,7 @@ const uploadSampleSchema = z.object({
 });
 
 const createSampleSchema = z.object({
-  projectId: z.string().trim().min(1),
+  packId: z.string().trim().min(1),
   name: z.string().trim().min(1).max(255),
   s3Key: z.string().trim().min(1),
   contentType: z.string().trim().min(1),
@@ -57,21 +57,21 @@ function sanitizePathSegment(value: string): string {
   return safe.length ? safe : "item";
 }
 
-async function requireOwnedProject(projectId: string, userId: string) {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+async function requireOwnedPack(packId: string, userId: string) {
+  const pack = await prisma.pack.findUnique({
+    where: { id: packId },
     select: { id: true, ownerId: true, parentId: true, name: true },
   });
 
-  if (!project) {
-    throw new HTTPException(404, { message: "Project not found" });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
   }
 
-  if (project.ownerId !== userId) {
-    throw new HTTPException(403, { message: "Only the owner can update this project" });
+  if (pack.ownerId !== userId) {
+    throw new HTTPException(403, { message: "Only the owner can update this pack" });
   }
 
-  return project;
+  return pack;
 }
 
 async function isSampleInCollection(userId: string, sampleId: string): Promise<boolean> {
@@ -93,21 +93,21 @@ async function canReadSample(userId: string, sample: { id: string; ownerId: stri
   return isSampleInCollection(userId, sample.id);
 }
 
-type ProjectPathNode = { id: string; name: string; parentId: string | null; relativeDir: string };
+type PackPathNode = { id: string; name: string; parentId: string | null; relativeDir: string };
 
-async function loadProjectTree(rootProjectId: string): Promise<Map<string, ProjectPathNode>> {
-  const root = await prisma.project.findUnique({
-    where: { id: rootProjectId },
+async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNode>> {
+  const root = await prisma.pack.findUnique({
+    where: { id: rootPackId },
     select: { id: true, name: true, parentId: true },
   });
   if (!root) return new Map();
 
-  const map = new Map<string, ProjectPathNode>();
+  const map = new Map<string, PackPathNode>();
   map.set(root.id, { id: root.id, name: root.name, parentId: root.parentId, relativeDir: "" });
 
   let frontier: string[] = [root.id];
   while (frontier.length) {
-    const children = await prisma.project.findMany({
+    const children = await prisma.pack.findMany({
       where: { parentId: { in: frontier } },
       select: { id: true, name: true, parentId: true },
       orderBy: { name: "asc" },
@@ -135,7 +135,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
   const { q, scope, types, limit } = c.req.valid("query");
   const query = q.trim();
 
-  const projectNameFilter = query.length
+  const packNameFilter = query.length
     ? {
         name: {
           contains: query,
@@ -153,14 +153,14 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       }
     : {};
 
-  const [projects, samples] = await Promise.all([
+  const [packs, samples] = await Promise.all([
     types === "samples"
       ? Promise.resolve([])
-      : prisma.project.findMany({
+      : prisma.pack.findMany({
           where: {
             ...(scope === "mine" ? { ownerId: user.id } : {}),
             parentId: null,
-            ...projectNameFilter,
+            ...packNameFilter,
           },
           orderBy: { updatedAt: "desc" },
           take: limit,
@@ -178,7 +178,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
             },
           },
         }),
-    types === "projects"
+    types === "packs"
       ? Promise.resolve([])
       : prisma.sampleFile.findMany({
           where: {
@@ -186,7 +186,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
             ...sampleNameFilter,
           },
           include: {
-            project: {
+            pack: {
               select: {
                 id: true,
                 name: true,
@@ -212,15 +212,15 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
 
   return c.json({
-    projects: projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      ownerId: project.ownerId,
-      isOwner: project.ownerId === user.id,
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-      childProjectCount: project._count.children,
-      sampleCount: project._count.samples,
+    packs: packs.map((pack) => ({
+      id: pack.id,
+      name: pack.name,
+      ownerId: pack.ownerId,
+      isOwner: pack.ownerId === user.id,
+      createdAt: pack.createdAt,
+      updatedAt: pack.updatedAt,
+      childPackCount: pack._count.children,
+      sampleCount: pack._count.samples,
     })),
     samples: samples.map((sample) => {
       const readable = sample.ownerId === user.id || sample.credits === 0 || inCollection.has(sample.id);
@@ -228,8 +228,8 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
         id: sample.id,
         name: sample.name,
         ownerId: sample.ownerId,
-        projectId: sample.projectId,
-        projectName: sample.project.name,
+        packId: sample.packId,
+        packName: sample.pack.name,
         credits: sample.credits,
         sizeBytes: sample.sizeBytes,
         contentType: sample.contentType,
@@ -243,15 +243,15 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
   });
 });
 
-libraryApp.post("/projects", zValidator("json", createProjectSchema), async (c) => {
+libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
   const user = c.get("user");
   const { name, parentId } = c.req.valid("json");
 
   if (parentId) {
-    await requireOwnedProject(parentId, user.id);
+    await requireOwnedPack(parentId, user.id);
   }
 
-  const project = await prisma.project.create({
+  const pack = await prisma.pack.create({
     data: {
       name: normalizeName(name),
       ownerId: user.id,
@@ -267,25 +267,25 @@ libraryApp.post("/projects", zValidator("json", createProjectSchema), async (c) 
     },
   });
 
-  return c.json(project, 201);
+  return c.json(pack, 201);
 });
 
-libraryApp.patch("/projects/:id", zValidator("json", updateProjectSchema), async (c) => {
+libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const { name, parentId } = c.req.valid("json");
 
-  await requireOwnedProject(id, user.id);
+  await requireOwnedPack(id, user.id);
 
   if (parentId === id) {
-    throw new HTTPException(400, { message: "Project cannot be its own parent" });
+    throw new HTTPException(400, { message: "Pack cannot be its own parent" });
   }
 
   if (parentId) {
-    await requireOwnedProject(parentId, user.id);
+    await requireOwnedPack(parentId, user.id);
   }
 
-  const project = await prisma.project.update({
+  const pack = await prisma.pack.update({
     where: { id },
     data: {
       ...(name ? { name: normalizeName(name) } : {}),
@@ -301,39 +301,39 @@ libraryApp.patch("/projects/:id", zValidator("json", updateProjectSchema), async
     },
   });
 
-  return c.json(project);
+  return c.json(pack);
 });
 
-libraryApp.get("/projects/:id/download-manifest", async (c) => {
+libraryApp.get("/packs/:id/download-manifest", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const project = await prisma.project.findUnique({
+  const pack = await prisma.pack.findUnique({
     where: { id },
     select: { id: true, name: true, ownerId: true },
   });
-  if (!project) {
-    throw new HTTPException(404, { message: "Project not found" });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
   }
 
-  const tree = await loadProjectTree(project.id);
-  const projectIds = Array.from(tree.keys());
+  const tree = await loadPackTree(pack.id);
+  const packIds = Array.from(tree.keys());
 
   const samples =
-    projectIds.length === 0
+    packIds.length === 0
       ? []
       : await prisma.sampleFile.findMany({
-          where: { projectId: { in: projectIds } },
+          where: { packId: { in: packIds } },
           select: {
             id: true,
             name: true,
             ownerId: true,
-            projectId: true,
+            packId: true,
             credits: true,
             sizeBytes: true,
             contentType: true,
           },
-          orderBy: [{ projectId: "asc" }, { name: "asc" }],
+          orderBy: [{ packId: "asc" }, { name: "asc" }],
         });
 
   const sampleIds = samples.map((sample) => sample.id);
@@ -351,28 +351,28 @@ libraryApp.get("/projects/:id/download-manifest", async (c) => {
 
   const downloadable = samples.filter(
     (sample) =>
-      sample.ownerId === user.id || sample.credits === 0 || inCollection.has(sample.id) || project.ownerId === user.id,
+      sample.ownerId === user.id || sample.credits === 0 || inCollection.has(sample.id) || pack.ownerId === user.id,
   );
 
   if (downloadable.length === 0) {
-    throw new HTTPException(403, { message: "No downloadable samples in this project for current user" });
+    throw new HTTPException(403, { message: "No downloadable samples in this pack for current user" });
   }
 
   return c.json({
-    project: {
-      id: project.id,
-      name: project.name,
-      ownerId: project.ownerId,
-      isOwner: project.ownerId === user.id,
+    pack: {
+      id: pack.id,
+      name: pack.name,
+      ownerId: pack.ownerId,
+      isOwner: pack.ownerId === user.id,
     },
     samples: downloadable.map((sample) => {
-      const dir = tree.get(sample.projectId)?.relativeDir ?? "";
+      const dir = tree.get(sample.packId)?.relativeDir ?? "";
       const relativePath = dir ? `${dir}/${sample.name}` : sample.name;
       return {
         id: sample.id,
         name: sample.name,
         relativePath,
-        projectId: sample.projectId,
+        packId: sample.packId,
         credits: sample.credits,
         sizeBytes: sample.sizeBytes,
         contentType: sample.contentType,
@@ -383,10 +383,10 @@ libraryApp.get("/projects/:id/download-manifest", async (c) => {
 
 libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), async (c) => {
   const user = c.get("user");
-  const { projectId, fileName, contentType, credits, sizeBytes } = c.req.valid("json");
-  const project = await requireOwnedProject(projectId, user.id);
+  const { packId, fileName, contentType, credits, sizeBytes } = c.req.valid("json");
+  const pack = await requireOwnedPack(packId, user.id);
   const safeFileName = sanitizePathSegment(fileName);
-  const key = `samples/${user.id}/${project.id}/${Date.now()}-${safeFileName}`;
+  const key = `samples/${user.id}/${pack.id}/${Date.now()}-${safeFileName}`;
   const uploadUrl = await getPresignedUploadUrl(key, contentType);
 
   return c.json({
@@ -395,7 +395,7 @@ libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), a
     expiresIn: 3600,
     suggestedSample: {
       name: safeFileName,
-      projectId: project.id,
+      packId: pack.id,
       ownerId: user.id,
       contentType,
       credits,
@@ -406,18 +406,18 @@ libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), a
 
 libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) => {
   const user = c.get("user");
-  const { projectId, name, s3Key, contentType, sizeBytes, credits } = c.req.valid("json");
-  const project = await requireOwnedProject(projectId, user.id);
+  const { packId, name, s3Key, contentType, sizeBytes, credits } = c.req.valid("json");
+  const pack = await requireOwnedPack(packId, user.id);
 
-  const keyPrefix = `samples/${user.id}/${project.id}/`;
+  const keyPrefix = `samples/${user.id}/${pack.id}/`;
   if (!s3Key.startsWith(keyPrefix)) {
-    throw new HTTPException(400, { message: "Invalid s3Key for current owner/project" });
+    throw new HTTPException(400, { message: "Invalid s3Key for current owner/pack" });
   }
 
   const sample = await prisma.sampleFile.create({
     data: {
       name: normalizeName(name),
-      projectId: project.id,
+      packId: pack.id,
       ownerId: user.id,
       s3Key,
       contentType,
@@ -427,7 +427,7 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
     select: {
       id: true,
       name: true,
-      projectId: true,
+      packId: true,
       ownerId: true,
       credits: true,
       sizeBytes: true,
@@ -465,7 +465,7 @@ libraryApp.patch("/samples/:id", zValidator("json", updateSampleSchema), async (
     select: {
       id: true,
       name: true,
-      projectId: true,
+      packId: true,
       ownerId: true,
       credits: true,
       sizeBytes: true,

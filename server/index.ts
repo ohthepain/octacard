@@ -60,7 +60,7 @@ app.use("/api/upload/*", requireAuth);
 app.use("/api/upload/*", bodyLimit({ maxSize: 10 * 1024 * 1024 })); // 10MB
 app.route("/api/upload", uploadApp);
 
-// /api/library/* - authenticated sample/project APIs
+// /api/library/* - authenticated sample/pack APIs
 app.use("/api/library/*", requireAuth);
 app.use("/api/library/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
 app.route("/api/library", libraryApp);

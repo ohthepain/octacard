@@ -41,6 +41,7 @@ import { HomeFooter } from "@/components/HomeFooter";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
 import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
 import { usePlayerStore } from "@/stores/player-store";
+import { setCurrentPack } from "@/lib/current-pack";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -353,6 +354,10 @@ const Index = () => {
   const handleSourcePathChange = useCallback((path: string, volumeId: string) => {
     setSourcePath(path);
     setSourceVolumeId(volumeId);
+    if (path && path !== "/") {
+      const packName = basename(path) || path.split("/").filter(Boolean).pop() || "Pack";
+      setCurrentPack({ name: packName });
+    }
   }, []);
 
   const handleDestPathChange = useCallback((path: string, volumeId: string) => {
@@ -932,7 +937,7 @@ const Index = () => {
               />
             ) : (
               <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
-                Global library mode is active. Drag projects or samples into the destination pane to download.
+                Global library mode is active. Drag packs or samples into the destination pane to download.
               </div>
             )}
           </ResizablePanel>

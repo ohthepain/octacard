@@ -43,7 +43,7 @@ import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/Overw
 import { fileSystemService } from "@/lib/fileSystem";
 import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
-import { downloadRemoteSampleBlob, getProjectDownloadManifest, type RemoteScope } from "@/lib/remote-library";
+import { downloadRemoteSampleBlob, getPackDownloadManifest, type RemoteScope } from "@/lib/remote-library";
 import { toast } from "sonner";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
@@ -102,7 +102,7 @@ type RemoteDropItem =
       name: string;
     }
   | {
-      kind: "project";
+      kind: "pack";
       id: string;
       name: string;
     };
@@ -2560,15 +2560,15 @@ export const FilePane = ({
           continue;
         }
 
-        const manifest = await getProjectDownloadManifest(item.id);
-        const projectRootName = sanitizeFolderSegment(manifest.project.name);
-        const projectRootPath = await ensureFolderPath(destinationPath, projectRootName);
+        const manifest = await getPackDownloadManifest(item.id);
+        const packRootName = sanitizeFolderSegment(manifest.pack.name);
+        const packRootPath = await ensureFolderPath(destinationPath, packRootName);
 
         for (const sample of manifest.samples) {
           const parts = sample.relativePath.split("/").filter(Boolean);
           const filename = parts.pop() ?? sample.name;
           const relativeDir = parts.join("/");
-          const targetDir = await ensureFolderPath(projectRootPath, relativeDir);
+          const targetDir = await ensureFolderPath(packRootPath, relativeDir);
           const blob = await downloadRemoteSampleBlob(sample.id);
           const writeResult = await fileSystemService.writeBlobToPath(joinPath(targetDir, filename), blob, paneType);
           if (!writeResult.success) {
@@ -2614,7 +2614,7 @@ export const FilePane = ({
           ? parsed.filter(
               (item): item is RemoteDropItem =>
                 Boolean(item) &&
-                (item.kind === "sample" || item.kind === "project") &&
+                (item.kind === "sample" || item.kind === "pack") &&
                 typeof item.id === "string" &&
                 typeof item.name === "string",
             )

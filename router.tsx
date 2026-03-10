@@ -6,6 +6,7 @@ import { rootRoute } from './routes/__root'
 import { indexRoute } from './routes/index'
 import { helpRoute } from './routes/help'
 import { signInRoute } from './routes/sign-in'
+import { resetPasswordRoute } from './routes/reset-password'
 import { legalRoute } from './routes/legal'
 import { termsRoute } from './routes/legal/terms'
 import { privacyRoute } from './routes/legal/privacy'
@@ -14,6 +15,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   helpRoute,
   signInRoute,
+  resetPasswordRoute,
   legalRoute,
   termsRoute,
   privacyRoute,

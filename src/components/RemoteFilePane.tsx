@@ -7,13 +7,13 @@ import { toast } from "sonner";
 import {
   addSampleToCollection,
   searchRemoteLibrary,
-  type RemoteProjectSummary,
+  type RemotePackSummary,
   type RemoteSampleSummary,
   type RemoteScope,
   type RemoteSearchType,
 } from "@/lib/remote-library";
 
-type RemoteDragItem = { kind: "project"; id: string; name: string } | { kind: "sample"; id: string; name: string };
+type RemoteDragItem = { kind: "pack"; id: string; name: string } | { kind: "sample"; id: string; name: string };
 
 interface RemoteFilePaneProps {
   title?: string;
@@ -29,7 +29,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<RemoteSearchType>("both");
   const [loading, setLoading] = useState(false);
-  const [projects, setProjects] = useState<RemoteProjectSummary[]>([]);
+  const [packs, setPacks] = useState<RemotePackSummary[]>([]);
   const [samples, setSamples] = useState<RemoteSampleSummary[]>([]);
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
           limit: 100,
         });
         if (cancelled) return;
-        setProjects(result.projects);
+        setPacks(result.packs);
         setSamples(result.samples);
       } catch (error) {
         if (!cancelled) {
@@ -66,18 +66,18 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
   const entries = useMemo(() => {
     const list: Array<{
       key: string;
-      type: "project" | "sample";
-      project?: RemoteProjectSummary;
+      type: "pack" | "sample";
+      pack?: RemotePackSummary;
       sample?: RemoteSampleSummary;
       updatedAt: string;
     }> = [];
 
-    for (const project of projects) {
+    for (const pack of packs) {
       list.push({
-        key: `project:${project.id}`,
-        type: "project",
-        project,
-        updatedAt: project.updatedAt,
+        key: `pack:${pack.id}`,
+        type: "pack",
+        pack,
+        updatedAt: pack.updatedAt,
       });
     }
 
@@ -91,7 +91,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
     }
 
     return list.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-  }, [projects, samples]);
+  }, [packs, samples]);
 
   const startDrag = (event: React.DragEvent, item: RemoteDragItem) => {
     event.dataTransfer.setData("octacardRemoteItems", JSON.stringify([item]));
@@ -118,11 +118,11 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
             </Button>
             <Button
               size="sm"
-              variant={mode === "projects" ? "secondary" : "ghost"}
+              variant={mode === "packs" ? "secondary" : "ghost"}
               className="rounded-none"
-              onClick={() => setMode("projects")}
+              onClick={() => setMode("packs")}
             >
-              Projects
+              Packs
             </Button>
             <Button
               size="sm"
@@ -160,24 +160,24 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
             </div>
           ) : (
             entries.map((entry) => {
-              if (entry.type === "project" && entry.project) {
-                const project = entry.project;
+              if (entry.type === "pack" && entry.pack) {
+                const pack = entry.pack;
                 return (
                   <div
                     key={entry.key}
                     draggable
                     onDragStart={(e) =>
                       startDrag(e, {
-                        kind: "project",
-                        id: project.id,
-                        name: project.name,
+                        kind: "pack",
+                        id: pack.id,
+                        name: pack.name,
                       })
                     }
                     onClick={() =>
                       onSelectionChange?.({
-                        path: `remote://project/${project.id}`,
+                        path: `remote://pack/${pack.id}`,
                         type: "folder",
-                        name: project.name,
+                        name: pack.name,
                       })
                     }
                     className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-accent cursor-grab active:cursor-grabbing"
@@ -185,13 +185,13 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                     <div className="min-w-0 flex items-center gap-2">
                       <Folder className="w-4 h-4 text-amber-600 shrink-0" />
                       <div className="truncate">
-                        <div className="text-sm truncate">{project.name}</div>
+                        <div className="text-sm truncate">{pack.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
-                          {project.sampleCount} samples, {project.childProjectCount} subfolders
+                          {pack.sampleCount} samples, {pack.childPackCount} subfolders
                         </div>
                       </div>
                     </div>
-                    {project.isOwner && <div className="text-[10px] uppercase text-primary">Mine</div>}
+                    {pack.isOwner && <div className="text-[10px] uppercase text-primary">Mine</div>}
                   </div>
                 );
               }
@@ -224,7 +224,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                       <div className="truncate">
                         <div className="text-sm truncate">{sample.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
-                          {sample.projectName} • {formatCredits(sample.credits)}
+                          {sample.packName} • {formatCredits(sample.credits)}
                           {!sample.canDownload ? " • locked" : ""}
                         </div>
                       </div>
@@ -245,7 +245,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                               types: mode,
                               limit: 100,
                             });
-                            setProjects(updated.projects);
+                            setPacks(updated.packs);
                             setSamples(updated.samples);
                           } catch (error) {
                             toast.error("Failed to add to collection", {
