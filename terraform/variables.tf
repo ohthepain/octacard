@@ -15,9 +15,9 @@ variable "aws_region" {
 }
 
 variable "cors_allowed_origins" {
-  description = "CORS allowed origins for S3"
+  description = "CORS allowed origins for S3 (presigned uploads). Add your app origin to fix 403 on OPTIONS. Examples: https://staging.octacard.live, http://localhost:5173"
   type        = list(string)
-  default     = ["https://*.elb.amazonaws.com", "https://*.octacard.live"]
+  default     = ["https://*.elb.amazonaws.com", "https://*.octacard.live", "http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173"]
 }
 
 variable "db_instance_class" {

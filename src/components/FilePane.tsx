@@ -43,7 +43,15 @@ import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/Overw
 import { fileSystemService } from "@/lib/fileSystem";
 import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
-import { downloadRemoteSampleBlob, getPackDownloadManifest, type RemoteScope } from "@/lib/remote-library";
+import {
+  downloadRemoteSampleBlob,
+  getPack,
+  getPackDownloadManifest,
+  type RemoteScope,
+} from "@/lib/remote-library";
+import { useSession } from "@/lib/auth-client";
+import { CreatePackDialog } from "@/components/CreatePackDialog";
+import { PackView } from "@/components/PackView";
 import { toast } from "sonner";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
@@ -294,6 +302,13 @@ export const FilePane = ({
   const [shortenedFilenamesDialogOpen, setShortenedFilenamesDialogOpen] = useState(false);
   const [shortenedFilenamesDialogFolderPath, setShortenedFilenamesDialogFolderPath] = useState("");
   const [shortenedFilenamesDialogRows, setShortenedFilenamesDialogRows] = useState<ShortenedFilenamePreviewRow[]>([]);
+  const [createPackDialogOpen, setCreatePackDialogOpen] = useState(false);
+  const [createPackFolderName, setCreatePackFolderName] = useState("");
+  const [createPackFolderPath, setCreatePackFolderPath] = useState("");
+  const [folderViewRoot, setFolderViewRoot] = useState<string | null>(null);
+  const [folderViewCoverUrl, setFolderViewCoverUrl] = useState<string | null>(null);
+  const [packJsonCache, setPackJsonCache] = useState<Map<string, boolean>>(new Map());
+  const { data: session } = useSession();
 
   const promptOverwriteChoice = useCallback((): Promise<OverwriteChoice> => {
     setOverwriteConfirmOpen(true);
@@ -474,6 +489,11 @@ export const FilePane = ({
 
   useEffect(() => {
     rootPathRef.current = rootPath;
+  }, [rootPath]);
+
+  // Clear folder view when root path changes (e.g. volume switch)
+  useEffect(() => {
+    setFolderViewRoot(null);
   }, [rootPath]);
 
   useEffect(() => {
@@ -1611,6 +1631,63 @@ export const FilePane = ({
     }
   }, [refreshToken, refreshCurrentDirectory]);
 
+  // Refresh a specific folder's contents (e.g. after creating pack and writing pack.json)
+  const refreshFolder = useCallback(
+    async (folderPath: string) => {
+      const findNodeByPath = (nodes: FileNode[], targetPath: string): FileNode | null => {
+        for (const node of nodes) {
+          if (node.path === targetPath) return node;
+          if (node.children) {
+            const found = findNodeByPath(node.children, targetPath);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const node = findNodeByPath(fileTree, folderPath);
+      if (node) {
+        await loadDirectory(folderPath, node.id);
+      } else if (folderPath === currentRootPath || folderPath === (folderViewRoot ?? currentRootPath)) {
+        // Folder is the current view root - refresh the whole view
+        await loadDirectory(folderPath, "root");
+      } else {
+        // Folder not in tree (e.g. collapsed parent) - do full refresh
+        await refreshCurrentDirectory();
+      }
+    },
+    [fileTree, currentRootPath, folderViewRoot, loadDirectory, refreshCurrentDirectory],
+  );
+
+  // Load local pack cover image when in folder view
+  useEffect(() => {
+    if (!folderViewRoot || !fileSystemService.hasRootForPane(paneType)) {
+      setFolderViewCoverUrl(null);
+      return;
+    }
+    let cancelled = false;
+    const loadCover = async () => {
+      for (const name of ["cover.png", "cover.jpg"]) {
+        const path = joinPath(folderViewRoot, name);
+        const result = await fileSystemService.getFileBlob(path, paneType);
+        if (cancelled) return;
+        if (result.success && result.data) {
+          setFolderViewCoverUrl(result.data);
+          return;
+        }
+      }
+      setFolderViewCoverUrl(null);
+    };
+    void loadCover();
+    return () => {
+      cancelled = true;
+      setFolderViewCoverUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, [folderViewRoot, paneType]);
+
   // Helper to get flat list of nodes for shift-click range selection
   const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
     const flat: FileNode[] = [];
@@ -1686,7 +1763,8 @@ export const FilePane = ({
 
       // Build itemsToRender for arrow key logic (shared by single and multi-select)
       const currentTree = searchQuery ? buildFolderTreeFromSearchResults(searchResults, currentRootPath) : fileTree;
-      const showParentLink = currentRootPath && currentRootPath !== rootPath;
+      const effectiveRoot = folderViewRoot ?? rootPath;
+      const showParentLink = currentRootPath && currentRootPath !== effectiveRoot;
       const itemsToRender = showParentLink
         ? [
             {
@@ -2560,9 +2638,55 @@ export const FilePane = ({
           continue;
         }
 
-        const manifest = await getPackDownloadManifest(item.id);
+        const [manifest, packDetails] = await Promise.all([
+          getPackDownloadManifest(item.id),
+          getPack(item.id),
+        ]);
         const packRootName = sanitizeFolderSegment(manifest.pack.name);
         const packRootPath = await ensureFolderPath(destinationPath, packRootName);
+
+        // Download and save cover image if present
+        let coverImage: string | null = null;
+        if (packDetails.coverImageUrl) {
+          try {
+            const coverRes = await fetch(packDetails.coverImageUrl);
+            if (coverRes.ok) {
+              const coverBlob = await coverRes.blob();
+              const ext = coverBlob.type?.includes("png") ? "png" : "jpg";
+              coverImage = `cover.${ext}`;
+              const coverResult = await fileSystemService.writeBlobToPath(
+                joinPath(packRootPath, coverImage),
+                coverBlob,
+                paneType,
+              );
+              if (!coverResult.success) {
+                console.warn("Failed to write cover image:", coverResult.error);
+                coverImage = null;
+              }
+            }
+          } catch (err) {
+            console.warn("Failed to download cover image:", err);
+          }
+        }
+
+        // Write pack.json with pack metadata
+        const packJson = {
+          name: packDetails.name,
+          coverImageS3Key: packDetails.coverImageS3Key,
+          ownerName: packDetails.ownerName,
+          ...(coverImage && { coverImage }),
+        };
+        const packJsonBlob = new Blob([JSON.stringify(packJson, null, 2)], {
+          type: "application/json",
+        });
+        const packJsonResult = await fileSystemService.writeBlobToPath(
+          joinPath(packRootPath, "pack.json"),
+          packJsonBlob,
+          paneType,
+        );
+        if (!packJsonResult.success) {
+          throw new Error(packJsonResult.error || "Failed to write pack.json");
+        }
 
         for (const sample of manifest.samples) {
           const parts = sample.relativePath.split("/").filter(Boolean);
@@ -3189,6 +3313,16 @@ export const FilePane = ({
     };
   }, [searchQuery, loading, currentRootPath]);
 
+  const checkPackJsonForFolder = useCallback(
+    async (folderPath: string) => {
+      const result = await fileSystemService.readDirectory(folderPath, paneType);
+      if (!result.success || !result.data) return;
+      const hasPackJson = result.data.some((e) => e.name === "pack.json");
+      setPackJsonCache((prev) => new Map(prev).set(folderPath, hasPackJson));
+    },
+    [paneType],
+  );
+
   const filterNodes = (nodes: FileNode[], query: string): FileNode[] => {
     if (!query) return nodes;
 
@@ -3209,7 +3343,8 @@ export const FilePane = ({
 
   const renderFileTree = (nodes: FileNode[], depth: number = 0): React.ReactNode => {
     // Add ".." entry if not at root
-    const showParentLink = currentRootPath && currentRootPath !== rootPath;
+    const effectiveRoot = folderViewRoot ?? rootPath;
+    const showParentLink = currentRootPath && currentRootPath !== effectiveRoot;
     const itemsToRender =
       showParentLink && depth === 0
         ? [
@@ -3317,7 +3452,19 @@ export const FilePane = ({
 
       return (
         <div key={node.id}>
-          <ContextMenu>
+          <ContextMenu
+            onOpenChange={(open) => {
+              if (
+                open &&
+                !isParentLink &&
+                node.type === "folder" &&
+                !node.children &&
+                !packJsonCache.has(node.path)
+              ) {
+                void checkPackJsonForFolder(node.path);
+              }
+            }}
+          >
             <ContextMenuTrigger asChild>
               <div
                 data-testid={
@@ -3515,6 +3662,36 @@ export const FilePane = ({
                   >
                     {isFavorite(node.path) ? "Already in favourites" : "Add favourite"}
                   </ContextMenuItem>
+                )}
+                {node.type === "folder" && !isParentLink && (
+                  <>
+                    <ContextMenuItem
+                      onSelect={() => {
+                        setFolderViewRoot(node.path);
+                        navigateToFolder(node.path);
+                      }}
+                    >
+                      {(() => {
+                        const hasPackJson =
+                          node.children?.some((c) => c.name === "pack.json") ||
+                          packJsonCache.get(node.path) === true;
+                        return hasPackJson ? "Open pack" : "Open folder";
+                      })()}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onSelect={() => {
+                        if (!session?.user) {
+                          toast.error("Sign in to create packs");
+                          return;
+                        }
+                        setCreatePackFolderName(node.name);
+                        setCreatePackFolderPath(node.path);
+                        setCreatePackDialogOpen(true);
+                      }}
+                    >
+                      Create pack
+                    </ContextMenuItem>
+                  </>
                 )}
                 {previewMode === "multi" && node.type === "file" && isAudioFile(node.name) && (
                   <ContextMenuItem
@@ -3792,7 +3969,8 @@ export const FilePane = ({
     const pane = paneContainerRef.current;
     if (!pane) return;
 
-    const showParentLink = currentRootPath && currentRootPath !== rootPath;
+    const effectiveRoot = folderViewRoot ?? rootPath;
+    const showParentLink = currentRootPath && currentRootPath !== effectiveRoot;
     const itemsToRender = showParentLink
       ? [
           {
@@ -4051,79 +4229,115 @@ export const FilePane = ({
           </div>
           {/* Breadcrumb row: full width below header - accepts drops to copy/convert into currentRootPath */}
           {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
-            <div
-              className={`px-4 pb-2 flex items-center gap-2 min-w-0 text-sm text-muted-foreground rounded transition-colors border ${
-                isDraggingOverBreadcrumb ? "bg-primary/20 border-primary" : "border-transparent"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "copy";
-                setIsDraggingOverBreadcrumb(true);
-              }}
-              onDragLeave={(e) => {
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const { clientX: x, clientY: y } = e;
-                if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+            folderViewRoot ? (
+              <div
+                className="border-transparent"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setIsDraggingOverBreadcrumb(true);
+                }}
+                onDragLeave={(e) => {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  const { clientX: x, clientY: y } = e;
+                  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+                    setIsDraggingOverBreadcrumb(false);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverPath(null);
+                  setIsDraggingOverRoot(false);
                   setIsDraggingOverBreadcrumb(false);
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setDragOverPath(null);
-                setIsDraggingOverRoot(false);
-                setIsDraggingOverBreadcrumb(false);
-                handleDrop(e);
-              }}
-            >
-              <div className="flex items-center gap-1 min-w-0 overflow-x-auto flex-1">
-                <span className="text-muted-foreground/60 shrink-0">/</span>
-                <button
-                  type="button"
-                  onClick={() => navigateToFolder("/")}
-                  className={`truncate hover:text-foreground transition-colors shrink-0 ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
-                  title={fileSystemService.getRootDirectoryName(paneType)}
-                  data-testid={`breadcrumb-root-${paneName}`}
-                >
-                  {fileSystemService.getRootDirectoryName(paneType)}
-                </button>
-                {currentRootPath &&
-                  currentRootPath !== "/" &&
-                  currentRootPath
-                    .split("/")
-                    .filter(Boolean)
-                    .map((segment, i, parts) => {
-                      const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
-                      const isCurrent = i === parts.length - 1;
-                      return (
-                        <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
-                          <span className="text-muted-foreground/60">/</span>
-                          <button
-                            type="button"
-                            onClick={() => navigateToFolder(pathUpToHere)}
-                            className={`truncate max-w-32 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
-                            title={segment}
-                          >
-                            {segment}
-                          </button>
-                        </span>
-                      );
-                    })}
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className={`h-7 w-7 p-0 shrink-0 ${isCurrentPathFavorite ? "text-primary" : "text-muted-foreground"}`}
-                data-testid={`breadcrumb-favorite-${paneName}`}
-                aria-label={isCurrentPathFavorite ? "Remove from favourites" : "Add to favourites"}
-                aria-pressed={isCurrentPathFavorite}
-                title={isCurrentPathFavorite ? "Remove from favourites" : "Add to favourites"}
-                onClick={toggleCurrentPathFavorite}
+                  handleDrop(e);
+                }}
               >
-                <Star className={`w-4 h-4 ${isCurrentPathFavorite ? "fill-current" : ""}`} />
-              </Button>
-            </div>
+                <PackView
+                  name={basename(folderViewRoot)}
+                  coverImageUrl={folderViewCoverUrl}
+                  onClose={() => {
+                    const parent = dirname(folderViewRoot) || "/";
+                    setFolderViewRoot(null);
+                    navigateToFolder(parent);
+                  }}
+                />
+              </div>
+            ) : (
+              <div
+                className={`px-4 pb-2 flex items-center gap-2 min-w-0 text-sm text-muted-foreground rounded transition-colors border ${
+                  isDraggingOverBreadcrumb ? "bg-primary/20 border-primary" : "border-transparent"
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setIsDraggingOverBreadcrumb(true);
+                }}
+                onDragLeave={(e) => {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  const { clientX: x, clientY: y } = e;
+                  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+                    setIsDraggingOverBreadcrumb(false);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverPath(null);
+                  setIsDraggingOverRoot(false);
+                  setIsDraggingOverBreadcrumb(false);
+                  handleDrop(e);
+                }}
+              >
+                <div className="flex items-center gap-1 min-w-0 overflow-x-auto flex-1">
+                  <span className="text-muted-foreground/60 shrink-0">/</span>
+                  <button
+                    type="button"
+                    onClick={() => navigateToFolder("/")}
+                    className={`truncate hover:text-foreground transition-colors shrink-0 ${currentRootPath === "/" || currentRootPath === "" ? "font-medium text-foreground" : ""}`}
+                    title={fileSystemService.getRootDirectoryName(paneType)}
+                    data-testid={`breadcrumb-root-${paneName}`}
+                  >
+                    {fileSystemService.getRootDirectoryName(paneType)}
+                  </button>
+                  {currentRootPath &&
+                    currentRootPath !== "/" &&
+                    currentRootPath
+                      .split("/")
+                      .filter(Boolean)
+                      .map((segment, i, parts) => {
+                        const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
+                        const isCurrent = i === parts.length - 1;
+                        return (
+                          <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
+                            <span className="text-muted-foreground/60">/</span>
+                            <button
+                              type="button"
+                              onClick={() => navigateToFolder(pathUpToHere)}
+                              className={`truncate max-w-32 hover:text-foreground transition-colors ${isCurrent ? "font-medium text-foreground" : ""}`}
+                              title={segment}
+                            >
+                              {segment}
+                            </button>
+                          </span>
+                        );
+                      })}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className={`h-7 w-7 p-0 shrink-0 ${isCurrentPathFavorite ? "text-primary" : "text-muted-foreground"}`}
+                  data-testid={`breadcrumb-favorite-${paneName}`}
+                  aria-label={isCurrentPathFavorite ? "Remove from favourites" : "Add to favourites"}
+                  aria-pressed={isCurrentPathFavorite}
+                  title={isCurrentPathFavorite ? "Remove from favourites" : "Add to favourites"}
+                  onClick={toggleCurrentPathFavorite}
+                >
+                  <Star className={`w-4 h-4 ${isCurrentPathFavorite ? "fill-current" : ""}`} />
+                </Button>
+              </div>
+            )
           )}
         </div>
 
@@ -4386,6 +4600,19 @@ export const FilePane = ({
       )}
 
       <OverwriteConfirmDialog open={overwriteConfirmOpen} onChoice={handleOverwriteChoice} />
+
+      <CreatePackDialog
+        open={createPackDialogOpen}
+        onOpenChange={setCreatePackDialogOpen}
+        defaultName={createPackFolderName}
+        folderPath={createPackFolderPath}
+        paneType={paneType}
+        onCreated={() => {
+          if (createPackFolderPath) {
+            refreshFolder(createPackFolderPath);
+          }
+        }}
+      />
     </div>
   );
 };

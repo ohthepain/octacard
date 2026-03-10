@@ -4,7 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../types.js";
 import { prisma } from "../db.js";
-import { getFromS3, getPresignedUploadUrl } from "../s3.js";
+import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl } from "../s3.js";
 
 const libraryApp = new Hono<{ Variables: AppVariables }>();
 
@@ -18,11 +18,19 @@ const searchSchema = z.object({
 const createPackSchema = z.object({
   name: z.string().trim().min(1).max(120),
   parentId: z.string().trim().min(1).optional(),
+  isPublic: z.boolean().default(true),
+  priceTokens: z.number().int().min(0).default(0),
+  defaultSampleTokens: z.number().int().min(0).default(0),
 });
 
 const updatePackSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   parentId: z.string().trim().min(1).nullable().optional(),
+  coverImageS3Key: z.string().trim().min(1).nullable().optional(),
+});
+
+const packCoverUploadSchema = z.object({
+  contentType: z.string().trim().min(1).default("image/jpeg"),
 });
 
 const uploadSampleSchema = z.object({
@@ -42,9 +50,24 @@ const createSampleSchema = z.object({
   credits: z.number().int().min(0).default(0),
 });
 
-const updateSampleSchema = z.object({
-  name: z.string().trim().min(1).max(255).optional(),
-  credits: z.number().int().min(0).optional(),
+const checkSamplesExistSchema = z.object({
+  contentHashes: z.array(z.string().trim().length(64)).max(500),
+});
+
+const uploadByContentHashSchema = z.object({
+  packId: z.string().trim().min(1),
+  contentHash: z.string().trim().length(64),
+  contentType: z.string().trim().min(1).default("application/octet-stream"),
+  fileName: z.string().trim().min(1).max(255),
+});
+
+const createSampleFromContentSchema = z.object({
+  packId: z.string().trim().min(1),
+  name: z.string().trim().min(1).max(255),
+  contentHash: z.string().trim().length(64),
+  contentType: z.string().trim().min(1),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  credits: z.number().int().min(0).default(0),
 });
 
 function normalizeName(value: string): string {
@@ -87,10 +110,18 @@ async function isSampleInCollection(userId: string, sampleId: string): Promise<b
   return Boolean(existing);
 }
 
-async function canReadSample(userId: string, sample: { id: string; ownerId: string; credits: number }): Promise<boolean> {
-  if (sample.ownerId === userId) return true;
-  if (sample.credits === 0) return true;
-  return isSampleInCollection(userId, sample.id);
+async function canReadSample(userId: string, sampleId: string): Promise<boolean> {
+  if (isSampleInCollection(userId, sampleId)) return true;
+  const packSample = await prisma.packSample.findFirst({
+    where: { sampleId, OR: [{ ownerId: userId }, { credits: 0 }] },
+    select: { packId: true },
+  });
+  if (packSample) return true;
+  const pack = await prisma.pack.findFirst({
+    where: { packSamples: { some: { sampleId } }, ownerId: userId },
+    select: { id: true },
+  });
+  return Boolean(pack);
 }
 
 type PackPathNode = { id: string; name: string; parentId: string | null; relativeDir: string };
@@ -173,32 +204,28 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
             _count: {
               select: {
                 children: true,
-                samples: true,
+                packSamples: true,
               },
             },
           },
         }),
     types === "packs"
       ? Promise.resolve([])
-      : prisma.sampleFile.findMany({
+      : prisma.packSample.findMany({
           where: {
             ...(scope === "mine" ? { ownerId: user.id } : {}),
             ...sampleNameFilter,
           },
           include: {
-            pack: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
+            pack: { select: { id: true, name: true } },
+            sample: { select: { sizeBytes: true, contentType: true } },
           },
           orderBy: { updatedAt: "desc" },
           take: limit,
         }),
   ]);
 
-  const sampleIds = samples.map((sample) => sample.id);
+  const sampleIds = samples.map((s) => s.sampleId);
   const collectionRows =
     sampleIds.length > 0
       ? await prisma.sampleCollection.findMany({
@@ -220,24 +247,25 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       createdAt: pack.createdAt,
       updatedAt: pack.updatedAt,
       childPackCount: pack._count.children,
-      sampleCount: pack._count.samples,
+      sampleCount: pack._count.packSamples,
     })),
-    samples: samples.map((sample) => {
-      const readable = sample.ownerId === user.id || sample.credits === 0 || inCollection.has(sample.id);
+    samples: samples.map((ps) => {
+      const content = ps.sample;
+      const readable = ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId);
       return {
-        id: sample.id,
-        name: sample.name,
-        ownerId: sample.ownerId,
-        packId: sample.packId,
-        packName: sample.pack.name,
-        credits: sample.credits,
-        sizeBytes: sample.sizeBytes,
-        contentType: sample.contentType,
-        isOwner: sample.ownerId === user.id,
-        inCollection: inCollection.has(sample.id),
+        id: ps.sampleId,
+        name: ps.name,
+        ownerId: ps.ownerId,
+        packId: ps.packId,
+        packName: ps.pack.name,
+        credits: ps.credits,
+        sizeBytes: content?.sizeBytes ?? null,
+        contentType: content?.contentType ?? "application/octet-stream",
+        isOwner: ps.ownerId === user.id,
+        inCollection: inCollection.has(ps.sampleId),
         canDownload: readable,
-        createdAt: sample.createdAt,
-        updatedAt: sample.updatedAt,
+        createdAt: ps.createdAt,
+        updatedAt: ps.updatedAt,
       };
     }),
   });
@@ -245,7 +273,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
 
 libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
   const user = c.get("user");
-  const { name, parentId } = c.req.valid("json");
+  const { name, parentId, isPublic, priceTokens, defaultSampleTokens } = c.req.valid("json");
 
   if (parentId) {
     await requireOwnedPack(parentId, user.id);
@@ -256,12 +284,18 @@ libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
       name: normalizeName(name),
       ownerId: user.id,
       parentId: parentId ?? null,
+      isPublic,
+      priceTokens,
+      defaultSampleTokens,
     },
     select: {
       id: true,
       name: true,
       ownerId: true,
       parentId: true,
+      isPublic: true,
+      priceTokens: true,
+      defaultSampleTokens: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -290,18 +324,159 @@ libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) =
     data: {
       ...(name ? { name: normalizeName(name) } : {}),
       ...(parentId !== undefined ? { parentId } : {}),
+      ...(c.req.valid("json").coverImageS3Key !== undefined
+        ? { coverImageS3Key: c.req.valid("json").coverImageS3Key }
+        : {}),
     },
     select: {
       id: true,
       name: true,
       ownerId: true,
       parentId: true,
+      coverImageS3Key: true,
       createdAt: true,
       updatedAt: true,
     },
   });
 
   return c.json(pack);
+});
+
+libraryApp.post(
+  "/packs/:id/cover-upload-url",
+  zValidator("json", packCoverUploadSchema),
+  async (c) => {
+    const user = c.get("user");
+    const id = c.req.param("id");
+    const { contentType } = c.req.valid("json");
+
+    await requireOwnedPack(id, user.id);
+
+    const key = `packs/${user.id}/${id}/cover-${Date.now()}.${contentType.includes("png") ? "png" : "jpg"}`;
+    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+
+    return c.json({ key, uploadUrl, expiresIn: 3600 });
+  }
+);
+
+libraryApp.get("/packs/:id/contents", async (c) => {
+  const user = c.get("user");
+  const packId = c.req.param("id");
+
+  const pack = await prisma.pack.findUnique({
+    where: { id: packId },
+    select: { id: true, name: true, ownerId: true },
+  });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
+
+  const [childPacks, packSamples] = await Promise.all([
+    prisma.pack.findMany({
+      where: { parentId: packId },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { children: true, packSamples: true } },
+      },
+    }),
+    prisma.packSample.findMany({
+      where: { packId },
+      include: {
+        sample: { select: { sizeBytes: true, contentType: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  const sampleIds = packSamples.map((ps) => ps.sampleId);
+  const collectionRows =
+    sampleIds.length > 0
+      ? await prisma.sampleCollection.findMany({
+          where: { userId: user.id, sampleId: { in: sampleIds } },
+          select: { sampleId: true },
+        })
+      : [];
+  const inCollection = new Set(collectionRows.map((row) => row.sampleId));
+
+  return c.json({
+    pack: {
+      id: pack.id,
+      name: pack.name,
+      ownerId: pack.ownerId,
+      isOwner: pack.ownerId === user.id,
+    },
+    packs: childPacks.map((p) => ({
+      id: p.id,
+      name: p.name,
+      ownerId: p.ownerId,
+      isOwner: p.ownerId === user.id,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      childPackCount: p._count.children,
+      sampleCount: p._count.packSamples,
+    })),
+    samples: packSamples.map((ps) => {
+      const content = ps.sample;
+      const readable = ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId);
+      return {
+        id: ps.sampleId,
+        name: ps.name,
+        ownerId: ps.ownerId,
+        packId: ps.packId,
+        packName: pack.name,
+        credits: ps.credits,
+        sizeBytes: content?.sizeBytes ?? null,
+        contentType: content?.contentType ?? "application/octet-stream",
+        isOwner: ps.ownerId === user.id,
+        inCollection: inCollection.has(ps.sampleId),
+        canDownload: readable,
+        createdAt: ps.createdAt,
+        updatedAt: ps.updatedAt,
+      };
+    }),
+  });
+});
+
+libraryApp.get("/packs/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      ownerId: true,
+      coverImageS3Key: true,
+      _count: { select: { children: true, packSamples: true } },
+      owner: { select: { name: true } },
+    },
+  });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
+
+  let coverImageUrl: string | null = null;
+  if (pack.coverImageS3Key) {
+    coverImageUrl = await getPresignedDownloadUrl(pack.coverImageS3Key, 3600);
+  }
+
+  return c.json({
+    id: pack.id,
+    name: pack.name,
+    ownerId: pack.ownerId,
+    ownerName: pack.owner.name,
+    isOwner: pack.ownerId === user.id,
+    coverImageS3Key: pack.coverImageS3Key,
+    coverImageUrl,
+    childPackCount: pack._count.children,
+    sampleCount: pack._count.packSamples,
+  });
 });
 
 libraryApp.get("/packs/:id/download-manifest", async (c) => {
@@ -319,24 +494,18 @@ libraryApp.get("/packs/:id/download-manifest", async (c) => {
   const tree = await loadPackTree(pack.id);
   const packIds = Array.from(tree.keys());
 
-  const samples =
+  const packSamples =
     packIds.length === 0
       ? []
-      : await prisma.sampleFile.findMany({
+      : await prisma.packSample.findMany({
           where: { packId: { in: packIds } },
-          select: {
-            id: true,
-            name: true,
-            ownerId: true,
-            packId: true,
-            credits: true,
-            sizeBytes: true,
-            contentType: true,
+          include: {
+            sample: { select: { sizeBytes: true, contentType: true } },
           },
           orderBy: [{ packId: "asc" }, { name: "asc" }],
         });
 
-  const sampleIds = samples.map((sample) => sample.id);
+  const sampleIds = packSamples.map((ps) => ps.sampleId);
   const collectionRows =
     sampleIds.length > 0
       ? await prisma.sampleCollection.findMany({
@@ -349,9 +518,9 @@ libraryApp.get("/packs/:id/download-manifest", async (c) => {
       : [];
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
 
-  const downloadable = samples.filter(
-    (sample) =>
-      sample.ownerId === user.id || sample.credits === 0 || inCollection.has(sample.id) || pack.ownerId === user.id,
+  const downloadable = packSamples.filter(
+    (ps) =>
+      ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId) || pack.ownerId === user.id,
   );
 
   if (downloadable.length === 0) {
@@ -365,20 +534,107 @@ libraryApp.get("/packs/:id/download-manifest", async (c) => {
       ownerId: pack.ownerId,
       isOwner: pack.ownerId === user.id,
     },
-    samples: downloadable.map((sample) => {
-      const dir = tree.get(sample.packId)?.relativeDir ?? "";
-      const relativePath = dir ? `${dir}/${sample.name}` : sample.name;
+    samples: downloadable.map((ps) => {
+      const content = ps.sample;
+      const dir = tree.get(ps.packId)?.relativeDir ?? "";
+      const relativePath = dir ? `${dir}/${ps.name}` : ps.name;
       return {
-        id: sample.id,
-        name: sample.name,
+        id: ps.sampleId,
+        name: ps.name,
         relativePath,
-        packId: sample.packId,
-        credits: sample.credits,
-        sizeBytes: sample.sizeBytes,
-        contentType: sample.contentType,
+        packId: ps.packId,
+        credits: ps.credits,
+        sizeBytes: content?.sizeBytes ?? null,
+        contentType: content?.contentType ?? "application/octet-stream",
       };
     }),
   });
+});
+
+libraryApp.post("/samples/check-exist", zValidator("json", checkSamplesExistSchema), async (c) => {
+  const { contentHashes } = c.req.valid("json");
+  const existing = await prisma.sample.findMany({
+    where: { id: { in: contentHashes } },
+    select: { id: true },
+  });
+  const existingSet = new Set(existing.map((e) => e.id));
+  const missing = contentHashes.filter((h) => !existingSet.has(h));
+  return c.json({ existing: Array.from(existingSet), missing });
+});
+
+function contentTypeToExt(contentType: string): string {
+  const map: Record<string, string> = {
+    "audio/wav": "wav",
+    "audio/wave": "wav",
+    "audio/x-wav": "wav",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/flac": "flac",
+    "audio/ogg": "ogg",
+    "audio/aiff": "aiff",
+    "audio/aif": "aif",
+  };
+  return map[contentType.toLowerCase()] ?? "bin";
+}
+
+libraryApp.post("/samples/upload-url-by-content", zValidator("json", uploadByContentHashSchema), async (c) => {
+  const user = c.get("user");
+  const { packId, contentHash, contentType, fileName } = c.req.valid("json");
+  await requireOwnedPack(packId, user.id);
+  const ext = contentTypeToExt(contentType);
+  const key = `samples/${contentHash}.${ext}`;
+  const uploadUrl = await getPresignedUploadUrl(key, contentType);
+  return c.json({ key, uploadUrl, expiresIn: 3600 });
+});
+
+libraryApp.post("/samples/from-content", zValidator("json", createSampleFromContentSchema), async (c) => {
+  const user = c.get("user");
+  const { packId, name, contentHash, contentType, sizeBytes, credits } = c.req.valid("json");
+  const pack = await requireOwnedPack(packId, user.id);
+
+  const ext = contentTypeToExt(contentType);
+  const s3Key = `samples/${contentHash}.${ext}`;
+
+  await prisma.sample.upsert({
+    where: { id: contentHash },
+    create: {
+      id: contentHash,
+      s3Key,
+      contentType,
+      sizeBytes: sizeBytes ?? null,
+    },
+    update: {},
+  });
+
+  const ps = await prisma.packSample.upsert({
+    where: { packId_sampleId: { packId: pack.id, sampleId: contentHash } },
+    create: {
+      packId: pack.id,
+      sampleId: contentHash,
+      name: normalizeName(name),
+      ownerId: user.id,
+      credits,
+    },
+    update: {},
+    include: {
+      sample: { select: { sizeBytes: true, contentType: true } },
+    },
+  });
+
+  return c.json(
+    {
+      id: ps.sampleId,
+      name: ps.name,
+      packId: ps.packId,
+      ownerId: ps.ownerId,
+      credits: ps.credits,
+      sizeBytes: ps.sample?.sizeBytes ?? null,
+      contentType: ps.sample?.contentType ?? "application/octet-stream",
+      createdAt: ps.createdAt,
+      updatedAt: ps.updatedAt,
+    },
+    201
+  );
 });
 
 libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), async (c) => {
@@ -414,94 +670,121 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
     throw new HTTPException(400, { message: "Invalid s3Key for current owner/pack" });
   }
 
-  const sample = await prisma.sampleFile.create({
+  const legacyContentId = `legacy_${crypto.randomUUID().replace(/-/g, "")}`;
+  await prisma.sample.create({
     data: {
-      name: normalizeName(name),
-      packId: pack.id,
-      ownerId: user.id,
+      id: legacyContentId,
       s3Key,
       contentType,
       sizeBytes: sizeBytes ?? null,
+    },
+  });
+
+  const ps = await prisma.packSample.create({
+    data: {
+      packId: pack.id,
+      sampleId: legacyContentId,
+      name: normalizeName(name),
+      ownerId: user.id,
       credits,
     },
-    select: {
-      id: true,
-      name: true,
-      packId: true,
-      ownerId: true,
-      credits: true,
-      sizeBytes: true,
-      contentType: true,
-      createdAt: true,
-      updatedAt: true,
+    include: {
+      sample: { select: { sizeBytes: true, contentType: true } },
     },
   });
 
-  return c.json(sample, 201);
+  return c.json(
+    {
+      id: ps.sampleId,
+      name: ps.name,
+      packId: ps.packId,
+      ownerId: ps.ownerId,
+      credits: ps.credits,
+      sizeBytes: ps.sample?.sizeBytes ?? null,
+      contentType: ps.sample?.contentType ?? "application/octet-stream",
+      createdAt: ps.createdAt,
+      updatedAt: ps.updatedAt,
+    },
+    201
+  );
 });
 
-libraryApp.patch("/samples/:id", zValidator("json", updateSampleSchema), async (c) => {
+const updatePackSampleSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  credits: z.number().int().min(0).optional(),
+});
+
+libraryApp.patch("/packs/:packId/samples/:sampleId", zValidator("json", updatePackSampleSchema), async (c) => {
   const user = c.get("user");
-  const id = c.req.param("id");
+  const packId = c.req.param("packId");
+  const sampleId = c.req.param("sampleId");
   const { name, credits } = c.req.valid("json");
 
-  const sample = await prisma.sampleFile.findUnique({
-    where: { id },
-    select: { id: true, ownerId: true },
+  const ps = await prisma.packSample.findUnique({
+    where: { packId_sampleId: { packId, sampleId } },
+    select: { ownerId: true },
   });
-  if (!sample) {
-    throw new HTTPException(404, { message: "Sample not found" });
+  if (!ps) {
+    throw new HTTPException(404, { message: "Sample not found in pack" });
   }
-  if (sample.ownerId !== user.id) {
+  if (ps.ownerId !== user.id) {
     throw new HTTPException(403, { message: "Only the owner can update this sample" });
   }
 
-  const updated = await prisma.sampleFile.update({
-    where: { id },
+  const updated = await prisma.packSample.update({
+    where: { packId_sampleId: { packId, sampleId } },
     data: {
       ...(name ? { name: normalizeName(name) } : {}),
       ...(credits !== undefined ? { credits } : {}),
     },
-    select: {
-      id: true,
-      name: true,
-      packId: true,
-      ownerId: true,
-      credits: true,
-      sizeBytes: true,
-      contentType: true,
-      createdAt: true,
-      updatedAt: true,
+    include: {
+      sample: { select: { sizeBytes: true, contentType: true } },
     },
   });
 
-  return c.json(updated);
+  return c.json({
+    id: updated.sampleId,
+    name: updated.name,
+    packId: updated.packId,
+    ownerId: updated.ownerId,
+    credits: updated.credits,
+    sizeBytes: updated.sample?.sizeBytes ?? null,
+    contentType: updated.sample?.contentType ?? "application/octet-stream",
+    createdAt: updated.createdAt,
+    updatedAt: updated.updatedAt,
+  });
 });
 
 libraryApp.post("/samples/:id/add-to-collection", async (c) => {
   const user = c.get("user");
-  const id = c.req.param("id");
+  const sampleId = c.req.param("id");
 
-  const sample = await prisma.sampleFile.findUnique({
-    where: { id },
-    select: { id: true, credits: true },
+  const sample = await prisma.sample.findUnique({
+    where: { id: sampleId },
+    select: { id: true },
   });
   if (!sample) {
     throw new HTTPException(404, { message: "Sample not found" });
   }
+
+  const packSample = await prisma.packSample.findFirst({
+    where: { sampleId },
+    select: { credits: true },
+  });
+  const creditsPaid = packSample?.credits ?? 0;
 
   const item = await prisma.sampleCollection.upsert({
     where: {
       userId_sampleId: {
         userId: user.id,
-        sampleId: sample.id,
+        sampleId,
       },
     },
     update: {},
     create: {
       userId: user.id,
-      sampleId: sample.id,
-      creditsPaid: sample.credits,
+      sampleId,
+      creditsPaid,
     },
     select: {
       id: true,
@@ -517,24 +800,17 @@ libraryApp.post("/samples/:id/add-to-collection", async (c) => {
 
 libraryApp.get("/samples/:id/download", async (c) => {
   const user = c.get("user");
-  const id = c.req.param("id");
+  const sampleId = c.req.param("id");
 
-  const sample = await prisma.sampleFile.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      name: true,
-      ownerId: true,
-      s3Key: true,
-      contentType: true,
-      credits: true,
-    },
+  const sample = await prisma.sample.findUnique({
+    where: { id: sampleId },
+    select: { s3Key: true, contentType: true },
   });
   if (!sample) {
     throw new HTTPException(404, { message: "Sample not found" });
   }
 
-  const readable = await canReadSample(user.id, sample);
+  const readable = await canReadSample(user.id, sampleId);
   if (!readable) {
     throw new HTTPException(403, { message: "You do not have access to download this sample" });
   }
@@ -543,6 +819,13 @@ libraryApp.get("/samples/:id/download", async (c) => {
   if (!payload) {
     throw new HTTPException(404, { message: "Sample file not found in storage" });
   }
+
+  const packSample = await prisma.packSample.findFirst({
+    where: { sampleId },
+    select: { name: true },
+  });
+  const displayName = packSample?.name ?? "sample";
+
   const body = new Uint8Array(payload.length);
   body.set(payload);
 
@@ -551,7 +834,7 @@ libraryApp.get("/samples/:id/download", async (c) => {
     headers: {
       "Content-Type": sample.contentType || "application/octet-stream",
       "Content-Length": String(payload.length),
-      "Content-Disposition": `attachment; filename="${encodeURIComponent(sample.name)}"`,
+      "Content-Disposition": `attachment; filename="${encodeURIComponent(displayName)}"`,
     },
   });
 });

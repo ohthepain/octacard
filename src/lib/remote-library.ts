@@ -14,6 +14,24 @@ export interface RemotePackSummary {
   sampleCount: number;
 }
 
+export interface RemotePackDetails {
+  id: string;
+  name: string;
+  ownerId: string;
+  ownerName: string;
+  isOwner: boolean;
+  coverImageS3Key: string | null;
+  coverImageUrl: string | null;
+  childPackCount: number;
+  sampleCount: number;
+}
+
+export interface RemotePackContentsResponse {
+  pack: { id: string; name: string; ownerId: string; isOwner: boolean };
+  packs: RemotePackSummary[];
+  samples: RemoteSampleSummary[];
+}
+
 export interface RemoteSampleSummary {
   id: string;
   name: string;
@@ -104,6 +122,128 @@ export async function downloadRemoteSampleBlob(sampleId: string): Promise<Blob> 
     throw new Error(`Failed to download sample (${res.status})`);
   }
   return await res.blob();
+}
+
+export async function checkSamplesExist(contentHashes: string[]): Promise<{ existing: string[]; missing: string[] }> {
+  const res = await apiFetch("/api/library/samples/check-exist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contentHashes }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to check samples (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getSampleUploadUrlByContent(params: {
+  packId: string;
+  contentHash: string;
+  contentType: string;
+  fileName: string;
+}): Promise<{ key: string; uploadUrl: string; expiresIn: number }> {
+  const res = await apiFetch("/api/library/samples/upload-url-by-content", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to get upload URL (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createSampleFromContent(params: {
+  packId: string;
+  name: string;
+  contentHash: string;
+  contentType: string;
+  sizeBytes?: number;
+  credits: number;
+}): Promise<RemoteSampleSummary> {
+  const res = await apiFetch("/api/library/samples/from-content", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to create sample (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createPack(params: {
+  name: string;
+  parentId?: string;
+  isPublic?: boolean;
+  priceTokens?: number;
+  defaultSampleTokens?: number;
+}): Promise<{
+  id: string;
+  name: string;
+  ownerId: string;
+  parentId: string | null;
+  isPublic: boolean;
+  priceTokens: number;
+  defaultSampleTokens: number;
+  coverImageS3Key: string | null;
+  createdAt: string;
+  updatedAt: string;
+}> {
+  const res = await apiFetch("/api/library/packs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to create pack (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getPackCoverUploadUrl(
+  packId: string,
+  contentType: string
+): Promise<{ key: string; uploadUrl: string; expiresIn: number }> {
+  const res = await apiFetch("/api/library/packs/" + encodeURIComponent(packId) + "/cover-upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contentType }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to get pack cover upload URL (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function updatePack(
+  packId: string,
+  data: { name?: string; parentId?: string | null; coverImageS3Key?: string | null }
+): Promise<void> {
+  const res = await apiFetch("/api/library/packs/" + encodeURIComponent(packId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to update pack (${res.status})`);
+  }
+}
+
+export async function getPack(packId: string): Promise<RemotePackDetails> {
+  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to get pack (${res.status})`);
+  }
+  return (await res.json()) as RemotePackDetails;
+}
+
+export async function getPackContents(packId: string): Promise<RemotePackContentsResponse> {
+  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}/contents`);
+  if (!res.ok) {
+    throw new Error(`Failed to get pack contents (${res.status})`);
+  }
+  return (await res.json()) as RemotePackContentsResponse;
 }
 
 export async function getPackDownloadManifest(packId: string): Promise<RemotePackDownloadManifest> {

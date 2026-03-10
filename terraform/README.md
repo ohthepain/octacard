@@ -225,7 +225,7 @@ docker push $(cd terraform && terraform output -raw ecr_repository_url):staging
 aws ecs update-service --cluster octacard-staging-cluster --service octacard-staging-service --force-new-deployment --region eu-central-1
 ```
 
-**Add app URL to S3 CORS** (for uploads): Add `http://<alb-dns-name>/` or `https://<domain>/` to `cors_allowed_origins` in tfvars and re-apply.
+**Add app URL to S3 CORS** (for uploads): If you get 403 on OPTIONS when uploading (e.g. pack cover), add your origin to `cors_allowed_origins` in tfvars, then `terraform apply`. For local dev with ngrok, add your ngrok URL (e.g. `https://xxx.ngrok-free.dev`) or `https://*.ngrok-free.dev`.
 
 ### Destroy and recreate
 

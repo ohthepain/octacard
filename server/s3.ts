@@ -8,7 +8,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const region = process.env.AWS_REGION ?? "eu-central-1";
-const bucket = process.env.S3_BUCKET ?? "octacard-uploads";
+const bucket = process.env.S3_BUCKET ?? "octacard-staging-uploads";
 const endpoint = process.env.S3_ENDPOINT || undefined;
 
 export const s3Client = new S3Client({

@@ -20,7 +20,7 @@ model User {
   accounts      Account[]
   roles         UserRole[]
   ownedPacks    Pack[]              @relation("PackOwner")
-  ownedSamples  SampleFile[]       @relation("SampleOwner")
+  ownedSamples  PackSample[]       @relation("SampleOwner")
   collection    SampleCollection[]
 
   @@unique([email])
@@ -90,16 +90,20 @@ model Verification {
 }
 
 model Pack {
-  id         String    @id @default(cuid())
-  name       String
-  ownerId    String
-  parentId   String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  owner      User      @relation("PackOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  parent     Pack?     @relation("PackHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
-  children   Pack[]    @relation("PackHierarchy")
-  samples    SampleFile[]
+  id                  String       @id @default(cuid())
+  name                String
+  ownerId             String
+  parentId            String?
+  coverImageS3Key     String?
+  isPublic            Boolean      @default(true)
+  priceTokens         Int          @default(0)
+  defaultSampleTokens Int          @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  owner               User         @relation("PackOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  parent              Pack?        @relation("PackHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children            Pack[]       @relation("PackHierarchy")
+  packSamples         PackSample[]
 
   @@index([ownerId])
   @@index([parentId])
@@ -107,36 +111,48 @@ model Pack {
   @@map("pack")
 }
 
-model SampleFile {
-  id          String             @id @default(cuid())
-  name        String
-  packId      String
-  ownerId     String
-  s3Key       String             @unique
+// Sample = content identified by hash. Single source of truth; survives DB reset.
+model Sample {
+  id          String        @id
+  s3Key       String        @unique
   contentType String
   sizeBytes   Int?
-  credits     Int                @default(0)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  pack        Pack               @relation(fields: [packId], references: [id], onDelete: Cascade)
-  owner       User               @relation("SampleOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  packSamples PackSample[]
   collections SampleCollection[]
 
-  @@index([packId])
+  @@map("sample")
+}
+
+// Pack's reference to a sample. Sample ID = content hash.
+model PackSample {
+  packId     String
+  sampleId   String
+  name       String
+  ownerId    String
+  credits    Int            @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  pack       Pack           @relation(fields: [packId], references: [id], onDelete: Cascade)
+  owner      User           @relation("SampleOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  sample     Sample         @relation(fields: [sampleId], references: [id], onDelete: Restrict)
+
+  @@id([packId, sampleId])
   @@index([ownerId])
   @@index([name])
   @@index([credits])
-  @@map("sample_file")
+  @@index([sampleId])
+  @@map("pack_sample")
 }
 
 model SampleCollection {
-  id          String     @id @default(cuid())
+  id          String   @id @default(cuid())
   userId      String
   sampleId    String
   creditsPaid Int
-  createdAt   DateTime   @default(now())
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sample      SampleFile @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sample      Sample   @relation(fields: [sampleId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sampleId])
   @@index([sampleId])
