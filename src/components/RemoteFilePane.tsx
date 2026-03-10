@@ -13,9 +13,7 @@ import {
   type RemoteSearchType,
 } from "@/lib/remote-library";
 
-type RemoteDragItem =
-  | { kind: "project"; id: string; name: string }
-  | { kind: "sample"; id: string; name: string };
+type RemoteDragItem = { kind: "project"; id: string; name: string } | { kind: "sample"; id: string; name: string };
 
 interface RemoteFilePaneProps {
   title?: string;
@@ -156,7 +154,9 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
           ) : entries.length === 0 ? (
             <div className="py-8 text-center space-y-2">
               <div className="text-sm text-muted-foreground">No remote results</div>
-              <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
+              <p className="text-xs text-muted-foreground/80">
+                Octacard manages and converts sample files for your hardware.
+              </p>
             </div>
           ) : (
             entries.map((entry) => {

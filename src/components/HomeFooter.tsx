@@ -61,10 +61,10 @@ export function HomeFooter() {
         <Link to="/legal/privacy" className="text-primary hover:underline">
           Privacy Policy
         </Link>
-        <span className="hidden sm:inline">We don&apos;t use cookies or collect personal data for local file operations.</span>
+        <span className="hidden sm:inline">We don&apos;t use cookies or collect personal data.</span>
       </div>
       <div className="flex items-center gap-2">
-        <span className="sm:hidden text-xs">No cookies or personal data for local files.</span>
+        <span className="sm:hidden text-xs">No cookies or personal data.</span>
         <Button
           variant="ghost"
           size="icon"

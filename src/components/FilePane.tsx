@@ -232,13 +232,7 @@ export const FilePane = ({
   refreshToken,
 }: FilePaneProps) => {
   if (mode === "remote") {
-    return (
-      <RemoteFilePane
-        title={title}
-        scope={remoteScope}
-        onSelectionChange={onSelectionChange}
-      />
-    );
+    return <RemoteFilePane title={title} scope={remoteScope} onSelectionChange={onSelectionChange} />;
   }
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -317,11 +311,7 @@ export const FilePane = ({
 
   // Helper function to recursively count files in a folder
   const countFilesRecursively = useCallback(
-    async (
-      folderPath: string,
-      sourcePane?: "source" | "dest",
-      options?: { audioOnly?: boolean },
-    ): Promise<number> => {
+    async (folderPath: string, sourcePane?: "source" | "dest", options?: { audioOnly?: boolean }): Promise<number> => {
       try {
         const result = await fileSystemService.readDirectory(folderPath, sourcePane ?? paneType);
         if (!result.success || !result.data) return 0;
@@ -2562,11 +2552,7 @@ export const FilePane = ({
       for (const item of items) {
         if (item.kind === "sample") {
           const blob = await downloadRemoteSampleBlob(item.id);
-          const result = await fileSystemService.writeBlobToPath(
-            joinPath(destinationPath, item.name),
-            blob,
-            paneType,
-          );
+          const result = await fileSystemService.writeBlobToPath(joinPath(destinationPath, item.name), blob, paneType);
           if (!result.success) {
             throw new Error(result.error || `Failed to write ${item.name}`);
           }
@@ -3430,20 +3416,24 @@ export const FilePane = ({
                     if (previewMode === "multi") {
                       const { slots } = useMultiSampleStore.getState();
                       const existingSlotIndex = slots.findIndex(
-                        (s) => s && s.path === node.path && s.paneType === paneType
+                        (s) => s && s.path === node.path && s.paneType === paneType,
                       );
                       if (existingSlotIndex >= 0) {
                         setActiveSlotIndex(existingSlotIndex);
                         const sample = slots[existingSlotIndex];
                         if (sample) {
-                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                          useWaveformEditorStore
+                            .getState()
+                            .openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
                         }
                       } else {
                         putSampleInActiveSlot({ path: node.path, name: node.name, paneType });
                         const { slots, activeSlotIndex } = useMultiSampleStore.getState();
                         const sample = slots[activeSlotIndex];
                         if (sample) {
-                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                          useWaveformEditorStore
+                            .getState()
+                            .openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
                         }
                       }
                     } else {
@@ -3532,25 +3522,31 @@ export const FilePane = ({
                       e.stopPropagation();
                       const { slots } = useMultiSampleStore.getState();
                       const existingSlotIndex = slots.findIndex(
-                        (s) => s && s.path === node.path && s.paneType === paneType
+                        (s) => s && s.path === node.path && s.paneType === paneType,
                       );
                       if (existingSlotIndex >= 0) {
                         setActiveSlotIndex(existingSlotIndex);
                         const sample = slots[existingSlotIndex];
                         if (sample) {
-                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                          useWaveformEditorStore
+                            .getState()
+                            .openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
                         }
                       } else {
                         putSampleInActiveSlot({ path: node.path, name: node.name, paneType });
                         const { slots, activeSlotIndex } = useMultiSampleStore.getState();
                         const sample = slots[activeSlotIndex];
                         if (sample) {
-                          useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+                          useWaveformEditorStore
+                            .getState()
+                            .openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
                         }
                       }
                     }}
                   >
-                    {useMultiSampleStore.getState().slots.some((s) => s && s.path === node.path && s.paneType === paneType)
+                    {useMultiSampleStore
+                      .getState()
+                      .slots.some((s) => s && s.path === node.path && s.paneType === paneType)
                       ? "Select in multi"
                       : "Add to multi"}
                   </ContextMenuItem>
@@ -4178,7 +4174,9 @@ export const FilePane = ({
                     Navigate to nearest existing folder
                   </Button>
                 )}
-                <p className="text-xs text-muted-foreground">We manage and convert sample files for your hardware.</p>
+                <p className="text-xs text-muted-foreground">
+                  Octacard manages and converts sample files for your hardware.
+                </p>
               </div>
             ) : isSearchingFolders ? (
               <div className="flex items-center justify-center py-8">
@@ -4190,7 +4188,9 @@ export const FilePane = ({
             ) : searchQuery && searchResultsTree.length === 0 ? (
               <div className="text-center py-8 space-y-2">
                 <div className="text-sm text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-                <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
+                <p className="text-xs text-muted-foreground/80">
+                  Octacard manages and converts sample files for your hardware.
+                </p>
               </div>
             ) : activeTreeNodes.length === 0 ? (
               <>
@@ -4241,14 +4241,18 @@ export const FilePane = ({
                   ) : searchQuery ? (
                     <div className="space-y-2">
                       <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-                      <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
+                      <p className="text-xs text-muted-foreground/80">
+                        Octacard manages and converts sample files for your hardware.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       <div className="text-muted-foreground">
                         {treeViewMode === "folders" ? "No folders found" : "No files found"}
                       </div>
-                      <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
+                      <p className="text-xs text-muted-foreground/80">
+                        Octacard manages and converts sample files for your hardware.
+                      </p>
                     </div>
                   )}
                 </div>
