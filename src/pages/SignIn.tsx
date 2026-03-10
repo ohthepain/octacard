@@ -153,12 +153,15 @@ export default function SignIn() {
     setForgotPasswordLoading(true);
     try {
       const redirectTo = `${window.location.origin}/reset-password`;
-      const result = await authClient.requestPasswordReset({
-        email: forgotPasswordEmail.trim(),
-        redirectTo,
+      const result = await authClient.$fetch("/request-password-reset", {
+        method: "POST",
+        body: {
+          email: forgotPasswordEmail.trim(),
+          redirectTo,
+        },
       });
-      if (result.error) {
-        toast.error(result.error.message ?? "Failed to send reset link");
+      if (result && typeof result === "object" && "error" in result && result.error) {
+        toast.error((result.error as { message?: string }).message ?? "Failed to send reset link");
         return;
       }
       setForgotPasswordSent(true);

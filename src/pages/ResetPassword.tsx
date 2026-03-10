@@ -35,10 +35,13 @@ export default function ResetPassword() {
     }
     setLoading(true);
     try {
-      const result = await authClient.resetPassword({
-        newPassword,
-        token,
-      });
+      const result = await authClient.$fetch("/reset-password", {
+        method: "POST",
+        body: {
+          newPassword,
+          token,
+        },
+      }) as { error?: { message?: string } };
       if (result.error) {
         toast.error(result.error.message ?? "Failed to reset password");
         return;
