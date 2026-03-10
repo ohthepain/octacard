@@ -37,6 +37,7 @@ import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
 import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
 import { ReleaseNotesPanel } from "@/components/ReleaseNotesPanel";
 import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
+import { HomeFooter } from "@/components/HomeFooter";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
 import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
 import { usePlayerStore } from "@/stores/player-store";
@@ -1146,6 +1147,8 @@ const Index = () => {
       </Dialog>
 
       <OverwriteConfirmDialog open={overwriteConfirmOpen} onChoice={handleOverwriteChoice} />
+
+      <HomeFooter />
     </div>
   );
 };

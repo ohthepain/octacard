@@ -4161,7 +4161,7 @@ export const FilePane = ({
                 <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
               </div>
             ) : pathDoesNotExist ? (
-              <div className="text-center py-8">
+              <div className="text-center py-8 space-y-3">
                 {onBrowseForFolder ? (
                   <Button
                     size="sm"
@@ -4178,6 +4178,7 @@ export const FilePane = ({
                     Navigate to nearest existing folder
                   </Button>
                 )}
+                <p className="text-xs text-muted-foreground">We manage and convert sample files for your hardware.</p>
               </div>
             ) : isSearchingFolders ? (
               <div className="flex items-center justify-center py-8">
@@ -4187,8 +4188,9 @@ export const FilePane = ({
                 </div>
               </div>
             ) : searchQuery && searchResultsTree.length === 0 ? (
-              <div className="text-center py-8 text-sm text-muted-foreground">
-                No files found matching &quot;{searchQuery}&quot;
+              <div className="text-center py-8 space-y-2">
+                <div className="text-sm text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
+                <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
               </div>
             ) : activeTreeNodes.length === 0 ? (
               <>
@@ -4237,10 +4239,16 @@ export const FilePane = ({
                       )}
                     </div>
                   ) : searchQuery ? (
-                    <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
+                    <div className="space-y-2">
+                      <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
+                      <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
+                    </div>
                   ) : (
-                    <div className="text-muted-foreground">
-                      {treeViewMode === "folders" ? "No folders found" : "No files found"}
+                    <div className="space-y-2">
+                      <div className="text-muted-foreground">
+                        {treeViewMode === "folders" ? "No folders found" : "No files found"}
+                      </div>
+                      <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
                     </div>
                   )}
                 </div>

@@ -154,7 +154,10 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
               Loading...
             </div>
           ) : entries.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">No remote results</div>
+            <div className="py-8 text-center space-y-2">
+              <div className="text-sm text-muted-foreground">No remote results</div>
+              <p className="text-xs text-muted-foreground/80">We manage and convert sample files for your hardware.</p>
+            </div>
           ) : (
             entries.map((entry) => {
               if (entry.type === "project" && entry.project) {
