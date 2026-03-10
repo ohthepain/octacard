@@ -89,9 +89,10 @@ function EmptyBlock({ slotIndex, isActive, onDrop, onClick }: EmptyBlockProps) {
 
 interface MultiSampleStackProps {
   className?: string;
+  rootReloadToken?: string;
 }
 
-export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
+export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSampleStackProps) => {
   const slots = useMultiSampleStore((s) => s.slots);
   const activeSlotIndex = useMultiSampleStore((s) => s.activeSlotIndex);
   const stack = useMultiSampleStore((s) => s.stack);
@@ -374,7 +375,7 @@ export const MultiSampleStack = ({ className }: MultiSampleStackProps) => {
               const slotIndex = rowIndex * SLOT_ROW_SIZE + colIndex;
               return sample ? (
                 <MultiSampleBlock
-                  key={sample.id}
+                  key={`${sample.id}-${rootReloadToken}`}
                   sample={sample}
                   index={slotIndex}
                   isActive={activeSlotIndex === slotIndex}
