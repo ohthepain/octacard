@@ -74,7 +74,7 @@
     "build:push:production": "./scripts/docker-build-push.sh production"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/client-s3": "^3.1005.0",
     "@aws-sdk/client-sesv2": "^3.1004.0",
     "@aws-sdk/s3-request-presigner": "^3.1004.0",
     "@ffmpeg/ffmpeg": "0.12.15",
