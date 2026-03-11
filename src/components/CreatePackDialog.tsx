@@ -115,6 +115,7 @@ export function CreatePackDialog({
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; phase: string } | null>(null);
   const [editLoadError, setEditLoadError] = useState<string | null>(null);
   const [unsplashLoading, setUnsplashLoading] = useState(false);
+  const [imageSearchQuery, setImageSearchQuery] = useState("");
 
   const reset = useCallback(() => {
     setName(defaultName);
@@ -126,6 +127,7 @@ export function CreatePackDialog({
     setUploadProgress(null);
     setEditLoadError(null);
     setUnsplashLoading(false);
+    setImageSearchQuery("");
   }, [defaultName]);
 
   const handleOpenChange = useCallback(
@@ -211,7 +213,8 @@ export function CreatePackDialog({
   const handleUnsplashRandom = useCallback(async () => {
     setUnsplashLoading(true);
     try {
-      const blob = await fetchUnsplashRandomPhoto(name.trim() || undefined);
+      const query = imageSearchQuery.trim() || name.trim() || undefined;
+      const blob = await fetchUnsplashRandomPhoto(query);
       const file = new File([blob], "unsplash-cover.jpg", { type: "image/jpeg" });
       handleImage(file);
     } catch (err) {
@@ -219,7 +222,7 @@ export function CreatePackDialog({
     } finally {
       setUnsplashLoading(false);
     }
-  }, [name, handleImage]);
+  }, [imageSearchQuery, name, handleImage]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = name.trim();
@@ -485,6 +488,30 @@ export function CreatePackDialog({
 
           <div className="grid gap-2">
             <Label>Cover image</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search term for random image (e.g. music, abstract)"
+                value={imageSearchQuery}
+                onChange={(e) => setImageSearchQuery(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="h-9 w-9 shrink-0"
+                onClick={handleUnsplashRandom}
+                disabled={unsplashLoading}
+                title="Get random image from Unsplash"
+                aria-label="Get random image from Unsplash"
+              >
+                {unsplashLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Dices className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
             <div className="flex items-start gap-2">
               <div
                 onDrop={handleDrop}
@@ -531,22 +558,6 @@ export function CreatePackDialog({
                   </label>
                 )}
               </div>
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="h-9 w-9 shrink-0"
-                onClick={handleUnsplashRandom}
-                disabled={unsplashLoading}
-                title="Get random image from Unsplash"
-                aria-label="Get random image from Unsplash"
-              >
-                {unsplashLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Dices className="h-4 w-4" />
-                )}
-              </Button>
             </div>
           </div>
 

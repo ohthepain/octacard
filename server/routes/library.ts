@@ -168,6 +168,7 @@ async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNod
 
 const unsplashRandomSchema = z.object({
   query: z.string().trim().max(100).optional().default("music"),
+  _: z.string().optional(), // cache-bust param from client, ignored
 });
 
 libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchema), async (c) => {
@@ -250,7 +251,7 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
   const buf = await imgRes.arrayBuffer();
   return c.body(buf, 200, {
     "Content-Type": "image/jpeg",
-    "Cache-Control": "private, max-age=3600",
+    "Cache-Control": "no-store", // each dice roll should fetch fresh
   });
 });
 

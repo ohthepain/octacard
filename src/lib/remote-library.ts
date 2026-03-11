@@ -229,7 +229,8 @@ export async function createPack(params: {
 export async function fetchUnsplashRandomPhoto(query?: string): Promise<Blob> {
   const params = new URLSearchParams();
   if (query?.trim()) params.set("query", query.trim());
-  const url = `/api/library/unsplash/random-photo${params.toString() ? `?${params}` : ""}`;
+  params.set("_", String(Date.now())); // cache-bust so each roll gets a fresh image
+  const url = `/api/library/unsplash/random-photo?${params}`;
   const res = await apiFetch(url);
   if (!res.ok) {
     const msg = await res.text();
