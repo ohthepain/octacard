@@ -47,7 +47,6 @@ export function PackView({ name, coverImageUrl, creatorName, onClose, isOwner, o
           aria-label="Edit pack"
         >
           <Pencil className="w-3.5 h-3.5" />
-          Edit pack
         </Button>
       )}
     </div>

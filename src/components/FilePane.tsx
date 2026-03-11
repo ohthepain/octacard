@@ -321,6 +321,7 @@ export const FilePane = ({
   const [folderViewRoot, setFolderViewRoot] = useState<string | null>(null);
   const [folderViewCoverUrl, setFolderViewCoverUrl] = useState<string | null>(null);
   const [folderViewPackName, setFolderViewPackName] = useState<string | null>(null);
+  const [folderViewPackId, setFolderViewPackId] = useState<string | null>(null);
   const [packJsonCache, setPackJsonCache] = useState<Map<string, boolean>>(new Map());
   const { data: session } = useSession();
 
@@ -1679,57 +1680,64 @@ export const FilePane = ({
         }
       }
 
-      // If we're viewing this folder as a pack, reload pack name from pack.json (e.g. after create/edit)
+      // If we're viewing this folder as a pack, reload pack name and packId from pack.json (e.g. after create/edit)
       if (folderPath === folderViewRoot) {
         const packJsonPath = joinPath(folderPath, "pack.json");
         const packFile = await fileSystemService.getFile(packJsonPath, paneType);
         if (packFile) {
           try {
             const text = await packFile.text();
-            const data = JSON.parse(text) as { name?: string };
+            const data = JSON.parse(text) as { name?: string; packId?: string };
             if (typeof data.name === "string" && data.name.trim()) {
               setFolderViewPackName(data.name.trim());
             } else {
               setFolderViewPackName(null);
             }
+            setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
           } catch {
             setFolderViewPackName(null);
+            setFolderViewPackId(null);
           }
         } else {
           setFolderViewPackName(null);
+          setFolderViewPackId(null);
         }
       }
     },
     [fileTree, currentRootPath, folderViewRoot, loadDirectory, refreshCurrentDirectory, paneType],
   );
 
-  // Load local pack cover image and pack name when in folder view
+  // Load local pack cover image, pack name, and packId when in folder view
   useEffect(() => {
     if (!folderViewRoot || !fileSystemService.hasRootForPane(paneType)) {
       setFolderViewCoverUrl(null);
       setFolderViewPackName(null);
+      setFolderViewPackId(null);
       return;
     }
     let cancelled = false;
     const loadPackMetadata = async () => {
-      // Load pack name from pack.json
+      // Load pack name and packId from pack.json
       const packJsonPath = joinPath(folderViewRoot, "pack.json");
       const packFile = await fileSystemService.getFile(packJsonPath, paneType);
       if (cancelled) return;
       if (packFile) {
         try {
           const text = await packFile.text();
-          const data = JSON.parse(text) as { name?: string };
+          const data = JSON.parse(text) as { name?: string; packId?: string };
           if (typeof data.name === "string" && data.name.trim()) {
             setFolderViewPackName(data.name.trim());
           } else {
             setFolderViewPackName(null);
           }
+          setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
         } catch {
           setFolderViewPackName(null);
+          setFolderViewPackId(null);
         }
       } else {
         setFolderViewPackName(null);
+        setFolderViewPackId(null);
       }
 
       // Load cover image
@@ -1752,6 +1760,7 @@ export const FilePane = ({
         return null;
       });
       setFolderViewPackName(null);
+      setFolderViewPackId(null);
     };
   }, [folderViewRoot, paneType]);
 
@@ -4397,11 +4406,23 @@ export const FilePane = ({
                 <PackView
                   name={folderViewPackName ?? basename(folderViewRoot)}
                   coverImageUrl={folderViewCoverUrl}
+                  creatorName={undefined}
                   onClose={() => {
                     const parent = dirname(folderViewRoot) || "/";
                     setFolderViewRoot(null);
                     navigateToFolder(parent);
                   }}
+                  isOwner={!!folderViewPackId}
+                  onEdit={
+                    folderViewPackId && folderViewRoot
+                      ? () => {
+                          setCreatePackEditId(folderViewPackId);
+                          setCreatePackFolderName(folderViewPackName ?? basename(folderViewRoot));
+                          setCreatePackFolderPath(folderViewRoot);
+                          setCreatePackDialogOpen(true);
+                        }
+                      : undefined
+                  }
                 />
               </div>
             ) : (
@@ -4752,9 +4773,12 @@ export const FilePane = ({
         folderPath={createPackFolderPath}
         paneType={paneType}
         editPackId={createPackEditId}
-        onCreated={() => {
+        onCreated={(_packId) => {
           if (createPackFolderPath) {
-            refreshFolder(createPackFolderPath);
+            refreshFolder(createPackFolderPath).then(() => {
+              setFolderViewRoot(createPackFolderPath);
+              navigateToFolder(createPackFolderPath);
+            });
           }
         }}
       />
