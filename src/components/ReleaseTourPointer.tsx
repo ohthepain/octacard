@@ -78,11 +78,7 @@ export function ReleaseTourPointer() {
   if (!isActive || showMeStepIndex == null || !targetRect) return null;
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[100] pointer-events-none"
-      data-testid="release-tour-pointer"
-      aria-hidden
-    >
+    <div className="fixed inset-0 z-[100] pointer-events-none" data-testid="release-tour-pointer" aria-hidden>
       {/* Box around target */}
       <div
         className="absolute border-2 border-primary rounded-md animate-pulse"
@@ -112,11 +108,12 @@ export function ReleaseTourPointer() {
           strokeLinecap="round"
           strokeLinejoin="round"
           className="animate-bounce"
+          aria-label="Show me"
         >
           <path d="M12 5v14M7 12l5 5 5-5" />
         </svg>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

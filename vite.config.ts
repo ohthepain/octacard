@@ -4,6 +4,17 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+type PreviewMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
+
+function canWriteProxyResponse(
+  value: unknown,
+): value is Pick<ServerResponse, "writeHead" | "end"> {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { writeHead?: unknown; end?: unknown };
+  return typeof candidate.writeHead === "function" && typeof candidate.end === "function";
+}
 
 function resolveAppVersion(): string {
   try {
@@ -42,8 +53,8 @@ export default defineConfig(({ command }) => {
 
   const apiAuthFallbackPlugin = {
     name: "api-auth-fallback",
-    configurePreviewServer(server: { middlewares: { stack: Array<{ route: string; handle: (req: any, res: any, next: () => void) => void }> } }) {
-      const handler = (req: any, res: any, next: () => void) => {
+    configurePreviewServer(server: { middlewares: { stack: Array<{ route: string; handle: PreviewMiddleware }> } }) {
+      const handler: PreviewMiddleware = (req, res, next) => {
         if ((req.url ?? "").startsWith("/api/auth/")) {
           res.setHeader("Content-Type", "application/json");
           res.statusCode = 200;
@@ -118,12 +129,12 @@ export default defineConfig(({ command }) => {
           changeOrigin: true,
           configure: (proxy) => {
             proxy.on("error", (_err, req, res) => {
-              if (res && typeof (res as any).writeHead === "function") {
+              if (canWriteProxyResponse(res)) {
                 const isAuth = (req.url ?? "").includes("/api/auth/");
-                (res as any).writeHead(isAuth ? 200 : 503, {
+                res.writeHead(isAuth ? 200 : 503, {
                   "Content-Type": "application/json",
                 });
-                (res as any).end(
+                res.end(
                   isAuth
                     ? JSON.stringify({ user: null, session: null })
                     : JSON.stringify({ error: "Service unavailable" }),

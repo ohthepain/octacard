@@ -4,12 +4,46 @@ import { sanitizeFilename, sanitizeFilenameMinimal } from "./filename";
 import { shortenFilename, shortenFilenames } from "./filename-shortener";
 import { hasDirectoryPickerSupport } from "./browserSupport";
 
+type DirectoryHandleWithEntries = FileSystemDirectoryHandle & {
+  entries: () => AsyncIterable<[string, FileSystemHandle]>;
+};
+
+type FileSystemErrorLike = { name?: string };
+
+function hasErrorName(error: unknown, name: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as FileSystemErrorLike).name === name
+  );
+}
+
+type OctacardWindow = Window & {
+  __octacardSanitizeFilename?: typeof sanitizeFilename;
+  __octacardShortenFilename?: typeof shortenFilename;
+  __octacardShortenFilenames?: typeof shortenFilenames;
+  __octacardPickDirectory?: (
+    startIn?: FileSystemDirectoryHandle,
+    options?: { id: string },
+  ) => Promise<FileSystemDirectoryHandle>;
+  showDirectoryPicker?: (options: { id: string; startIn?: FileSystemDirectoryHandle }) => Promise<FileSystemDirectoryHandle>;
+  chooseFileSystemEntries?: (options: { type: "open-directory" }) => Promise<FileSystemDirectoryHandle>;
+  __octacardTestHooks?: OctacardTestHooks;
+  __octacardRevealInFinder?: (args: {
+    virtualPath: string;
+    paneType: "source" | "dest";
+    isDirectory: boolean;
+  }) => Promise<FileSystemResult> | FileSystemResult;
+};
+
 // Expose the real sanitizeFilename for the integration test harness so the harness
 // never needs to re-implement (and potentially drift from) the production logic.
 if (typeof window !== "undefined") {
-  (window as any).__octacardSanitizeFilename = sanitizeFilename;
-  (window as any).__octacardShortenFilename = shortenFilename;
-  (window as any).__octacardShortenFilenames = shortenFilenames;
+  const win = window as OctacardWindow;
+  win.__octacardSanitizeFilename = sanitizeFilename;
+  win.__octacardShortenFilename = shortenFilename;
+  win.__octacardShortenFilenames = shortenFilenames;
 }
 
 export interface FileSystemEntry {
@@ -23,7 +57,7 @@ export interface FileSystemEntry {
   atime?: number;
 }
 
-export interface FileSystemResult<T = any> {
+export interface FileSystemResult<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
@@ -217,7 +251,7 @@ class HandleRegistry {
           return currentPath;
         }
 
-        const entriesFn = (currentHandle as any).entries;
+        const entriesFn = (currentHandle as DirectoryHandleWithEntries).entries;
         if (typeof entriesFn !== "function") {
           return null;
         }
@@ -314,7 +348,7 @@ class FileSystemService {
   private async *iterateDirectoryEntries(
     directoryHandle: FileSystemDirectoryHandle,
   ): AsyncGenerator<[string, FileSystemHandle], void, unknown> {
-    const entriesFn = (directoryHandle as any).entries;
+    const entriesFn = (directoryHandle as DirectoryHandleWithEntries).entries;
     if (typeof entriesFn !== "function") {
       return;
     }
@@ -522,7 +556,8 @@ class FileSystemService {
     pickerId: "root" | PaneType | "saveAs",
     startIn?: FileSystemDirectoryHandle,
   ): Promise<FileSystemDirectoryHandle> {
-    const testPicker = (window as any).__octacardPickDirectory;
+    const win = window as OctacardWindow;
+    const testPicker = win.__octacardPickDirectory;
     console.log("testPicker", testPicker);
     console.log("startIn", startIn);
     const id = `octacard-${pickerId}-directory-picker`;
@@ -533,11 +568,11 @@ class FileSystemService {
     if (startIn) {
       options.startIn = startIn;
     }
-    const showDirectoryPicker = (window as any).showDirectoryPicker;
+    const showDirectoryPicker = win.showDirectoryPicker;
     if (typeof showDirectoryPicker === "function") {
       return await showDirectoryPicker(options);
     }
-    const chooseFileSystemEntries = (window as any).chooseFileSystemEntries;
+    const chooseFileSystemEntries = win.chooseFileSystemEntries;
     if (typeof chooseFileSystemEntries === "function") {
       return await chooseFileSystemEntries({ type: "open-directory" });
     }
@@ -546,7 +581,7 @@ class FileSystemService {
 
   private getTestHooks(): OctacardTestHooks | null {
     if (typeof window === "undefined") return null;
-    return (window as any).__octacardTestHooks ?? null;
+    return (window as OctacardWindow).__octacardTestHooks ?? null;
   }
 
   /** Request root directory - sets BOTH source and dest to the same folder (for initial setup) */
@@ -568,8 +603,8 @@ class FileSystemService {
         success: true,
         data: handle,
       };
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+    } catch (error: unknown) {
+      if (hasErrorName(error, "AbortError")) {
         return {
           success: false,
           error: "User cancelled directory selection",
@@ -634,8 +669,8 @@ class FileSystemService {
           reusedExistingRoot: false,
         },
       };
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+    } catch (error: unknown) {
+      if (hasErrorName(error, "AbortError")) {
         return {
           success: false,
           error: "User cancelled directory selection",
@@ -669,7 +704,7 @@ class FileSystemService {
     if (typeof window === "undefined") return false;
     const testHooks = this.getTestHooks();
     if (testHooks?.revealInFinder) return true;
-    return typeof (window as any).__octacardRevealInFinder === "function";
+    return typeof (window as OctacardWindow).__octacardRevealInFinder === "function";
   }
 
   async revealInFinder(
@@ -682,7 +717,7 @@ class FileSystemService {
       return await testHooks.revealInFinder({ virtualPath, paneType, isDirectory });
     }
 
-    const revealFn = (window as any).__octacardRevealInFinder;
+    const revealFn = (window as OctacardWindow).__octacardRevealInFinder;
     if (typeof revealFn === "function") {
       const result = await revealFn({ virtualPath, paneType, isDirectory });
       if (result && typeof result === "object" && "success" in result) {
@@ -771,8 +806,8 @@ class FileSystemService {
         success: true,
         data: entries,
       };
-    } catch (error: any) {
-      if (error.name === "NotFoundError") {
+    } catch (error: unknown) {
+      if (hasErrorName(error, "NotFoundError")) {
         return {
           success: false,
           error: "Directory not found",
@@ -1020,8 +1055,8 @@ class FileSystemService {
     try {
       const handle = await this.pickDirectoryHandle("saveAs", startIn);
       return { success: true, data: handle };
-    } catch (error: any) {
-      if (error?.name === "AbortError") {
+    } catch (error: unknown) {
+      if (hasErrorName(error, "AbortError")) {
         return { success: false, cancelled: true };
       }
       return { success: false, error: String(error) };

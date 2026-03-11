@@ -10,6 +10,10 @@ import {
 import { useFavorites, type Favorite } from "@/hooks/use-favorites";
 import { cn } from "@/lib/utils";
 
+type DataTransferItemWithFileSystemHandle = DataTransferItem & {
+  getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>;
+};
+
 interface FavoritesColumnProps {
   paneType: "source" | "dest";
   volumeId: string;
@@ -73,7 +77,7 @@ export function FavoritesColumn({
       if (item.kind !== "file") continue;
 
       try {
-        const handle = await (item as any).getAsFileSystemHandle?.();
+        const handle = await (item as DataTransferItemWithFileSystemHandle).getAsFileSystemHandle?.();
         if (handle?.kind === "directory") {
           const dirHandle = handle as FileSystemDirectoryHandle;
           const path = await getPathFromHandle(dirHandle, paneType);

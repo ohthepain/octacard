@@ -117,6 +117,28 @@ type RemoteDropItem =
       name: string;
     };
 
+type DataTransferItemWithFileSystemHandle = DataTransferItem & {
+  getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>;
+};
+
+type DirectoryHandleWithEntries = FileSystemDirectoryHandle & {
+  entries: () => AsyncIterable<[string, FileSystemHandle]>;
+};
+
+type OctacardTestDropData = {
+  sourcePath?: string;
+  sourceType?: "file" | "folder" | "";
+  sourcePane?: "source" | "dest" | "";
+};
+
+type ExternalConversionItem = {
+  file?: File;
+  handle?: FileSystemFileHandle;
+  name: string;
+  type: "file" | "folder";
+  targetDir: string;
+};
+
 function sanitizeFolderSegment(value: string): string {
   const cleaned = value.replace(/[\\/]/g, "_").trim();
   return cleaned.length > 0 ? cleaned : "folder";
@@ -2684,13 +2706,7 @@ export const FilePane = ({
 
   const performExternalConversion = useCallback(
     async (
-      itemsToProcess: Array<{
-        file?: File;
-        handle?: FileSystemDirectoryHandle;
-        name: string;
-        type: string;
-        targetDir: string;
-      }>,
+      itemsToProcess: ExternalConversionItem[],
       destinationPath: string,
       destinationNode?: FileNode,
     ) => {
@@ -2762,8 +2778,8 @@ export const FilePane = ({
           let file: File | null = null;
           if (item.file) {
             file = item.file;
-          } else if ((item as any).handle && (item as any).handle.kind === "file") {
-            file = await ((item as any).handle as FileSystemFileHandle).getFile();
+          } else if (item.handle) {
+            file = await item.handle.getFile();
           } else {
             errors.push({ name: item.name, error: "File object not available" });
             continue;
@@ -3046,7 +3062,8 @@ export const FilePane = ({
     // Internal drag-and-drop between panes should convert/copy immediately without confirmation.
     // This matches the Convert button flow while skipping the modal prompt.
     if (paneType === "dest") {
-      const testDrop = (window as any).__octacardTestDropData;
+      const testDrop = (window as Window & { __octacardTestDropData?: OctacardTestDropData })
+        .__octacardTestDropData;
       const sourcePath =
         e.dataTransfer.getData("sourcePath") || (typeof testDrop === "object" ? testDrop?.sourcePath : "");
       const sourceType =
@@ -3117,13 +3134,13 @@ export const FilePane = ({
       // Try OS drop - get path from directory handle if it's under our root
       const items = e.dataTransfer.items;
       if (items && items.length > 0) {
-        const item = items[0];
-        if (item.kind === "file") {
-          try {
-            const handle = await (item as any).getAsFileSystemHandle?.();
-            if (handle?.kind === "directory") {
-              const path = fileSystemService.getVirtualPath(handle as FileSystemDirectoryHandle, paneType);
-              if (path) {
+          const item = items[0];
+          if (item.kind === "file") {
+            try {
+            const handle = await (item as DataTransferItemWithFileSystemHandle).getAsFileSystemHandle?.();
+              if (handle?.kind === "directory") {
+                const path = fileSystemService.getVirtualPath(handle as FileSystemDirectoryHandle, paneType);
+                if (path) {
                 await navigateToFolder(path);
                 return;
               }
@@ -3199,7 +3216,7 @@ export const FilePane = ({
         if (item.kind === "file") {
           // Try to get FileSystemHandle if available (for folders)
           try {
-            const handle = await (item as any).getAsFileSystemHandle?.();
+            const handle = await (item as DataTransferItemWithFileSystemHandle).getAsFileSystemHandle?.();
             if (handle) {
               if (handle.kind === "directory") {
                 externalItems.push({
@@ -3266,13 +3283,7 @@ export const FilePane = ({
       }
 
       // Always convert and save files/folders (single pane design)
-      const itemsToProcess: Array<{
-        file?: File;
-        handle?: FileSystemDirectoryHandle;
-        name: string;
-        type: "file" | "folder";
-        targetDir: string;
-      }> = [];
+      const itemsToProcess: ExternalConversionItem[] = [];
 
       for (const item of externalItems) {
         if (item.type === "file" && item.file && isAudioFile(item.name)) {
@@ -3307,7 +3318,7 @@ export const FilePane = ({
           ): Promise<void> => {
             try {
               // Some TS setups don't include `dom.iterable`, so `entries()` may be missing from the type.
-              for await (const [name, entryHandle] of (handle as any).entries()) {
+              for await (const [name, entryHandle] of (handle as DirectoryHandleWithEntries).entries()) {
                 if (entryHandle.kind === "file") {
                   if (!isAudioFile(name)) continue;
                   const fileHandle = entryHandle as FileSystemFileHandle;
@@ -3346,7 +3357,7 @@ export const FilePane = ({
 
       // Perform conversion immediately (no confirmation for drop)
       if (itemsToProcess.length > 0) {
-        await performExternalConversion(itemsToProcess as any, destinationPath, destinationNode);
+        await performExternalConversion(itemsToProcess, destinationPath, destinationNode);
       }
 
       return;

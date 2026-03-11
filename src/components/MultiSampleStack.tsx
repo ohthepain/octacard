@@ -10,6 +10,14 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SLOT_ROW_SIZE } from "@/stores/multi-sample-store";
 
+type DirectoryHandleWithEntries = FileSystemDirectoryHandle & {
+  entries: () => AsyncIterable<[string, FileSystemHandle]>;
+};
+
+type DataTransferItemWithFileSystemHandle = DataTransferItem & {
+  getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>;
+};
+
 const AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
 function isAudioFile(name: string): boolean {
   return AUDIO_EXT.test(name);
@@ -48,7 +56,7 @@ function EmptyBlock({ slotIndex, isActive, onDrop, onClick }: EmptyBlockProps) {
       className={cn(
         "flex flex-col items-center justify-center border border-dashed rounded-lg min-h-[100px] text-muted-foreground transition-colors cursor-pointer",
         isDragOver ? "border-primary bg-primary/5" : "border-border bg-muted/30",
-        isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background"
+        isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
       aria-hidden
       onClick={onClick}
@@ -67,20 +75,12 @@ function EmptyBlock({ slotIndex, isActive, onDrop, onClick }: EmptyBlockProps) {
         className="w-full h-8 mt-2 px-4 opacity-50"
         viewBox="0 0 100 20"
         preserveAspectRatio="none"
+        aria-label="Next sample"
       >
         {Array.from({ length: 20 }).map((_, i) => {
           const h = 4 + ((i * 7) % 9);
           const y = (20 - h) / 2;
-          return (
-            <rect
-              key={i}
-              x={i * 5}
-              y={y}
-              width="3"
-              height={h}
-              className="fill-current"
-            />
-          );
+          return <rect key={i} x={i * 5} y={y} width="3" height={h} className="fill-current" />;
         })}
       </svg>
     </div>
@@ -135,7 +135,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
         paneType: s.paneType,
         bpm: s.bpm,
         duration: s.duration,
-      }))
+      })),
     );
   }, [isPlaying, stack, stop, playMulti]);
 
@@ -144,7 +144,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
       setActiveSlotIndex(slotIndex);
       closeWaveform();
     },
-    [setActiveSlotIndex, closeWaveform]
+    [setActiveSlotIndex, closeWaveform],
   );
 
   const openWaveformForActiveSlot = useCallback(() => {
@@ -187,9 +187,9 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
 
       const collectAudioFiles = async (
         handle: FileSystemDirectoryHandle,
-        collected: Array<{ file: File; name: string }>
+        collected: Array<{ file: File; name: string }>,
       ): Promise<void> => {
-        for await (const [name, entry] of (handle as any).entries()) {
+        for await (const [name, entry] of (handle as DirectoryHandleWithEntries).entries()) {
           if (collected.length >= 8) return;
           if (entry.kind === "file" && isAudioFile(name)) {
             const file = await (entry as FileSystemFileHandle).getFile();
@@ -203,7 +203,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
       const item = items[0];
       if (item.kind !== "file") return;
       try {
-        const handle = await (item as any).getAsFileSystemHandle?.();
+        const handle = await (item as DataTransferItemWithFileSystemHandle).getAsFileSystemHandle?.();
         if (handle?.kind === "directory") {
           const dirHandle = handle as FileSystemDirectoryHandle;
           const collected: Array<{ file: File; name: string }> = [];
@@ -246,30 +246,23 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
         }
       }
     },
-    [addToStack, addSamplesToStack, openWaveformForActiveSlot]
+    [addToStack, addSamplesToStack, openWaveformForActiveSlot],
   );
 
   const rowCount = Math.max(1, Math.ceil(slots.length / SLOT_ROW_SIZE));
   const rows = Array.from({ length: rowCount }, (_, rowIndex) =>
-    slots.slice(rowIndex * SLOT_ROW_SIZE, (rowIndex + 1) * SLOT_ROW_SIZE)
+    slots.slice(rowIndex * SLOT_ROW_SIZE, (rowIndex + 1) * SLOT_ROW_SIZE),
   );
 
   return (
-    <div
-      className={cn(
-        "border-t border-border bg-card p-3",
-        className
-      )}
-    >
+    <div className={cn("border-t border-border bg-card p-3", className)}>
       <div className="mb-3">
         {/* Global Transport Block */}
         <div
           className="flex flex-col gap-2 border border-border rounded-lg bg-muted/30 p-3 w-full max-w-[240px]"
           data-testid="stack-transport"
         >
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Transport
-          </div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transport</div>
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -279,11 +272,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
               disabled={stack.length === 0}
               aria-label={isPlaying ? "Pause" : "Play"}
             >
-              {isPlaying ? (
-                <Pause className="w-4 h-4" />
-              ) : (
-                <Play className="w-4 h-4" />
-              )}
+              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </Button>
             <Button
               size="sm"
@@ -305,7 +294,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
             key={`stack-row-${rowIndex}`}
             className={cn(
               "grid grid-cols-[44px_repeat(4,minmax(0,1fr))] gap-3 min-w-0",
-              dragOverRowIndex === rowIndex && "outline outline-1 outline-primary/60 rounded-md p-1"
+              dragOverRowIndex === rowIndex && "outline outline-1 outline-primary/60 rounded-md p-1",
             )}
             onDragOver={(e) => {
               e.preventDefault();
@@ -390,7 +379,9 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
                       const updated = slots[activeSlotIndex];
                       if (updated) {
                         setActiveSample(updated.id);
-                        useWaveformEditorStore.getState().openWithFileFromMulti(updated.path, updated.name, updated.paneType, updated.id);
+                        useWaveformEditorStore
+                          .getState()
+                          .openWithFileFromMulti(updated.path, updated.name, updated.paneType, updated.id);
                       }
                     }
                   }}

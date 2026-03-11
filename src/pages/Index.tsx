@@ -65,6 +65,14 @@ function isUnsupportedBrowser(): boolean {
   return !hasDirectoryPickerSupport();
 }
 
+type OctacardTestWindow = Window & {
+  __octacardTestHooks?: unknown;
+  __octacardPlayerStore?: typeof usePlayerStore;
+  __octacardMultiSampleStore?: typeof useMultiSampleStore;
+  __octacardWaveformEditorStore?: typeof useWaveformEditorStore;
+  __octacardMultiSampleStoreResetStack?: () => void;
+};
+
 function joinPath(...parts: string[]): string {
   if (parts.length === 0) return "";
   const normalized = parts.filter(Boolean).map((p) => p.replace(/\\/g, "/"));
@@ -323,11 +331,12 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && (window as any).__octacardTestHooks) {
-      (window as any).__octacardPlayerStore = usePlayerStore;
-      (window as any).__octacardMultiSampleStore = useMultiSampleStore;
-      (window as any).__octacardWaveformEditorStore = useWaveformEditorStore;
-      (window as any).__octacardMultiSampleStoreResetStack = () => {
+    const win = typeof window !== "undefined" ? (window as OctacardTestWindow) : null;
+    if (win?.__octacardTestHooks) {
+      win.__octacardPlayerStore = usePlayerStore;
+      win.__octacardMultiSampleStore = useMultiSampleStore;
+      win.__octacardWaveformEditorStore = useWaveformEditorStore;
+      win.__octacardMultiSampleStoreResetStack = () => {
         useMultiSampleStore.setState({
           slots: Array.from({ length: SLOT_ROW_SIZE }, () => null),
           activeSlotIndex: 0,
