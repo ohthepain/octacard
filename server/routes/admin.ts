@@ -8,6 +8,7 @@ import { z } from "zod";
 import { sampleAnalysisQueue } from "../queues/sample-analysis.js";
 import { prisma } from "../db.js";
 import type { AppVariables } from "../types.js";
+import { clearExternalApiTraces, getExternalApiTraces } from "../external-api-trace.js";
 
 const adminApp = new Hono<{ Variables: AppVariables }>();
 const INSTRUMENT_FAMILY = "instrument_family";
@@ -21,6 +22,13 @@ const reorderFamiliesSchema = z.object({
 });
 const reorderTypesSchema = z.object({
   typeIds: z.array(z.string().trim().min(1)).min(1),
+});
+const networkTracesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+  errorsOnly: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 function normalizeTaxonomyKey(input: string): string {
@@ -103,6 +111,18 @@ createBullBoard({
 });
 
 adminApp.route("/queues", serverAdapter.registerPlugin());
+
+adminApp.get("/network/traces", zValidator("query", networkTracesQuerySchema), async (c) => {
+  const { limit, errorsOnly } = c.req.valid("query");
+  return c.json({
+    traces: getExternalApiTraces({ limit, errorsOnly }),
+  });
+});
+
+adminApp.delete("/network/traces", async (c) => {
+  clearExternalApiTraces();
+  return c.json({ ok: true });
+});
 
 adminApp.get("/taxonomy", async (c) => {
   const data = await getTaxonomyEditorState();

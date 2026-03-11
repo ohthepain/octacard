@@ -209,6 +209,10 @@ export function testInitScript() {
   window.__revealCalls = [];
   window.__readDirectoryCalls = 0;
   window.__octacardTestHooks = {
+    resolveAnalysisSampleId: ({ path }) => {
+      if (path === "/Alpha/inside-alpha.wav") return "sample-alpha-inside";
+      return null;
+    },
     listAudioFilesRecursively: ({ startPath, paneType }) => {
       window.__listCalls.push({ startPath, paneType });
       if (startPath === "/Alpha") {

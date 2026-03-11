@@ -7,6 +7,7 @@ import { prisma } from "../db.js";
 import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl } from "../s3.js";
 import { enqueueSampleAnalysis } from "../queues/sample-analysis.js";
 import { sampleSearchApp } from "./sample-search.js";
+import { tracedFetch } from "../external-api-trace.js";
 
 const libraryApp = new Hono<{ Variables: AppVariables }>();
 
@@ -191,9 +192,10 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
     query: searchTerm,
     orientation: "squarish",
   });
-  const randomRes = await fetch(
+  const randomRes = await tracedFetch(
     `https://api.unsplash.com/photos/random?${randomParams}`,
-    { headers }
+    { headers },
+    { service: "unsplash", operation: "photos/random" },
   );
 
   if (randomRes.ok) {
@@ -208,9 +210,10 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
       per_page: "15",
       orientation: "squarish",
     });
-    const searchRes = await fetch(
+    const searchRes = await tracedFetch(
       `https://api.unsplash.com/search/photos?${searchParams}`,
-      { headers }
+      { headers },
+      { service: "unsplash", operation: "search/photos" },
     );
     if (!searchRes.ok) {
       const text = await searchRes.text();
@@ -222,9 +225,10 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
     const results = searchData.results ?? [];
     if (results.length === 0) {
       // Last resort: random photo with broad query
-      const fallbackRes = await fetch(
+      const fallbackRes = await tracedFetch(
         "https://api.unsplash.com/photos/random?orientation=squarish",
-        { headers }
+        { headers },
+        { service: "unsplash", operation: "photos/random-fallback" },
       );
       if (!fallbackRes.ok) {
         const text = await fallbackRes.text();
@@ -244,7 +248,11 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
     throw new HTTPException(502, { message: "Invalid Unsplash response" });
   }
 
-  const imgRes = await fetch(imageUrl);
+  const imgRes = await tracedFetch(
+    imageUrl,
+    undefined,
+    { service: "unsplash", operation: "image-download" },
+  );
   if (!imgRes.ok) {
     throw new HTTPException(502, { message: "Failed to fetch image from Unsplash" });
   }
@@ -745,9 +753,20 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
     created.analysisStatus === "PENDING" ||
     created.analysisStatus === "FAILED"
   ) {
-    enqueueSampleAnalysis(created.id, created.s3Key).catch((err) =>
-      console.error("[library] Failed to enqueue sample analysis:", err)
-    );
+    try {
+      const jobId = await enqueueSampleAnalysis(created.id, created.s3Key);
+      console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[library] Failed to enqueue sample analysis:", err);
+      await prisma.sample.update({
+        where: { id: created.id },
+        data: {
+          analysisStatus: "FAILED",
+          analysisError: `Failed to queue analysis: ${message}`,
+        },
+      });
+    }
   }
 
   const ps = await prisma.packSample.upsert({
@@ -823,9 +842,20 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
       sizeBytes: sizeBytes ?? null,
     },
   });
-  enqueueSampleAnalysis(created.id, created.s3Key).catch((err) =>
-    console.error("[library] Failed to enqueue sample analysis:", err)
-  );
+  try {
+    const jobId = await enqueueSampleAnalysis(created.id, created.s3Key);
+    console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[library] Failed to enqueue sample analysis:", err);
+    await prisma.sample.update({
+      where: { id: created.id },
+      data: {
+        analysisStatus: "FAILED",
+        analysisError: `Failed to queue analysis: ${message}`,
+      },
+    });
+  }
 
   const ps = await prisma.packSample.create({
     data: {
@@ -1038,9 +1068,21 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
     },
   });
 
-  enqueueSampleAnalysis(sample.id, sample.s3Key).catch((err) =>
-    console.error("[library] Failed to enqueue sample analysis:", err)
-  );
+  try {
+    const jobId = await enqueueSampleAnalysis(sample.id, sample.s3Key);
+    console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${sample.id}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[library] Failed to enqueue sample analysis:", err);
+    await prisma.sample.update({
+      where: { id: sample.id },
+      data: {
+        analysisStatus: "FAILED",
+        analysisError: `Failed to queue analysis: ${message}`,
+      },
+    });
+    throw new HTTPException(503, { message: "Failed to queue analysis. Please retry." });
+  }
 
   return c.json({ ok: true });
 });

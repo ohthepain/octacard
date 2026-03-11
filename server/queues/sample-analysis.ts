@@ -17,6 +17,7 @@ export type SampleAnalysisJobData = {
   s3Key: string;
 };
 
-export async function enqueueSampleAnalysis(sampleId: string, s3Key: string) {
-  await sampleAnalysisQueue.add("analyze", { sampleId, s3Key });
+export async function enqueueSampleAnalysis(sampleId: string, s3Key: string): Promise<string | undefined> {
+  const job = await sampleAnalysisQueue.add("analyze", { sampleId, s3Key });
+  return job.id;
 }

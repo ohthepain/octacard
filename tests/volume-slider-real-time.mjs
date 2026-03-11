@@ -6,35 +6,53 @@ import { waitForPageCondition } from "./wait-utils.mjs";
  * User can tap on a stack block and adjust volume without interrupting playback.
  */
 export async function assertVolumeSliderRealTime(page) {
-  // Close waveform if open from previous test so tree is clickable
+  // Reset any persisted multi-state from previous tests and close waveform so tree is clickable.
   await page.evaluate(() => {
     const store = window.__octacardWaveformEditorStore;
     if (store?.getState?.()?.close) {
       store.getState().close();
+    }
+    if (typeof window.__octacardMultiSampleStoreResetStack === "function") {
+      window.__octacardMultiSampleStoreResetStack();
+    }
+    const multiStore = window.__octacardMultiSampleStore;
+    if (multiStore?.getState?.()?.setPreviewMode) {
+      multiStore.getState().setPreviewMode("single");
     }
     const closeBtn = document.querySelector('[data-testid="audio-preview-close"]');
     if (closeBtn instanceof HTMLElement) closeBtn.click();
   }).catch(() => {});
   await page.waitForTimeout(500);
 
-  // Enable multi mode
+  // Enable multi mode (only if not already enabled)
   const multiToggle = page.getByTestId("multi-mode-toggle");
   await multiToggle.waitFor({ state: "visible" });
-  await multiToggle.click();
+  const previewMode = await page.evaluate(() => {
+    return window.__octacardMultiSampleStore?.getState?.()?.previewMode ?? "single";
+  });
+  if (previewMode !== "multi") {
+    await multiToggle.click();
+  }
   await page.waitForTimeout(300);
 
   // Add first sample to stack (click adds to active slot)
   const firstFileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
   await firstFileNode.waitFor({ state: "visible" });
-  await firstFileNode.click();
+  await firstFileNode.click({ force: true });
   await page.waitForTimeout(500);
 
-  // Add second sample to stack (click "Next sample" to focus next slot, then click file)
-  await page.getByText("Next sample", { exact: true }).first().click();
+  // Add second sample to stack (focus second slot, then click file)
+  const secondSlot = page.getByTestId("empty-slot-1");
+  const secondSlotVisible = await secondSlot.isVisible().catch(() => false);
+  if (secondSlotVisible) {
+    await secondSlot.click();
+  } else {
+    await page.getByText("Next sample", { exact: true }).first().click();
+  }
   await page.waitForTimeout(200);
   const secondFileNode = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await secondFileNode.waitFor({ state: "visible" });
-  await secondFileNode.click();
+  await secondFileNode.click({ force: true });
   await page.waitForTimeout(500);
 
   // Wait for samples to load
@@ -110,7 +128,7 @@ export async function assertVolumeSliderRealTime(page) {
   await page.waitForTimeout(300);
 
   // Load a sample in waveform editor
-  await firstFileNode.click();
+  await firstFileNode.click({ force: true });
   await page.waitForTimeout(500);
 
   // Wait for waveform editor to open

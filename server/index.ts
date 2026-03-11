@@ -12,6 +12,7 @@ import { adminApp } from "./routes/admin.js";
 import type { AppVariables } from "./types.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { startSampleAnalysisWorker } from "./workers/sample-analysis-worker.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === "production";
@@ -92,3 +93,12 @@ const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 console.log(`[API] Server running on http://localhost:${port}`);
 
 serve({ fetch: app.fetch, port });
+
+const sampleAnalysisWorkerEnabled = process.env.SAMPLE_ANALYSIS_WORKER_ENABLED !== "false";
+console.log(`[worker] Auto-start enabled: ${sampleAnalysisWorkerEnabled}`);
+if (sampleAnalysisWorkerEnabled) {
+  startSampleAnalysisWorker();
+}
+if (!sampleAnalysisWorkerEnabled) {
+  console.log("[worker] Sample analysis worker disabled (SAMPLE_ANALYSIS_WORKER_ENABLED=false)");
+}

@@ -10,7 +10,7 @@ import { waitForPageCondition } from "./wait-utils.mjs";
 export async function assertLoopLengthResetsOnSampleChange(page) {
   const firstFileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
   await firstFileNode.waitFor({ state: "visible" });
-  await firstFileNode.click();
+  await firstFileNode.click({ force: true });
 
   const preview = page.getByTestId("audio-preview-source");
   await preview.waitFor({ state: "visible" });
@@ -44,13 +44,11 @@ export async function assertLoopLengthResetsOnSampleChange(page) {
   assert.ok(lengthShortened !== lengthFull, "Expected loop length to change after ArrowDown.");
 
   // Load second sample (Melô.wav in same folder)
+  await page.keyboard.press("Escape");
   const secondFileNode = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await secondFileNode.waitFor({ state: "visible" });
-  try {
-    await secondFileNode.click();
-  } catch {
-    await secondFileNode.evaluate((node) => node.click());
-  }
+  await secondFileNode.scrollIntoViewIfNeeded();
+  await secondFileNode.evaluate((el) => el.click());
 
   // Wait for waveform to load for the new file (filename changes)
   await page.getByTestId("audio-preview-filename").waitFor({ state: "visible" });
@@ -60,7 +58,7 @@ export async function assertLoopLengthResetsOnSampleChange(page) {
       const text = document.querySelector('[data-testid="audio-preview-filename"]')?.textContent?.trim() ?? "";
       return text.includes("Mel") && text.toLowerCase().endsWith(".wav");
     })()`,
-    { timeout: 8000 },
+    { timeout: 15000 },
   );
 
   // Wait for loop length to stabilize

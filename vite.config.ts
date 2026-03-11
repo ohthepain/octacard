@@ -40,8 +40,24 @@ export default defineConfig(({ command }) => {
   const gitShaShort = gitSha === "unknown" ? gitSha : gitSha.slice(0, 7);
   const appVersion = resolveAppVersion();
 
+  const apiAuthFallbackPlugin = {
+    name: "api-auth-fallback",
+    configurePreviewServer(server: { middlewares: { stack: Array<{ route: string; handle: (req: any, res: any, next: () => void) => void }> } }) {
+      const handler = (req: any, res: any, next: () => void) => {
+        if ((req.url ?? "").startsWith("/api/auth/")) {
+          res.setHeader("Content-Type", "application/json");
+          res.statusCode = 200;
+          res.end(JSON.stringify({ user: null, session: null }));
+          return;
+        }
+        next();
+      };
+      server.middlewares.stack.unshift({ route: "", handle: handler });
+    },
+  };
+
   return {
-    plugins: [react()],
+    plugins: [react(), apiAuthFallbackPlugin],
     test: {
       globals: true,
       environment: "jsdom",
@@ -100,6 +116,21 @@ export default defineConfig(({ command }) => {
         "/api": {
           target: "http://127.0.0.1:3001",
           changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on("error", (err, req, res) => {
+              if (res && typeof (res as any).writeHead === "function") {
+                const isAuth = (req.url ?? "").includes("/api/auth/");
+                (res as any).writeHead(isAuth ? 200 : 503, {
+                  "Content-Type": "application/json",
+                });
+                (res as any).end(
+                  isAuth
+                    ? JSON.stringify({ user: null, session: null })
+                    : JSON.stringify({ error: "Service unavailable" }),
+                );
+              }
+            });
+          },
         },
         // PostHog reverse proxy - avoids ad blockers, use /ph path (not /analytics etc)
         "/ph/static": {

@@ -24,7 +24,9 @@ Sample analysis pipeline for faceted search, similarity, and text-to-audio retri
    pnpm run db:seed-taxonomy
    ```
 
-2. **Start worker** (separate process):
+2. **Worker startup**
+   - Default: worker auto-starts inside the API process (`pnpm run dev`, container startup).
+   - Optional: disable embedded worker with `SAMPLE_ANALYSIS_WORKER_ENABLED=false` and run dedicated worker process(es):
    ```bash
    pnpm run worker:sample-analysis
    ```

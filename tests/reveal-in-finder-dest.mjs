@@ -3,6 +3,24 @@ import { waitForPageCondition } from "./wait-utils.mjs";
 
 export async function assertRevealInFinderDest(page) {
   const betaNode = page.getByTestId("tree-node-dest-_Beta");
+  const betaVisible = await betaNode.isVisible().catch(() => false);
+  if (!betaVisible) {
+    const rootBreadcrumb = page.getByTestId("breadcrumb-root-dest");
+    const rootVisible = await rootBreadcrumb.isVisible().catch(() => false);
+    if (rootVisible) {
+      await rootBreadcrumb.click();
+    } else {
+      await page.evaluate(() => {
+        const destPanel = document.querySelector('[data-testid="panel-dest"]');
+        if (!(destPanel instanceof HTMLElement)) throw new Error("Destination panel not found");
+        const browseButton = destPanel.querySelector('button[title="Browse for folder to navigate to"]');
+        const selectFolder = destPanel.querySelector('[data-testid="select-folder-dest"]');
+        if (browseButton instanceof HTMLElement) browseButton.click();
+        else if (selectFolder instanceof HTMLElement) selectFolder.click();
+        else throw new Error("Destination folder picker trigger not found");
+      });
+    }
+  }
   await betaNode.waitFor({ state: "visible" });
   await betaNode.click({ button: "right" });
 

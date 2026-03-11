@@ -11,6 +11,7 @@ import { legalRoute } from './routes/legal'
 import { termsRoute } from './routes/legal/terms'
 import { privacyRoute } from './routes/legal/privacy'
 import { adminRoute } from './routes/admin'
+import { adminNetworkRoute } from './routes/admin-network'
 import { adminTaxonomyRoute } from './routes/admin-taxonomy'
 
 const routeTree = rootRoute.addChildren([
@@ -22,6 +23,7 @@ const routeTree = rootRoute.addChildren([
   termsRoute,
   privacyRoute,
   adminRoute,
+  adminNetworkRoute,
   adminTaxonomyRoute,
 ])
 

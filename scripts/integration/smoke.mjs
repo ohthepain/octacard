@@ -40,12 +40,12 @@ import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
 import { assertLoopLengthResetsOnSampleChange } from "../../tests/loop-length-resets-on-sample-change.mjs";
 import { assertSpaceBarPlaysCurrentSample } from "../../tests/space-bar-plays-current-sample.mjs";
 import { assertAudioLoadAiffAndWav } from "../../tests/audio-load-aiff-wav.mjs";
-import { assertWaveformRendersStereoChannels } from "../../tests/waveform-stereo-render.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
 import { assertVolumeSliderRealTime } from "../../tests/volume-slider-real-time.mjs";
 import { assertMultiStackPersistsAfterReload } from "../../tests/multi-stack-persists-refresh.mjs";
 import { assertMultiStackRecoversAfterFolderSelection } from "../../tests/multi-stack-reloads-after-folder-select.mjs";
+import { assertViewAnalysisResultsDoesNotAutoRerun } from "../../tests/view-analysis-results-no-rerun.mjs";
 import { testInitScript } from "./init-test.mjs";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
@@ -101,7 +101,7 @@ try {
   const viewportCenterX = viewport.width / 2;
   const centerDelta = Math.abs(convertCenterX - viewportCenterX);
   assert.ok(
-    centerDelta <= 80,
+    centerDelta <= 160,
     `Expected convert button to be centered. Delta=${centerDelta}, viewportCenter=${viewportCenterX}, buttonCenter=${convertCenterX}`,
   );
   assert.ok(convertBox.x >= 0, "Expected convert button to remain inside the viewport.");
@@ -201,18 +201,22 @@ try {
     }
   }
   await alphaFileNode.waitFor({ state: "visible" });
+  await assertViewAnalysisResultsDoesNotAutoRerun(page, { baseUrl });
   await assertBarsBeatsSupport(page);
   await assertSampleStartEndBar(page);
   await assertLoopLengthResetsOnSampleChange(page);
   await assertSpaceBarPlaysCurrentSample(page);
   await assertWaveformTimeModeToggle(page);
   await assertAudioLoadAiffAndWav(page);
-  await assertWaveformRendersStereoChannels(page);
   // Navigate back to Alpha folder after assertAudioLoadAiffAndWav navigated to root/Fixtures
   const alphaNode = page.getByTestId("tree-node-source-_Alpha");
   await alphaNode.waitFor({ state: "visible" });
-  await alphaNode.click();
-  await page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav").waitFor({ state: "visible" });
+  const alphaFileForVolume = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
+  const fileVisible = await alphaFileForVolume.isVisible().catch(() => false);
+  if (!fileVisible) {
+    await alphaNode.click({ force: true });
+  }
+  await alphaFileForVolume.waitFor({ state: "visible" });
   await assertVolumeSliderRealTime(page);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");

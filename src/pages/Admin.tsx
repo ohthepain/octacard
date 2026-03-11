@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, ExternalLink, Tags } from "lucide-react";
+import { Activity, LayoutDashboard, ExternalLink, Tags } from "lucide-react";
 import { useSession } from "@/lib/auth-client";
 import { isAdminOrSuperadmin } from "@/lib/auth-client";
 import { useEffect } from "react";
@@ -21,6 +21,14 @@ type AdminTool =
       href: "/admin/taxonomy";
       external: false;
       icon: typeof LayoutDashboard;
+    }
+  | {
+      id: string;
+      label: string;
+      description: string;
+      href: "/admin/network";
+      external: false;
+      icon: typeof LayoutDashboard;
     };
 
 const ADMIN_TOOLS: readonly AdminTool[] = [
@@ -31,6 +39,14 @@ const ADMIN_TOOLS: readonly AdminTool[] = [
     href: "/api/admin/queues",
     external: true,
     icon: LayoutDashboard,
+  },
+  {
+    id: "network-monitor",
+    label: "Network Monitor",
+    description: "Outbound requests from API server to external services",
+    href: "/admin/network",
+    external: false,
+    icon: Activity,
   },
   {
     id: "taxonomy-editor",
@@ -73,7 +89,10 @@ export default function Admin() {
           {ADMIN_TOOLS.map((tool) => {
             const Icon = tool.icon;
             const content = (
-              <div className="flex items-start gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+              <div
+                key={tool.id}
+                className="flex items-start gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+              >
                 <div className="p-2 rounded-md bg-muted">
                   <Icon className="h-5 w-5 text-muted-foreground" />
                 </div>

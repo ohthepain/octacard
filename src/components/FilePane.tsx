@@ -51,7 +51,6 @@ import { fileSystemService } from "@/lib/fileSystem";
 import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
 import { downloadRemoteSampleBlob, getPack, getPackDownloadManifest, type RemoteScope } from "@/lib/remote-library";
-import { computeAudioContentHash } from "@/lib/content-hash";
 import { SampleAnalysisDialog } from "@/components/SampleAnalysisDialog";
 import { useSession } from "@/lib/auth-client";
 import { CreatePackDialog } from "@/components/CreatePackDialog";
@@ -319,6 +318,7 @@ export const FilePane = ({
   const [folderViewPackId, setFolderViewPackId] = useState<string | null>(null);
   const [packJsonCache, setPackJsonCache] = useState<Map<string, boolean>>(new Map());
   const [packCoverCache, setPackCoverCache] = useState<Map<string, string>>(new Map());
+  const packManifestCacheRef = useRef<Map<string, Awaited<ReturnType<typeof getPackDownloadManifest>>>>(new Map());
   const loadingCoversRef = useRef<Set<string>>(new Set());
   const { data: session } = useSession();
 
@@ -528,11 +528,51 @@ export const FilePane = ({
   // Clear folder view and pack cover cache when root path changes (e.g. volume switch)
   useEffect(() => {
     setFolderViewRoot(null);
+    packManifestCacheRef.current.clear();
     setPackCoverCache((prev) => {
       prev.forEach((url) => URL.revokeObjectURL(url));
       return new Map();
     });
   }, [rootPath]);
+
+  const resolveSampleIdFromLocalPack = useCallback(
+    async (filePath: string, fileName: string): Promise<string | null> => {
+      const testResolver = (
+        window as Window & {
+          __octacardTestHooks?: {
+            resolveAnalysisSampleId?: (args: { path: string; name: string; paneType: "source" | "dest" }) => string | null | Promise<string | null>;
+          };
+        }
+      ).__octacardTestHooks?.resolveAnalysisSampleId;
+      if (typeof testResolver === "function") {
+        const testId = await testResolver({ path: filePath, name: fileName, paneType });
+        if (typeof testId === "string" && testId.trim()) return testId.trim();
+      }
+
+      if (!folderViewRoot || !folderViewPackId) return null;
+      const normalizedRoot = folderViewRoot.replace(/\\/g, "/").replace(/\/+$/, "");
+      const normalizedFilePath = filePath.replace(/\\/g, "/");
+      const withSlash = `${normalizedRoot}/`;
+      if (!normalizedFilePath.startsWith(withSlash)) return null;
+
+      let manifest = packManifestCacheRef.current.get(folderViewPackId);
+      if (!manifest) {
+        manifest = await getPackDownloadManifest(folderViewPackId);
+        packManifestCacheRef.current.set(folderViewPackId, manifest);
+      }
+
+      const relativePath = normalizedFilePath.slice(withSlash.length).replace(/^\/+/, "");
+      if (!relativePath) return null;
+
+      const exactMatch = manifest.samples.find((sample) => sample.relativePath.replace(/^\/+/, "") === relativePath);
+      if (exactMatch) return exactMatch.id;
+
+      // Fallback for legacy packs where path layouts may have changed locally.
+      const nameMatch = manifest.samples.find((sample) => sample.name === fileName);
+      return nameMatch?.id ?? null;
+    },
+    [folderViewPackId, folderViewRoot],
+  );
 
   useEffect(() => {
     fileTreeRef.current = fileTree;
@@ -3890,18 +3930,21 @@ export const FilePane = ({
                           toast.error("Sign in to view analysis");
                           return;
                         }
-                        const file = await fileSystemService.getFile(node.path, paneType);
-                        if (!file) {
-                          toast.error("Could not read file");
-                          return;
-                        }
                         try {
-                          const contentHash = await computeAudioContentHash(file);
-                          setAnalysisSampleId(contentHash);
+                          const sampleId = await resolveSampleIdFromLocalPack(node.path, node.name);
+                          if (!sampleId) {
+                            toast.error(
+                              "No linked remote sample for this file. Open the pack from the Remote library to view analysis.",
+                            );
+                            return;
+                          }
+                          setAnalysisSampleId(sampleId);
                           setAnalysisSampleName(node.name);
                           setAnalysisDialogOpen(true);
-                        } catch {
-                          toast.error("Could not compute file hash");
+                        } catch (error) {
+                          toast.error("Could not load analysis mapping", {
+                            description: error instanceof Error ? error.message : "Unknown error",
+                          });
                         }
                       }}
                     >

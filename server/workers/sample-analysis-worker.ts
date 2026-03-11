@@ -10,6 +10,7 @@ import { getFromS3 } from "../s3.js";
 import { pipeline } from "@xenova/transformers";
 import { spawn } from "node:child_process";
 import ffmpegPath from "ffmpeg-static";
+import { pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 
@@ -24,6 +25,9 @@ process.stderr.write = _err;
 
 const QUEUE_NAME = "sample-analysis";
 const TAXONOMY_CACHE_TTL_MS = 30_000;
+const MIN_TAXONOMY_CONFIDENCE = Number(process.env.ANALYSIS_MIN_TAXONOMY_CONFIDENCE ?? 0.2);
+const INSTRUMENT_FAMILY_KEY = "instrument_family";
+const INSTRUMENT_TYPE_KEY = "instrument_type";
 
 type TaxonomyCategory = {
   attributeKey: string;
@@ -34,6 +38,12 @@ let taxonomyCache:
   | {
       loadedAt: number;
       categories: TaxonomyCategory[];
+    }
+  | null = null;
+let familyTypeMapCache:
+  | {
+      loadedAt: number;
+      map: Map<string, string[]>;
     }
   | null = null;
 
@@ -53,6 +63,143 @@ function buildTaxonomyPrompt(attributeKey: string, valueKey: string): string {
     default:
       return value;
   }
+}
+
+async function loadInstrumentFamilyTypeMapFromDb(): Promise<Map<string, string[]>> {
+  const now = Date.now();
+  if (familyTypeMapCache && now - familyTypeMapCache.loadedAt < TAXONOMY_CACHE_TTL_MS) {
+    return familyTypeMapCache.map;
+  }
+
+  const rows = await prisma.$queryRaw<
+    Array<{ familyKey: string; typeKey: string; sortOrder: number }>
+  >`
+    SELECT f.key AS "familyKey", t.key AS "typeKey", l."sortOrder" AS "sortOrder"
+    FROM "taxonomy_family_type" l
+    JOIN "taxonomy_value" f ON f.id = l."familyValueId"
+    JOIN "taxonomy_value" t ON t.id = l."typeValueId"
+    JOIN "taxonomy_attribute" fa ON fa.id = f."attributeId"
+    JOIN "taxonomy_attribute" ta ON ta.id = t."attributeId"
+    WHERE fa.key = ${INSTRUMENT_FAMILY_KEY}
+      AND ta.key = ${INSTRUMENT_TYPE_KEY}
+    ORDER BY f.key ASC, l."sortOrder" ASC, t.key ASC
+  `;
+
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    const list = map.get(row.familyKey) ?? [];
+    list.push(row.typeKey);
+    map.set(row.familyKey, list);
+  }
+
+  familyTypeMapCache = { loadedAt: now, map };
+  return map;
+}
+
+type EssentiaInstrumentGuess = {
+  familyKey: string | null;
+  typeKey: string | null;
+  confidence: number;
+};
+
+type EssentiaFeatureOutput = {
+  attrs: Array<{ key: string; value: number }>;
+  metrics: {
+    bpm: number | null;
+    pitch: number | null;
+    pitchConfidence: number;
+    spectralCentroidHz: number | null;
+    zeroCrossingRate: number | null;
+  };
+};
+
+function pickFirstAvailable(candidates: string[], available: Set<string>): string | null {
+  for (const key of candidates) {
+    if (available.has(key)) return key;
+  }
+  return null;
+}
+
+function inferEssentiaInstrument(
+  durationSeconds: number,
+  metrics: EssentiaFeatureOutput["metrics"],
+  familyTypeMap: Map<string, string[]>,
+): EssentiaInstrumentGuess {
+  const availableFamilies = new Set(familyTypeMap.keys());
+  const pitch = metrics.pitch ?? 0;
+  const pitchConfidence = metrics.pitchConfidence;
+  const centroid = metrics.spectralCentroidHz ?? 0;
+
+  const tonalScore = Math.max(0, Math.min(1, pitchConfidence));
+  const likelyTonal = tonalScore >= 0.55;
+  const likelyPercussive = tonalScore < 0.35 && durationSeconds < 1.2;
+  const likelyLoop = durationSeconds >= 1.4;
+
+  let familyKey: string | null = null;
+  if (likelyTonal) {
+    familyKey = pickFirstAvailable(["keys", "synth", "bass", "guitar", "strings"], availableFamilies);
+    if ((pitch > 0 && pitch < 140 || centroid < 300) && availableFamilies.has("bass")) {
+      familyKey = "bass";
+    }
+  } else if (likelyPercussive) {
+    familyKey = pickFirstAvailable(["drums", "percussion", "fx"], availableFamilies);
+  } else if (likelyLoop) {
+    familyKey = pickFirstAvailable(["drums", "percussion", "texture_atmosphere", "fx"], availableFamilies);
+  } else {
+    familyKey = pickFirstAvailable(["texture_atmosphere", "fx", "synth"], availableFamilies);
+  }
+
+  if (!familyKey) {
+    return { familyKey: null, typeKey: null, confidence: 0 };
+  }
+
+  const types = familyTypeMap.get(familyKey) ?? [];
+  const availableTypes = new Set(types);
+  let typeKey: string | null = null;
+
+  if (familyKey === "keys") {
+    typeKey = pickFirstAvailable(["piano", "electric_piano", "organ", "clavinet", "harpsichord"], availableTypes);
+  } else if (familyKey === "drums") {
+    if (likelyLoop) {
+      typeKey = pickFirstAvailable(["drum_loop", "drum_fill"], availableTypes);
+    }
+    if (!typeKey && pitch > 0 && pitch < 110) {
+      typeKey = pickFirstAvailable(["kick", "tom"], availableTypes);
+    }
+    if (!typeKey && centroid > 4500) {
+      typeKey = pickFirstAvailable(["hi_hat", "cymbal", "clap", "snare"], availableTypes);
+    }
+    if (!typeKey) {
+      typeKey = pickFirstAvailable(["snare", "clap", "tom", "kick"], availableTypes);
+    }
+  } else if (familyKey === "bass") {
+    if (pitch > 0 && pitch < 70) {
+      typeKey = pickFirstAvailable(["sub_bass", "synth_bass", "electric_bass"], availableTypes);
+    } else {
+      typeKey = pickFirstAvailable(["electric_bass", "synth_bass", "upright_bass", "bass"], availableTypes);
+    }
+  } else if (familyKey === "synth") {
+    if (likelyLoop || durationSeconds > 2.0) {
+      typeKey = pickFirstAvailable(["pad", "drone", "chord", "arp"], availableTypes);
+    } else {
+      typeKey = pickFirstAvailable(["lead", "pluck", "chord", "arp", "pad"], availableTypes);
+    }
+  } else if (familyKey === "percussion") {
+    typeKey = likelyLoop
+      ? pickFirstAvailable(["percussion_loop", "shaker", "tambourine"], availableTypes)
+      : pickFirstAvailable(["shaker", "tambourine", "bongo", "conga", "cowbell"], availableTypes);
+  } else if (familyKey === "fx") {
+    typeKey = likelyLoop
+      ? pickFirstAvailable(["riser", "downlifter", "sweep", "noise"], availableTypes)
+      : pickFirstAvailable(["hit", "impact", "glitch", "noise"], availableTypes);
+  }
+
+  if (!typeKey) {
+    typeKey = types[0] ?? null;
+  }
+
+  const confidence = Math.max(0.5, Math.min(0.98, 0.5 + tonalScore * 0.45));
+  return { familyKey, typeKey, confidence };
 }
 
 async function loadTaxonomyCategoriesFromDb(): Promise<TaxonomyCategory[]> {
@@ -140,9 +287,16 @@ async function decodeAudioToFloat32(
 function extractEssentiaFeatures(
   audio: Float32Array,
   sampleRate: number
-): Array<{ key: string; value: number }> {
+): EssentiaFeatureOutput {
   const essentia = new Essentia(EssentiaWASM);
   const attrs: Array<{ key: string; value: number }> = [];
+  const metrics: EssentiaFeatureOutput["metrics"] = {
+    bpm: null,
+    pitch: null,
+    pitchConfidence: 0,
+    spectralCentroidHz: null,
+    zeroCrossingRate: null,
+  };
 
   try {
     const signalVector = essentia.arrayToVector(audio);
@@ -160,6 +314,7 @@ function extractEssentiaFeatures(
       rhythm.bpm <= 250
     ) {
       attrs.push({ key: "bpm", value: Math.round(rhythm.bpm * 10) / 10 });
+      metrics.bpm = Math.round(rhythm.bpm * 10) / 10;
     }
 
     // Loudness (RMS-based)
@@ -174,13 +329,34 @@ function extractEssentiaFeatures(
       attrs.push({ key: "energy", value: energyResult.energy });
     }
 
+    const pitchResult = essentia.PitchYin(signalVector, sampleRate);
+    if (pitchResult?.pitch != null && Number.isFinite(pitchResult.pitch)) {
+      metrics.pitch = pitchResult.pitch;
+    }
+    if (pitchResult?.pitchConfidence != null && Number.isFinite(pitchResult.pitchConfidence)) {
+      metrics.pitchConfidence = pitchResult.pitchConfidence;
+      attrs.push({ key: "pitch_confidence", value: pitchResult.pitchConfidence });
+    }
+
+    const centroidResult = essentia.SpectralCentroidTime(signalVector);
+    if (centroidResult?.centroid != null && Number.isFinite(centroidResult.centroid)) {
+      metrics.spectralCentroidHz = centroidResult.centroid;
+      attrs.push({ key: "spectral_centroid_hz", value: centroidResult.centroid });
+    }
+
+    const zcrResult = essentia.ZeroCrossingRate(signalVector);
+    if (zcrResult?.zeroCrossingRate != null && Number.isFinite(zcrResult.zeroCrossingRate)) {
+      metrics.zeroCrossingRate = zcrResult.zeroCrossingRate;
+      attrs.push({ key: "zero_crossing_rate", value: zcrResult.zeroCrossingRate });
+    }
+
     essentia.shutdown();
   } catch (err) {
     essentia.shutdown();
     throw err;
   }
 
-  return attrs;
+  return { attrs, metrics };
 }
 
 async function analyzeSample(sampleId: string, s3Key: string) {
@@ -204,7 +380,7 @@ async function analyzeSample(sampleId: string, s3Key: string) {
     const channels = 1; // ffmpeg outputs mono
 
     // 2. Essentia features (BPM, loudness, energy)
-    const essentiaAttrs = extractEssentiaFeatures(audio, samplingRate);
+    const { attrs: essentiaAttrs, metrics: essentiaMetrics } = extractEssentiaFeatures(audio, samplingRate);
 
     // 3. CLAP embedding
     const { AutoProcessor, ClapAudioModelWithProjection } =
@@ -236,9 +412,43 @@ async function analyzeSample(sampleId: string, s3Key: string) {
     let rank = 0;
 
     const taxonomyCategories = await loadTaxonomyCategoriesFromDb();
+    const familyTypeMap = await loadInstrumentFamilyTypeMapFromDb();
+
+    const familyCategory = taxonomyCategories.find((c) => c.attributeKey === INSTRUMENT_FAMILY_KEY);
+    const typeCategory = taxonomyCategories.find((c) => c.attributeKey === INSTRUMENT_TYPE_KEY);
+    const durationSeconds = audio.length / samplingRate;
+    const instrumentGuess = inferEssentiaInstrument(durationSeconds, essentiaMetrics, familyTypeMap);
+
+    if (familyCategory && instrumentGuess.familyKey) {
+      const familyValue = familyCategory.values.find((value) => value.key === instrumentGuess.familyKey);
+      if (familyValue) {
+        annotations.push({
+          taxonomyValueId: familyValue.id,
+          confidence: instrumentGuess.confidence,
+          source: "essentia",
+          rank: rank++,
+        });
+      }
+    }
+    if (typeCategory && instrumentGuess.typeKey) {
+      const typeValue = typeCategory.values.find((value) => value.key === instrumentGuess.typeKey);
+      if (typeValue) {
+        annotations.push({
+          taxonomyValueId: typeValue.id,
+          confidence: instrumentGuess.confidence,
+          source: "essentia",
+          rank: rank++,
+        });
+      }
+    }
 
     for (const category of taxonomyCategories) {
-      const candidateLabels = category.values.map((value) => value.prompt);
+      if (category.attributeKey === INSTRUMENT_FAMILY_KEY || category.attributeKey === INSTRUMENT_TYPE_KEY) {
+        continue;
+      }
+      const candidateLabels = category.values.map((value) => {
+        return value.prompt;
+      });
       if (candidateLabels.length === 0) continue;
 
       const scores = await classifier(audio, candidateLabels, {
@@ -247,7 +457,7 @@ async function analyzeSample(sampleId: string, s3Key: string) {
 
       if (Array.isArray(scores) && scores.length > 0) {
         const top = scores[0] as { label?: string; score?: number } | undefined;
-        if (top?.label != null && top?.score != null) {
+        if (top?.label != null && top?.score != null && top.score >= MIN_TAXONOMY_CONFIDENCE) {
           const idx = candidateLabels.indexOf(top.label);
           const taxonomyValue = idx >= 0 ? category.values[idx] : category.values[0];
           if (taxonomyValue) {
@@ -302,6 +512,15 @@ async function analyzeSample(sampleId: string, s3Key: string) {
         },
       });
 
+      await tx.sampleAnnotation.deleteMany({
+        where: {
+          sampleId,
+          source: {
+            in: ["clap", "essentia"],
+          },
+        },
+      });
+
       for (const ann of annotations) {
         await tx.sampleAnnotation.upsert({
           where: {
@@ -334,39 +553,89 @@ async function analyzeSample(sampleId: string, s3Key: string) {
   }
 }
 
-const worker = new Worker(
-  QUEUE_NAME,
-  async (job) => {
-    const { sampleId, s3Key } = job.data as { sampleId: string; s3Key: string };
-    await prisma.sample.update({
-      where: { id: sampleId },
-      data: { analysisStatus: "PROCESSING" },
-    });
-    try {
-      await analyzeSample(sampleId, s3Key);
-    } catch (err) {
+function createSampleAnalysisWorker() {
+  const worker = new Worker(
+    QUEUE_NAME,
+    async (job) => {
+      const { sampleId, s3Key } = job.data as { sampleId: string; s3Key: string };
       await prisma.sample.update({
         where: { id: sampleId },
-        data: {
-          analysisStatus: "FAILED",
-          analysisError: err instanceof Error ? err.message : String(err),
-        },
+        data: { analysisStatus: "PROCESSING" },
       });
-      throw err;
+      try {
+        await analyzeSample(sampleId, s3Key);
+      } catch (err) {
+        await prisma.sample.update({
+          where: { id: sampleId },
+          data: {
+            analysisStatus: "FAILED",
+            analysisError: err instanceof Error ? err.message : String(err),
+          },
+        });
+        throw err;
+      }
+    },
+    {
+      connection: workerRedis,
+      concurrency: 1, // CLAP is heavy; one at a time for V1
     }
-  },
-  {
-    connection: workerRedis,
-    concurrency: 1, // CLAP is heavy; one at a time for V1
-  }
-);
+  );
 
-worker.on("completed", (job) => {
-  console.log(`[worker] Sample ${job.data.sampleId} analysis complete`);
-});
+  worker.on("ready", () => {
+    console.log("[worker] Sample analysis worker connected to Redis and ready");
+  });
 
-worker.on("failed", (job, err) => {
-  console.error(`[worker] Sample ${job?.data?.sampleId} failed:`, err);
-});
+  worker.on("active", (job) => {
+    console.log(`[worker] Processing sample ${job.data.sampleId}`);
+  });
 
-console.log("[worker] Sample analysis worker started");
+  worker.on("completed", (job) => {
+    console.log(`[worker] Sample ${job.data.sampleId} analysis complete`);
+  });
+
+  worker.on("stalled", (jobId) => {
+    console.warn(`[worker] Job stalled: ${jobId}`);
+  });
+
+  worker.on("error", (err) => {
+    console.error("[worker] Worker error:", err);
+  });
+
+  worker.on("failed", (job, err) => {
+    console.error(`[worker] Sample ${job?.data?.sampleId} failed:`, err);
+  });
+
+  return worker;
+}
+
+export function startSampleAnalysisWorker() {
+  const worker = createSampleAnalysisWorker();
+  console.log("[worker] Sample analysis worker started");
+  void worker.waitUntilReady().catch((err) => {
+    console.error("[worker] Failed to become ready:", err);
+  });
+  return worker;
+}
+
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  return import.meta.url === pathToFileURL(entry).href;
+}
+
+if (isDirectRun()) {
+  const worker = startSampleAnalysisWorker();
+  const shutdown = async () => {
+    console.log("[worker] Shutting down sample analysis worker...");
+    await worker.close();
+    await workerRedis.quit();
+    process.exit(0);
+  };
+
+  process.once("SIGINT", () => {
+    void shutdown();
+  });
+  process.once("SIGTERM", () => {
+    void shutdown();
+  });
+}

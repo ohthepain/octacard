@@ -10,7 +10,7 @@ async function getHandlePercent(page, testId) {
 export async function assertSampleStartEndBar(page) {
   const fileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
   await fileNode.waitFor({ state: "visible" });
-  await fileNode.click();
+  await fileNode.click({ force: true });
 
   const preview = page.getByTestId("audio-preview-source");
   await preview.waitFor({ state: "visible" });
