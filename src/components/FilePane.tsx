@@ -603,8 +603,6 @@ export const FilePane = ({
             return parentPath;
           }
         } catch {
-          // Continue to next parent
-          continue;
         }
       }
 

@@ -44,7 +44,7 @@ export function analyzeFilenameForNote(filename: string): NoteMatch | null {
   if (!foundKey) return null;
 
   const semitonesDown = NOTE_MAP[foundKey];
-  const speedRatio = Math.pow(2, semitonesDown / 12.0);
+  const speedRatio = 2 ** (semitonesDown / 12.0);
 
   return {
     note: foundKey,

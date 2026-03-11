@@ -442,7 +442,7 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
     parts.push(`<SLICE_COUNT>${sliceFrames.length}</SLICE_COUNT>`);
     parts.push("<SLICES>");
     for (let i = 0; i < sliceFrames.length; i++) {
-      parts.push(`  <SLICE index=\"${i}\" position=\"${sliceFrames[i]}\" />`);
+      parts.push(`  <SLICE index="${i}" position="${sliceFrames[i]}" />`);
     }
     parts.push("</SLICES>");
     if (options?.tempo != null && Number.isFinite(options.tempo)) {

@@ -205,7 +205,7 @@ function fitLeadingTokens(tokens: string[], fallbackBasename: string, budget: nu
     return fitRawBase(fallbackBasename, budget);
   }
 
-  let active = [...filteredTokens];
+  const active = [...filteredTokens];
   let joined = active.join("_");
   while (active.length > 1 && joined.length > budget) {
     active.pop();
