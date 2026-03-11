@@ -66,7 +66,7 @@ export type PlayerOnEnded = () => void;
 /** Internal: called by playback engine for playhead updates */
 export type PlayerOnTimeUpdate = (sampleId: string, currentTime: number) => void;
 
-export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
+export const usePlayerStore = create<PlayerState & PlayerActions>((set, _get) => ({
   isPlaying: false,
   mode: "single",
   singleFile: null,

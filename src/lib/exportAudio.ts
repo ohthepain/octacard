@@ -415,15 +415,15 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
   if (embeddedMarkers && sliceFrames.length > 0) {
     let subchunksBytes = 0;
     for (let i = 0; i < sliceFrames.length; i++) {
-      const thisStart = sliceFrames[i];
-      const nextStart = i < sliceFrames.length - 1 ? sliceFrames[i + 1] : sampleEndFrame;
+      const _thisStart = sliceFrames[i];
+      const _nextStart = i < sliceFrames.length - 1 ? sliceFrames[i + 1] : sampleEndFrame;
 
       // ltxt: size=20 bytes payload
       subchunksBytes += 8 + 20;
 
       // labl: payload=4(cue id)+text+NUL, padded to even
       const label = `Slice_${String(i + 1).padStart(2, "0")}`;
-      const textBytes = new TextEncoder().encode(label + "\0");
+      const textBytes = new TextEncoder().encode(`${label}\0`);
       const paddedTextLen = padToWord(textBytes.length);
       subchunksBytes += 8 + 4 + paddedTextLen;
     }
@@ -556,7 +556,7 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
 
       // Optional label: Slice_01
       const label = `Slice_${String(i + 1).padStart(2, "0")}`;
-      const labelBytes = new TextEncoder().encode(label + "\0");
+      const labelBytes = new TextEncoder().encode(`${label}\0`);
       const paddedLabelBytes = padToWord(labelBytes.length);
       writeString("labl", pos);
       view.setUint32(pos + 4, 4 + labelBytes.length, true);

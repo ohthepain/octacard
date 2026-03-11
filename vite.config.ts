@@ -117,7 +117,7 @@ export default defineConfig(({ command }) => {
           target: "http://127.0.0.1:3001",
           changeOrigin: true,
           configure: (proxy) => {
-            proxy.on("error", (err, req, res) => {
+            proxy.on("error", (_err, req, res) => {
               if (res && typeof (res as any).writeHead === "function") {
                 const isAuth = (req.url ?? "").includes("/api/auth/");
                 (res as any).writeHead(isAuth ? 200 : 503, {

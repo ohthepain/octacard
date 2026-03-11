@@ -55,7 +55,7 @@ export function FavoritesColumn({
       if (sourceType === "file") {
         const parts = sourcePath.split("/").filter(Boolean);
         if (parts.length >= 2) {
-          const parentPath = "/" + parts.slice(0, -1).join("/");
+          const parentPath = `/${parts.slice(0, -1).join("/")}`;
           const parentName = parts[parts.length - 2];
           addFavorite(parentPath, parentName);
           onDropFolder?.(parentPath, parentName);

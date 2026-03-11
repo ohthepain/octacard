@@ -179,7 +179,7 @@ class HandleRegistry {
     }
 
     const fileName = parts.pop()!;
-    const dirPath = "/" + parts.join("/");
+    const dirPath = `/${parts.join("/")}`;
 
     const dirHandle = await this.getDirectoryHandle(dirPath);
     return await dirHandle.getFileHandle(fileName);
@@ -201,7 +201,7 @@ class HandleRegistry {
 
       const relativePathParts = await this.rootHandle.resolve(handle);
       if (relativePathParts) {
-        const virtualPath = "/" + relativePathParts.join("/");
+        const virtualPath = `/${relativePathParts.join("/")}`;
         this.handles.set(virtualPath, handle);
         this.handleToPath.set(handle, virtualPath);
         return virtualPath;
@@ -265,7 +265,7 @@ class HandleRegistry {
   private normalizePath(path: string): string {
     // Remove leading/trailing slashes and normalize
     const parts = path.split("/").filter(Boolean);
-    return "/" + parts.join("/");
+    return `/${parts.join("/")}`;
   }
 
   clear(): void {
@@ -297,7 +297,7 @@ class FileSystemService {
 
   private normalizeVirtualPath(path: string): string {
     const parts = path.split("/").filter(Boolean);
-    return "/" + parts.join("/");
+    return `/${parts.join("/")}`;
   }
 
   private isPathWithin(basePath: string, candidatePath: string): boolean {

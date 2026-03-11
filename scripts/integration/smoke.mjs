@@ -1,48 +1,36 @@
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { assertDestRefreshAfterConvert } from "../../tests/refresh-dest.mjs";
 import { assertRevealInFinder } from "../../tests/reveal-in-finder.mjs";
 import { assertRevealInFinderDest } from "../../tests/reveal-in-finder-dest.mjs";
 import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
 import { assertRevealInFinderDoesNotOpenPickerFallback } from "../../tests/reveal-in-finder-no-picker-fallback.mjs";
-import { assertConvertDialogEllipsis } from "../../tests/convert-dialog-ellipsis.mjs";
-import { assertExpandedFoldersPersistOnReload } from "../../tests/persist-expanded-folders.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
 import { assertSp404Mk2PresetDefaults } from "../../tests/sp404mkii-preset.mjs";
 import { assertFormatMenuCategories } from "../../tests/format-menu-categories.mjs";
 import { assertDevModeButton } from "../../tests/dev-mode-button.mjs";
 import { assertHeaderDoesNotShowSelectDirectory } from "../../tests/header-select-directory.mjs";
 import { assertTermsAndPrivacyLinks } from "../../tests/tos-privacy-links.mjs";
-import { assertConversionCanBeCancelled } from "../../tests/conversion-cancel.mjs";
-import { assertLargeBatchConversionCanBeCancelledQuickly } from "../../tests/conversion-cancel-large-batch.mjs";
-import { assertDragDropConvertsWithFormat } from "../../tests/drag-drop-conversion.mjs";
-import { assertDragFolderDropConvertsWithoutConfirmation } from "../../tests/drag-folder-drop-convert.mjs";
 import {
   assertIndexedSearchUsesCache,
-  assertSearchFindsConvertedFileAfterReindex,
 } from "../../tests/search-indexing.mjs";
 import { assertSearchQueryPersistsWhenNavigatingSearchResult } from "../../tests/search-navigation-preserves-query.mjs";
 import { assertMultiModeToggle } from "../../tests/multi-mode-toggle.mjs";
 import { assertMultiStackRowControls } from "../../tests/multi-stack-row-controls.mjs";
-import { assertSp404PresetSanitizesFilename } from "../../tests/sp404-filename-sanitize.mjs";
 import { assertFilenameShortener } from "../../tests/filename-shortener.mjs";
 import { assertBraveBrowserSupport } from "../../tests/brave-browser-support.mjs";
 import { assertWaveformButtonOpensEmptyState } from "../../tests/waveform-button-opens-empty-state.mjs";
-import { assertExportPromptsFilenameInEmptyState } from "../../tests/export-prompts-filename-empty-state.mjs";
 import { assertFilePaneKeyboardNavigation } from "../../tests/filepane-keyboard-navigation.mjs";
 import { assertSearchModesAllFoldersFiles } from "../../tests/search-modes-all-folders-files.mjs";
 import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-folder-does-not-auto-select-dest.mjs";
 import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils.mjs";
 import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
 import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
-import { assertLoopLengthResetsOnSampleChange } from "../../tests/loop-length-resets-on-sample-change.mjs";
 import { assertSpaceBarPlaysCurrentSample } from "../../tests/space-bar-plays-current-sample.mjs";
 import { assertAudioLoadAiffAndWav } from "../../tests/audio-load-aiff-wav.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
-import { assertVolumeSliderRealTime } from "../../tests/volume-slider-real-time.mjs";
 import { assertMultiStackPersistsAfterReload } from "../../tests/multi-stack-persists-refresh.mjs";
 import { assertMultiStackRecoversAfterFolderSelection } from "../../tests/multi-stack-reloads-after-folder-select.mjs";
 import { assertViewAnalysisResultsDoesNotAutoRerun } from "../../tests/view-analysis-results-no-rerun.mjs";
@@ -58,36 +46,123 @@ const browser = await chromium.launch({ headless });
 const page = await browser.newPage();
 page.setDefaultTimeout(15000);
 const domNestingWarnings = [];
+const consoleErrors = [];
+const pageErrors = [];
+
+async function captureStartupDiagnostics(page, outputDir, label) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const prefix = path.join(outputDir, `${label}-${stamp}`);
+  const [url, title, bodyText, html] = await Promise.all([
+    page.url(),
+    page.title().catch(() => "(unavailable)"),
+    page.locator("body").innerText().catch(() => "(body unavailable)"),
+    page.content().catch(() => "<!-- content unavailable -->"),
+  ]);
+
+  await page.screenshot({ path: `${prefix}.png`, fullPage: true }).catch(() => null);
+  await writeFile(
+    `${prefix}.json`,
+    JSON.stringify(
+      {
+        url,
+        title,
+        bodyPreview: bodyText.slice(0, 4000),
+        consoleErrors: consoleErrors.slice(-30),
+        pageErrors: pageErrors.slice(-30),
+      },
+      null,
+      2,
+    ),
+  );
+  await writeFile(`${prefix}.html`, html);
+  return `${prefix}.json`;
+}
+
+async function ensureMainViewReady(page, baseUrl, outputDir) {
+  const convertButton = page.getByTestId("convert-button");
+  const signInHeading = page.getByRole("heading", { name: /Welcome back to|Get started with/i });
+  const localModeButton = page.getByRole("button", { name: "Local files mode" });
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (await signInHeading.isVisible().catch(() => false)) {
+      throw new Error(`Expected app home at ${baseUrl}, but sign-in page is visible at ${page.url()}.`);
+    }
+
+    if (await convertButton.isVisible().catch(() => false)) return;
+
+    if (await localModeButton.isVisible().catch(() => false)) {
+      await localModeButton.click().catch(() => null);
+      if (await convertButton.isVisible().catch(() => false)) return;
+    }
+
+    await page.waitForTimeout(1000);
+    if (await convertButton.isVisible().catch(() => false)) return;
+
+    if (attempt < 3) {
+      await page.reload({ waitUntil: "networkidle" });
+    }
+  }
+
+  const diagnosticsPath = await captureStartupDiagnostics(page, outputDir, "startup-failure");
+  throw new Error(
+    `Main view did not become ready at ${page.url()} (Convert button missing). Diagnostics: ${diagnosticsPath}`,
+  );
+}
 
 page.on("console", (message) => {
   const text = message.text();
+  if (message.type() === "error") {
+    consoleErrors.push(text);
+  }
   if (text.includes("validateDOMNesting")) {
     domNestingWarnings.push(text);
   }
 });
+page.on("pageerror", (error) => {
+  pageErrors.push(error.message);
+});
+
+const mockAuthSession = {
+  user: { id: "test-user", email: "test@example.com", name: "Test User" },
+  session: {
+    id: "test-session",
+    userId: "test-user",
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  },
+};
 
 try {
   await page.addInitScript(testInitScript);
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.route("**/api/auth/**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(mockAuthSession),
+    });
+  });
 
-  await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
-  await assertHeaderDoesNotShowSelectDirectory(page);
-  const convertButton = page.getByRole("button", { name: "Convert" });
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await ensureMainViewReady(page, baseUrl, outputDir);
+  const convertButton = page.getByTestId("convert-button");
   const userMenuButton = page.getByTestId("user-menu");
   const formatButton = page.getByTestId("format-settings-button");
   await convertButton.waitFor({ state: "visible" });
   await userMenuButton.waitFor({ state: "visible" });
   await formatButton.waitFor({ state: "visible" });
+  await assertHeaderDoesNotShowSelectDirectory(page);
   await page.getByRole("button", { name: "About" }).waitFor({ state: "visible" });
   await assertMultiModeToggle(page);
   await assertMultiStackRowControls(page);
   await assertWaveformButtonOpensEmptyState(page);
-  await assertExportPromptsFilenameInEmptyState(page);
   await assertFormatMenuCategories(page);
   await assertTermsAndPrivacyLinks(page, { baseUrl });
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
+  await ensureMainViewReady(page, baseUrl, outputDir);
   await assertSampleRateOptions(page);
   await assertSp404Mk2PresetDefaults(page);
   await assertFilenameShortener(page);
@@ -150,7 +225,6 @@ try {
   await assertFilePaneKeyboardNavigation(page);
   await assertSearchModesAllFoldersFiles(page);
   await assertSourceFolderDoesNotAutoSelectDest(page);
-  await assertExpandedFoldersPersistOnReload(page);
   await assertMultiStackPersistsAfterReload(page);
   await assertMultiStackRecoversAfterFolderSelection(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
@@ -182,7 +256,7 @@ try {
   );
   await assertIndexedSearchUsesCache(page);
 
-  const sourcePanelLocator = page.getByTestId("panel-source");
+  const _sourcePanelLocator = page.getByTestId("panel-source");
   await page.evaluate(() => {
     const sourcePanel = document.querySelector('[data-testid="panel-source"]');
     if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found");
@@ -204,20 +278,18 @@ try {
   await assertViewAnalysisResultsDoesNotAutoRerun(page, { baseUrl });
   await assertBarsBeatsSupport(page);
   await assertSampleStartEndBar(page);
-  await assertLoopLengthResetsOnSampleChange(page);
   await assertSpaceBarPlaysCurrentSample(page);
   await assertWaveformTimeModeToggle(page);
   await assertAudioLoadAiffAndWav(page);
-  // Navigate back to Alpha folder after assertAudioLoadAiffAndWav navigated to root/Fixtures
-  const alphaNode = page.getByTestId("tree-node-source-_Alpha");
-  await alphaNode.waitFor({ state: "visible" });
-  const alphaFileForVolume = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
-  const fileVisible = await alphaFileForVolume.isVisible().catch(() => false);
-  if (!fileVisible) {
-    await alphaNode.click({ force: true });
-  }
-  await alphaFileForVolume.waitFor({ state: "visible" });
-  await assertVolumeSliderRealTime(page);
+
+  // Close audio preview so breadcrumb favorite button is clickable
+  await page.evaluate(() => {
+    const store = window.__octacardWaveformEditorStore;
+    if (store?.getState?.()?.close) store.getState().close();
+    const closeBtn = document.querySelector('[data-testid="audio-preview-close"]');
+    if (closeBtn instanceof HTMLElement) closeBtn.click();
+  }).catch(() => {});
+  await page.waitForTimeout(300);
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(

@@ -132,7 +132,7 @@ export const AudioPreview = ({
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [isRecording, setIsRecording] = useState(false);
-  const [isRecordPaused, setIsRecordPaused] = useState(false);
+  const [_isRecordPaused, setIsRecordPaused] = useState(false);
   const [isRecordArmed, setIsRecordArmed] = useState(false);
   const [recordArmedMode, setRecordArmedMode] = useState<"replace" | "overdub">("replace");
   const recordArmedModeRef = useRef<"replace" | "overdub">("replace");
@@ -162,10 +162,10 @@ export const AudioPreview = ({
   const isPlaying = playerIsPlaying || wavesurferPlaying;
   const playerCurrentTime = usePlayerStore((s) => s.currentTime);
   const playSingle = usePlayerStore((s) => s.playSingle);
-  const playMulti = usePlayerStore((s) => s.playMulti);
+  const _playMulti = usePlayerStore((s) => s.playMulti);
   const stopPlayer = usePlayerStore((s) => s.stop);
   const requestSwitchAtNextBar = usePlayerStore((s) => s.requestSwitchAtNextBar);
-  const setActiveSample = usePlayerStore((s) => s.setActiveSample);
+  const _setActiveSample = usePlayerStore((s) => s.setActiveSample);
   const muted = usePlayerStore((s) => s.muted);
   const setMuted = usePlayerStore((s) => s.setMuted);
   const stack = useMultiSampleStore((s) => s.stack);
@@ -208,7 +208,7 @@ export const AudioPreview = ({
   }, [playerMode, multiSampleId, playingSamplePosition, isPlaying, playerCurrentTime, duration, singleFile?.path, filePath]);
 
   const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
-  const playStartTimeRef = useRef<number>(0);
+  const _playStartTimeRef = useRef<number>(0);
   const playSliceEndRef = useRef<number | null>(null);
   const playSliceStartRef = useRef<number | null>(null);
   const onFileSavedRef = useRef(onFileSaved);
@@ -303,7 +303,7 @@ export const AudioPreview = ({
   );
 
   const formatTime = useCallback((seconds: number): string => {
-    if (isNaN(seconds)) return "0:00";
+    if (Number.isNaN(seconds)) return "0:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
@@ -330,7 +330,7 @@ export const AudioPreview = ({
       return { ...m, confidence: conf !== undefined ? conf : m.confidence };
     });
     return [...overridden, ...userAddedSlices];
-  }, [sliceMarkers, sliceConfidenceOverrides, userAddedSlices]);
+  }, [sliceMarkers, sliceConfidenceOverrides, userAddedSlices, sliceKey]);
 
   const displayedSlices = useMemo(() => {
     const selected = selectTopSlices(combinedSliceMarkers, numSlices);
@@ -341,7 +341,7 @@ export const AudioPreview = ({
       const isUserAdded = userAddedSlices.some((u) => Math.abs(u.time - m.time) < 0.001);
       return { ...m, time: displayTime, originalTime: m.time, isUserAdded };
     });
-  }, [combinedSliceMarkers, numSlices, slicePositionOverrides, userAddedSlices]);
+  }, [combinedSliceMarkers, numSlices, slicePositionOverrides, userAddedSlices, sliceKey]);
 
   const getExportBlobForEmptyState = useCallback(async (): Promise<Blob | null> => {
     if (lastRecordedBlobRef.current) return lastRecordedBlobRef.current;
@@ -530,7 +530,7 @@ export const AudioPreview = ({
               ? parsed.sampleEndFrame / parsed.sampleRate
               : Math.max(metadataStart, duration || durationFromFile);
           const edits = getEdits(filePath);
-          const dur = duration || metadataEnd;
+          const _dur = duration || metadataEnd;
           prevFilePathForLoopRef.current = filePath;
           setLoopStart(edits?.loopStart ?? Math.max(0, metadataStart));
           setLoopEnd(edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd));
@@ -723,7 +723,7 @@ export const AudioPreview = ({
         try {
           try {
             wavesurferRef.current.pause();
-          } catch (e) {
+          } catch (_e) {
             // Ignore errors when pausing
           }
           try {
@@ -792,7 +792,7 @@ export const AudioPreview = ({
 
           try {
             prevInstance.pause();
-          } catch (e) {
+          } catch (_e) {
             // Ignore pause errors
           }
 
@@ -1094,8 +1094,8 @@ export const AudioPreview = ({
       wavesurfer.on("loading", (percent) => {
         if (cancelled) return;
         // Ignore Infinity% which can occur when loading is aborted
-        if (isFinite(percent)) {
-          console.log("Loading:", percent + "%");
+        if (Number.isFinite(percent)) {
+          console.log("Loading:", `${percent}%`);
         }
       });
 
@@ -1166,7 +1166,7 @@ export const AudioPreview = ({
           wavesurferRef.current = null;
           try {
             instance.pause();
-          } catch (e) {
+          } catch (_e) {
             // Ignore errors when pausing
           }
           try {
@@ -1208,19 +1208,18 @@ export const AudioPreview = ({
       setWavesurferPlaying(false);
     };
   }, [
-    audioUrl,
-    normalize,
-    fileName,
-    filePath,
-    setEdits,
-    debouncedWaveformHeight,
-    timeDisplayMode,
-    secondsPerBar,
-    secondsPerBeat,
-    formatBarsBeats,
-    formatTime,
-    stopPlayer,
-    requestSwitchAtNextBar,
+    audioUrl, 
+    normalize, 
+    filePath, 
+    setEdits, 
+    debouncedWaveformHeight, 
+    timeDisplayMode, 
+    secondsPerBar, 
+    secondsPerBeat, 
+    formatBarsBeats, 
+    formatTime, 
+    stopPlayer, 
+    requestSwitchAtNextBar, handleMinimapMouseDown, paneType, zoom
   ]);
 
   // Effect to find and attach handler to minimap element after it's created
@@ -1375,7 +1374,7 @@ export const AudioPreview = ({
         toast.error(String(err));
       }
     },
-    [isLoading, selectedDeviceId],
+    [isLoading, selectedDeviceId, isPlaying],
   );
 
   const handleStopOrPlay = useCallback(() => {
@@ -1467,7 +1466,7 @@ export const AudioPreview = ({
     wavesurferRef.current.seekTo(Math.min(duration, current + 10) / duration);
   };
 
-  const handleSeek = (value: number[]) => {
+  const _handleSeek = (value: number[]) => {
     if (!wavesurferRef.current) return;
     wavesurferRef.current.seekTo(value[0] / duration);
   };
@@ -1521,7 +1520,7 @@ export const AudioPreview = ({
       setSliceConfidenceOverrides((prev) => new Map(prev).set(key, 0));
     }
     setNumSlices((prev) => Math.max(1, prev - 1));
-  }, []);
+  }, [sliceKey]);
 
   const addSliceAtTime = useCallback(
     (clickTime: number) => {
@@ -1549,13 +1548,13 @@ export const AudioPreview = ({
       setUserAddedSlices((prev) => [...prev, { time: timeToAdd, confidence: Math.min(1, threshold) }]);
       setNumSlices((prev) => prev + 1);
     },
-    [combinedSliceMarkers, numSlices, sliceMarkers, userAddedSlices],
+    [combinedSliceMarkers, numSlices, sliceMarkers, userAddedSlices, sliceKey],
   );
 
   const updateSlicePosition = useCallback((originalTime: number, newTime: number) => {
     const key = sliceKey(originalTime);
     setSlicePositionOverrides((prev) => new Map(prev).set(key, newTime));
-  }, []);
+  }, [sliceKey]);
 
   const playSlice = useCallback(
     (sliceIndex: number) => {
@@ -1804,7 +1803,7 @@ export const AudioPreview = ({
       else if (part === "sixteenths") next.sixteenths = next.sixteenths + delta;
       applyLoopLengthParts(next);
     },
-    [applyLoopLengthParts, duration, getLoopLengthParts, parsedTimeSignature.beatsPerBar, secondsPerBar],
+    [applyLoopLengthParts, duration, getLoopLengthParts, secondsPerBar],
   );
 
   const performExport = useCallback(
@@ -1887,7 +1886,7 @@ export const AudioPreview = ({
         const { mainBlob, sliceBlobs } = await exportAudioWithEdits(blob, params, duration);
 
         const mainFileName = saveAsTarget ? saveAsTarget.filename : (fileName ?? "export.wav");
-        const mainName = mainFileName.replace(/\.wav$/i, "") + ".wav";
+        const mainName = `${mainFileName.replace(/\.wav$/i, "")}.wav`;
 
         if (saveAsTarget) {
           const result = await fileSystemService.writeBlobToDirectoryHandle(
@@ -1993,7 +1992,7 @@ export const AudioPreview = ({
         toast.error("No audio to export. Record or load a file first.");
         return;
       }
-      const safeName = name.trim().replace(/\.wav$/i, "") + ".wav";
+      const safeName = `${name.trim().replace(/\.wav$/i, "")}.wav`;
       const result = await fileSystemService.addFileFromDrop(
         new File([blob], safeName, { type: "audio/wav" }),
         "/",
@@ -2088,9 +2087,9 @@ export const AudioPreview = ({
             ) as HTMLElement | null;
             const minimapRect = minimapContainerRef.current?.getBoundingClientRect();
             const waveformRect = waveformRef.current?.getBoundingClientRect();
-            const overlayLeftBefore =
+            const _overlayLeftBefore =
               overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
-            const scrollBefore = ws.getScroll();
+            const _scrollBefore = ws.getScroll();
             // Axis lock: ignore tiny/secondary horizontal jitter during mostly vertical drags.
             const shouldApplyHorizontal =
               Math.abs(actualDeltaX) >= Math.abs(actualDeltaY) && Math.abs(actualDeltaX) >= 2;
@@ -2102,7 +2101,7 @@ export const AudioPreview = ({
             const mappedDeltaX = shouldApplyHorizontal ? actualDeltaX * minimapPixelToScroll : 0;
             const newScroll = Math.max(0, dragStateRef.current.startScroll + mappedDeltaX);
             ws.setScroll(newScroll);
-            const overlayLeftAfter =
+            const _overlayLeftAfter =
               overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
             if (dragStateRef.current.debugScrollSamples < 6) {
               dragStateRef.current.debugScrollSamples += 1;
@@ -2129,8 +2128,7 @@ export const AudioPreview = ({
       dragStateRef.current = null;
       // Minimap click (no drag): seek to position.
       if (
-        state &&
-        state.isMinimapDrag &&
+        state?.isMinimapDrag &&
         state.shouldSeekOnMouseUp &&
         !state.hasMoved &&
         minimapContainerRef.current &&
@@ -2182,7 +2180,7 @@ export const AudioPreview = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [slicingOpen]);
+  }, [slicingOpen, isLoading]);
 
   const handleResizeMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -3012,7 +3010,7 @@ export const AudioPreview = ({
                 placeholder="export.wav"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && exportSaveAsDirHandle && exportSaveAsFilename.trim()) {
-                    const name = exportSaveAsFilename.trim().replace(/\.wav$/i, "") + ".wav";
+                    const name = `${exportSaveAsFilename.trim().replace(/\.wav$/i, "")}.wav`;
                     exportSaveAsResolverRef.current?.({ dirHandle: exportSaveAsDirHandle, filename: name });
                     exportSaveAsResolverRef.current = null;
                   }
@@ -3033,7 +3031,7 @@ export const AudioPreview = ({
             </Button>
             <Button
               onClick={() => {
-                const name = exportSaveAsFilename.trim().replace(/\.wav$/i, "") + ".wav";
+                const name = `${exportSaveAsFilename.trim().replace(/\.wav$/i, "")}.wav`;
                 exportSaveAsResolverRef.current?.({ dirHandle: exportSaveAsDirHandle!, filename: name });
                 exportSaveAsResolverRef.current = null;
               }}

@@ -549,7 +549,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
 });
 
 libraryApp.get("/packs/:id/cover", async (c) => {
-  const user = c.get("user");
+  const _user = c.get("user");
   const id = c.req.param("id");
 
   const pack = await prisma.pack.findUnique({
@@ -721,7 +721,7 @@ function contentTypeToExt(contentType: string): string {
 
 libraryApp.post("/samples/upload-url-by-content", zValidator("json", uploadByContentHashSchema), async (c) => {
   const user = c.get("user");
-  const { packId, contentHash, contentType, fileName } = c.req.valid("json");
+  const { packId, contentHash, contentType } = c.req.valid("json");
   await requireOwnedPack(packId, user.id);
   const ext = contentTypeToExt(contentType);
   const key = `samples/${contentHash}.${ext}`;

@@ -273,7 +273,7 @@ function withTrailingDisambiguator({
   return `${fitRawBase(base, baseBudget)}${suffix}`;
 }
 
-function getNumericFallbackBase(base: string, extension: string, maxLength: number): string {
+function getNumericFallbackBase(base: string, _extension: string, maxLength: number): string {
   const minSuffixLength = "_2".length;
   // maxLength applies to base + suffix only; extension is not counted
   if (base.length + minSuffixLength <= maxLength) {

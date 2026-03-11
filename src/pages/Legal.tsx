@@ -31,7 +31,7 @@ export default function Legal() {
       await signOut();
       toast.success("Account deleted");
       window.location.href = "/";
-    } catch (err) {
+    } catch (_err) {
       toast.error("Something went wrong");
     } finally {
       setDeleting(false);

@@ -10,7 +10,6 @@ import {
   FolderPlus,
   FolderOpen,
   Loader2,
-  XCircle,
   ArrowUp,
   RotateCw,
   Star,
@@ -86,7 +85,7 @@ function dirname(filePath: string): string {
     return filePath.startsWith("/") ? "/" : "";
   }
   const parentParts = parts.slice(0, -1);
-  return filePath.startsWith("/") ? "/" + parentParts.join("/") : parentParts.join("/");
+  return filePath.startsWith("/") ? `/${parentParts.join("/")}` : parentParts.join("/");
 }
 
 function isNoOpDrop(sourcePath: string, sourceType: "file" | "folder", destinationPath: string): boolean {
@@ -265,10 +264,10 @@ export const FilePane = ({
   const [isCardMounted, setIsCardMounted] = useState(false);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [selectedAudioFile, setSelectedAudioFile] = useState<{ path: string; name: string } | null>(null);
+  const [_selectedAudioFile, setSelectedAudioFile] = useState<{ path: string; name: string } | null>(null);
   const [selectedVideoFile, setSelectedVideoFile] = useState<{ path: string; name: string } | null>(null);
-  const [displayTitle, setDisplayTitle] = useState<string>(title);
-  const [availableVolumes, setAvailableVolumes] = useState<VolumeOption[]>([]);
+  const [_displayTitle, setDisplayTitle] = useState<string>(title);
+  const [_availableVolumes, setAvailableVolumes] = useState<VolumeOption[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number>(-1);
   const [copyProgress, setCopyProgress] = useState<{
@@ -480,41 +479,7 @@ export const FilePane = ({
     } catch (error) {
       console.error("Failed to refresh available volumes:", error);
     }
-  }, []);
-
-  // Request root directory on mount if not set
-  const requestRootDirectory = useCallback(async () => {
-    const result = await fileSystemService.requestRootDirectory();
-    if (result.success && result.data) {
-      setRootPath("/");
-      setCurrentRootPath("/");
-      setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
-      await refreshAvailableVolumes();
-      void fileSystemService.ensureSearchIndex(paneType);
-      await loadDirectory("/", "root");
-      if (result.warning) {
-        toast.warning("Same Folder Selected", {
-          description: result.warning,
-          duration: 6000,
-        });
-      }
-    }
-  }, []);
-
-  // Check if root directory is set on mount
-  useEffect(() => {
-    if (!fileSystemService.hasRootForPane(paneType)) {
-      setLoading(false);
-      setPathDoesNotExist(true);
-    } else {
-      setRootPath("/");
-      setCurrentRootPath("/");
-      setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
-      void refreshAvailableVolumes();
-      void fileSystemService.ensureSearchIndex(paneType);
-      loadDirectory("/", "root");
-    }
-  }, []);
+  }, [paneType]);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -533,7 +498,7 @@ export const FilePane = ({
       prev.forEach((url) => URL.revokeObjectURL(url));
       return new Map();
     });
-  }, [rootPath]);
+  }, []);
 
   const resolveSampleIdFromLocalPack = useCallback(
     async (filePath: string, fileName: string): Promise<string | null> => {
@@ -571,7 +536,7 @@ export const FilePane = ({
       const nameMatch = manifest.samples.find((sample) => sample.name === fileName);
       return nameMatch?.id ?? null;
     },
-    [folderViewPackId, folderViewRoot],
+    [folderViewPackId, folderViewRoot, paneType],
   );
 
   useEffect(() => {
@@ -595,7 +560,7 @@ export const FilePane = ({
 
       // Try each parent directory starting from the immediate parent
       for (let i = parts.length - 1; i > 0; i--) {
-        const parentPath = dirPath.startsWith("/") ? "/" + parts.slice(0, i).join("/") : parts.slice(0, i).join("/");
+        const parentPath = dirPath.startsWith("/") ? `/${parts.slice(0, i).join("/")}` : parts.slice(0, i).join("/");
 
         try {
           const statsResult = await fileSystemService.getFileStats(parentPath, paneType);
@@ -620,7 +585,7 @@ export const FilePane = ({
 
       return null;
     },
-    [rootPath],
+    [rootPath, paneType],
   );
 
   const loadDirectory = useCallback(
@@ -718,7 +683,7 @@ export const FilePane = ({
             }
             return updateNode(prev);
           });
-        } else if (result.error && result.error.includes("ENOENT")) {
+        } else if (result.error?.includes("ENOENT")) {
           // Directory doesn't exist
           if (nodeId === "root") {
             setPathDoesNotExist(true);
@@ -742,8 +707,42 @@ export const FilePane = ({
         }
       }
     },
-    [paneName, availableVolumes, sortBy],
+    [paneName, sortBy, paneType],
   );
+
+  // Request root directory on mount if not set
+  const requestRootDirectory = useCallback(async () => {
+    const result = await fileSystemService.requestRootDirectory();
+    if (result.success && result.data) {
+      setRootPath("/");
+      setCurrentRootPath("/");
+      setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
+      await refreshAvailableVolumes();
+      void fileSystemService.ensureSearchIndex(paneType);
+      await loadDirectory("/", "root");
+      if (result.warning) {
+        toast.warning("Same Folder Selected", {
+          description: result.warning,
+          duration: 6000,
+        });
+      }
+    }
+  }, [loadDirectory, paneType, refreshAvailableVolumes]);
+
+  // Check if root directory is set on mount
+  useEffect(() => {
+    if (!fileSystemService.hasRootForPane(paneType)) {
+      setLoading(false);
+      setPathDoesNotExist(true);
+    } else {
+      setRootPath("/");
+      setCurrentRootPath("/");
+      setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
+      void refreshAvailableVolumes();
+      void fileSystemService.ensureSearchIndex(paneType);
+      loadDirectory("/", "root");
+    }
+  }, [loadDirectory, paneType, refreshAvailableVolumes]);
 
   // Re-sort current directory when sort option changes
   useEffect(() => {
@@ -780,7 +779,7 @@ export const FilePane = ({
     };
 
     setFileTree((prev) => sortNodes(prev));
-  }, [sortBy, currentRootPath]);
+  }, [sortBy, currentRootPath, fileTree.length]);
 
   // Effect to restore expanded folders when fileTree is populated
   useEffect(() => {
@@ -830,7 +829,6 @@ export const FilePane = ({
 
             // Load directory if not already loaded
             if (!node.loaded) {
-              loadDirectory;
               await loadDirectory(node.path, node.id);
               if (cancelled) return;
 
@@ -880,7 +878,183 @@ export const FilePane = ({
       cancelled = true;
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
-  }, [pendingExpandedFolders, fileTree, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Include fileTree so restoration can run once async directory load completes
+  }, [pendingExpandedFolders, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Include fileTree so restoration can run once async directory load completes
+
+  // Helper to get flat list of nodes for shift-click range selection
+  const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
+    const flat: FileNode[] = [];
+    const traverse = (nodeList: FileNode[]) => {
+      for (const node of nodeList) {
+        if (node.id !== "parent-link") {
+          flat.push(node);
+        }
+        if (node.children) {
+          traverse(node.children);
+        }
+      }
+    };
+    traverse(nodes);
+    return flat;
+  }, []);
+
+  // Convert search results to folder tree structure - only show folders containing matches
+  const buildFolderTreeFromSearchResults = useCallback(
+    (
+      results: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>,
+      searchRootPath?: string,
+      mode: "all" | "folders" | "files" = "all",
+    ): FileNode[] => {
+      if (results.length === 0) return [];
+
+      // Extract all unique folder paths that contain matches
+      const folderPaths = new Set<string>();
+
+      const addAncestorChain = (path: string) => {
+        let p = path;
+        while (p && p !== "." && p !== "/") {
+          if (!searchRootPath || p.startsWith(searchRootPath)) {
+            folderPaths.add(p);
+          }
+          p = dirname(p);
+        }
+      };
+
+      results.forEach((result) => {
+        if (mode === "files") {
+          // Files mode: only folders that contain a matching file (not folders that match by name)
+          if (result.isDirectory) return;
+          const parentPath = dirname(result.path);
+          if (parentPath && parentPath !== "." && parentPath !== "/") {
+            addAncestorChain(parentPath);
+          }
+        } else {
+          // All/Folders mode: include parent of each result and folders that match
+          const parentPath = dirname(result.path);
+          if (parentPath && parentPath !== "." && parentPath !== "/") {
+            if (!searchRootPath || parentPath.startsWith(searchRootPath)) {
+              folderPaths.add(parentPath);
+            }
+          }
+          if (result.isDirectory) {
+            if (!searchRootPath || result.path.startsWith(searchRootPath)) {
+              folderPaths.add(result.path);
+            }
+          }
+        }
+      });
+
+      if (folderPaths.size === 0) return [];
+
+      // Build a tree structure from folder paths
+      const folderMap = new Map<string, FileNode>();
+      const rootFolders: FileNode[] = [];
+
+      // Sort folder paths by depth (shallowest first)
+      const sortedPaths = Array.from(folderPaths).sort((a, b) => {
+        const depthA = a.split("/").filter(Boolean).length;
+        const depthB = b.split("/").filter(Boolean).length;
+        return depthA - depthB;
+      });
+
+      // Determine the root path for the tree (either searchRootPath or common ancestor)
+      const treeRoot =
+        searchRootPath ||
+        (() => {
+          // Find common root path
+          const paths = Array.from(folderPaths);
+          if (paths.length === 0) return "";
+          let commonRoot = paths[0];
+          for (let i = 1; i < paths.length; i++) {
+            const parts = commonRoot.split("/").filter(Boolean);
+            const otherParts = paths[i].split("/").filter(Boolean);
+            let j = 0;
+            while (j < parts.length && j < otherParts.length && parts[j] === otherParts[j]) {
+              j++;
+            }
+            commonRoot = `/${parts.slice(0, j).join("/")}`;
+          }
+          return commonRoot || "/";
+        })();
+
+      sortedPaths.forEach((folderPath) => {
+        const parts = folderPath.split("/").filter(Boolean);
+        const folderName = parts[parts.length - 1];
+
+        // Create folder node
+        const folderNode: FileNode = {
+          id: `search-folder-${folderPath}`,
+          name: folderName,
+          type: "folder",
+          path: folderPath,
+          loaded: false, // Not loaded yet - user can expand to see contents
+          children: undefined,
+        };
+
+        folderMap.set(folderPath, folderNode);
+
+        // Find parent folder
+        const parentPath = dirname(folderPath);
+        if (parentPath && parentPath !== treeRoot && parentPath !== "/") {
+          const parentNode = folderMap.get(parentPath);
+          if (parentNode) {
+            if (!parentNode.children) {
+              parentNode.children = [];
+            }
+            parentNode.children.push(folderNode);
+          } else {
+            // Parent not in our set yet, add to root
+            rootFolders.push(folderNode);
+          }
+        } else {
+          // Root level folder (relative to tree root)
+          rootFolders.push(folderNode);
+        }
+      });
+
+      // All and Files mode: add matching files as children of their parent folder
+      if (mode === "all" || mode === "files") {
+        results.forEach((result) => {
+          if (result.isDirectory) return;
+          const parentPath = dirname(result.path);
+          if (!parentPath || parentPath === "." || parentPath === "/") return;
+          if (searchRootPath && !parentPath.startsWith(searchRootPath)) return;
+
+          const parentNode = folderMap.get(parentPath);
+          if (parentNode) {
+            const fileNode: FileNode = {
+              id: `search-file-${result.path}`,
+              name: result.name,
+              type: "file",
+              path: result.path,
+              size: formatFileSize(result.size),
+              loaded: true,
+            };
+            if (!parentNode.children) {
+              parentNode.children = [];
+            }
+            if (!parentNode.children.some((c) => c.id === fileNode.id)) {
+              parentNode.children.push(fileNode);
+            }
+          }
+        });
+
+        folderMap.forEach((node) => {
+          if (node.children) {
+            node.children.sort((a, b) => {
+              if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            });
+          }
+        });
+      }
+
+      // Sort root folders alphabetically
+      rootFolders.sort((a, b) => a.name.localeCompare(b.name));
+
+      return rootFolders;
+    },
+    [],
+  );
 
   // Restore selected items after expanded folders are restored
   useEffect(() => {
@@ -922,7 +1096,7 @@ export const FilePane = ({
 
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRestoringExpanded]);
+  }, [isRestoringExpanded, getFlatNodeList]);
 
   useEffect(() => {
     let cancelled = false;
@@ -990,7 +1164,7 @@ export const FilePane = ({
             const savedState = getNavigationState(cardUUID);
             console.log(`${paneName} - Checking saved state for card UUID:`, cardUUID, "savedState:", savedState);
 
-            if (savedState && savedState.currentPath) {
+            if (savedState?.currentPath) {
               // Verify the saved path still exists, is accessible, AND is on the same volume as the card
               try {
                 console.log(`${paneName} - Verifying saved path exists:`, savedState.currentPath);
@@ -1187,7 +1361,7 @@ export const FilePane = ({
       timeouts.forEach((timeout) => clearTimeout(timeout));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoNavigateToCard, paneName]);
+  }, [autoNavigateToCard, paneName, getLastRightPaneVolumeUUID, getNavigationState, getVolumeName, getVolumeUUIDForPath, loadDirectory, paneType, refreshAvailableVolumes, saveLastRightPaneVolumeUUID]);
   // getNavigationState is intentionally omitted - it's stable (memoized) and only used inside async functions
 
   const loadSearchFolderContents = useCallback(
@@ -1251,7 +1425,7 @@ export const FilePane = ({
             if (entry.type === "folder") {
               return (
                 folderPathsWithMatches.has(entry.path) ||
-                Array.from(folderPathsWithMatches).some((p) => p.startsWith(entry.path + "/"))
+                Array.from(folderPathsWithMatches).some((p) => p.startsWith(`${entry.path}/`))
               );
             }
             return entry.name.toLowerCase().includes(query);
@@ -1277,7 +1451,7 @@ export const FilePane = ({
             if (entry.type === "folder") {
               return (
                 folderPathsWithMatches.has(entry.path) ||
-                Array.from(folderPathsWithMatches).some((p) => p.startsWith(entry.path + "/"))
+                Array.from(folderPathsWithMatches).some((p) => p.startsWith(`${entry.path}/`))
               );
             }
             return entry.name.toLowerCase().includes(query);
@@ -1436,7 +1610,7 @@ export const FilePane = ({
     }
   };
 
-  const handleVolumeSelect = useCallback(
+  const _handleVolumeSelect = useCallback(
     async (volume: VolumeOption) => {
       if (typeof window === "undefined") return;
 
@@ -1524,15 +1698,15 @@ export const FilePane = ({
       }
     },
     [
-      autoNavigateToCard,
-      getNavigationState,
-      getVolumeName,
-      getVolumeUUIDForPath,
-      loadDirectory,
-      normalizeVolumePath,
-      refreshAvailableVolumes,
-      rootPath,
-      saveLastRightPaneVolumeUUID,
+      autoNavigateToCard, 
+      getNavigationState, 
+      getVolumeName, 
+      getVolumeUUIDForPath, 
+      loadDirectory, 
+      normalizeVolumePath, 
+      refreshAvailableVolumes, 
+      rootPath, 
+      saveLastRightPaneVolumeUUID, paneType
     ],
   );
 
@@ -1697,7 +1871,7 @@ export const FilePane = ({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory]);
+  }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory, getFlatNodeList]);
 
   useEffect(() => {
     if (typeof refreshToken !== "number") return;
@@ -1825,23 +1999,6 @@ export const FilePane = ({
     };
   }, [folderViewRoot, paneType]);
 
-  // Helper to get flat list of nodes for shift-click range selection
-  const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
-    const flat: FileNode[] = [];
-    const traverse = (nodeList: FileNode[]) => {
-      for (const node of nodeList) {
-        if (node.id !== "parent-link") {
-          flat.push(node);
-        }
-        if (node.children) {
-          traverse(node.children);
-        }
-      }
-    };
-    traverse(nodes);
-    return flat;
-  }, []);
-
   // Register this pane's clear selection function and handle pane activation
   useEffect(() => {
     const clearSelection = () => {
@@ -1911,7 +2068,7 @@ export const FilePane = ({
               path: (() => {
                 const parts = currentRootPath.split("/").filter(Boolean);
                 return currentRootPath.startsWith("/")
-                  ? "/" + parts.slice(0, -1).join("/")
+                  ? `/${parts.slice(0, -1).join("/")}`
                   : parts.slice(0, -1).join("/") || "/";
               })(),
               loaded: false,
@@ -2049,17 +2206,16 @@ export const FilePane = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    selectedItems.size,
-    lastSelectedIndex,
-    fileTree,
-    searchQuery,
-    searchResults,
-    currentRootPath,
-    rootPath,
-    getFlatNodeList,
-    expandedFolders,
-    navigateToFolder,
-    toggleFolder,
+    lastSelectedIndex, 
+    fileTree, 
+    searchQuery, 
+    searchResults, 
+    currentRootPath, 
+    rootPath, 
+    getFlatNodeList, 
+    expandedFolders, 
+    navigateToFolder, 
+    toggleFolder, buildFolderTreeFromSearchResults, folderViewRoot
   ]);
 
   const navigateToParent = async () => {
@@ -2069,7 +2225,7 @@ export const FilePane = ({
     if (parts.length <= 1) return; // Already at root
 
     const parentPath = currentRootPath.startsWith("/")
-      ? "/" + parts.slice(0, -1).join("/")
+      ? `/${parts.slice(0, -1).join("/")}`
       : parts.slice(0, -1).join("/");
 
     await navigateToFolder(parentPath);
@@ -2508,21 +2664,21 @@ export const FilePane = ({
       });
     },
     [
-      countFilesRecursively,
-      convertFiles,
-      fileFormat,
-      loadDirectory,
-      mono,
-      normalize,
-      onFileTransfer,
-      paneType,
-      pitch,
-      sanitizeFilename,
-      shortenFilename,
-      shortenFilenameMaxLength,
-      sampleDepth,
-      sampleRate,
-      trimStart,
+      countFilesRecursively, 
+      convertFiles, 
+      fileFormat, 
+      loadDirectory, 
+      mono, 
+      normalize, 
+      onFileTransfer, 
+      paneType, 
+      pitch, 
+      sanitizeFilename, 
+      shortenFilename, 
+      shortenFilenameMaxLength, 
+      sampleDepth, 
+      sampleRate, 
+      trimStart, promptOverwriteChoice
     ],
   );
 
@@ -2724,19 +2880,19 @@ export const FilePane = ({
       });
     },
     [
-      paneType,
-      pitch,
-      sanitizeFilename,
-      shortenFilename,
-      shortenFilenameMaxLength,
-      fileFormat,
-      sampleRate,
-      sampleDepth,
-      mono,
-      normalize,
-      trimStart,
-      loadDirectory,
-      onFileTransfer,
+      paneType, 
+      pitch, 
+      sanitizeFilename, 
+      shortenFilename, 
+      shortenFilenameMaxLength, 
+      fileFormat, 
+      sampleRate, 
+      sampleDepth, 
+      mono, 
+      normalize, 
+      trimStart, 
+      loadDirectory, 
+      onFileTransfer, promptOverwriteChoice
     ],
   );
 
@@ -3278,7 +3434,7 @@ export const FilePane = ({
     handleDeleteRef.current = handleDelete;
   }, [handleDelete]);
 
-  const handleEject = async () => {
+  const _handleEject = async () => {
     if (!isCardMounted || !rootPath) return;
 
     try {
@@ -3446,7 +3602,7 @@ export const FilePane = ({
         isSearchLoadingRef.current = false;
       }
     };
-  }, [searchQuery, loading, currentRootPath]);
+  }, [searchQuery, loading, currentRootPath, paneType]);
 
   const checkPackJsonForFolder = useCallback(
     async (folderPath: string) => {
@@ -3490,7 +3646,7 @@ export const FilePane = ({
               path: (() => {
                 const parts = currentRootPath.split("/").filter(Boolean);
                 return currentRootPath.startsWith("/")
-                  ? "/" + parts.slice(0, -1).join("/")
+                  ? `/${parts.slice(0, -1).join("/")}`
                   : parts.slice(0, -1).join("/") || "/";
               })(),
               loaded: false,
@@ -3501,7 +3657,7 @@ export const FilePane = ({
 
     const flatNodes = depth === 0 ? getFlatNodeList(itemsToRender.filter((n) => n.id !== "parent-link")) : [];
 
-    return itemsToRender.map((node, index) => {
+    return itemsToRender.map((node, _index) => {
       const isExpanded = expandedFolders.has(node.id);
       const hasChildren = node.children && node.children.length > 0;
       const isDragOver = dragOverPath === node.path;
@@ -3979,165 +4135,6 @@ export const FilePane = ({
     });
   };
 
-  // Convert search results to folder tree structure - only show folders containing matches
-  const buildFolderTreeFromSearchResults = useCallback(
-    (
-      results: Array<{ name: string; path: string; type: "file" | "folder"; size: number; isDirectory: boolean }>,
-      searchRootPath?: string,
-      mode: "all" | "folders" | "files" = "all",
-    ): FileNode[] => {
-      if (results.length === 0) return [];
-
-      // Extract all unique folder paths that contain matches
-      const folderPaths = new Set<string>();
-
-      const addAncestorChain = (path: string) => {
-        let p = path;
-        while (p && p !== "." && p !== "/") {
-          if (!searchRootPath || p.startsWith(searchRootPath)) {
-            folderPaths.add(p);
-          }
-          p = dirname(p);
-        }
-      };
-
-      results.forEach((result) => {
-        if (mode === "files") {
-          // Files mode: only folders that contain a matching file (not folders that match by name)
-          if (result.isDirectory) return;
-          const parentPath = dirname(result.path);
-          if (parentPath && parentPath !== "." && parentPath !== "/") {
-            addAncestorChain(parentPath);
-          }
-        } else {
-          // All/Folders mode: include parent of each result and folders that match
-          const parentPath = dirname(result.path);
-          if (parentPath && parentPath !== "." && parentPath !== "/") {
-            if (!searchRootPath || parentPath.startsWith(searchRootPath)) {
-              folderPaths.add(parentPath);
-            }
-          }
-          if (result.isDirectory) {
-            if (!searchRootPath || result.path.startsWith(searchRootPath)) {
-              folderPaths.add(result.path);
-            }
-          }
-        }
-      });
-
-      if (folderPaths.size === 0) return [];
-
-      // Build a tree structure from folder paths
-      const folderMap = new Map<string, FileNode>();
-      const rootFolders: FileNode[] = [];
-
-      // Sort folder paths by depth (shallowest first)
-      const sortedPaths = Array.from(folderPaths).sort((a, b) => {
-        const depthA = a.split("/").filter(Boolean).length;
-        const depthB = b.split("/").filter(Boolean).length;
-        return depthA - depthB;
-      });
-
-      // Determine the root path for the tree (either searchRootPath or common ancestor)
-      const treeRoot =
-        searchRootPath ||
-        (() => {
-          // Find common root path
-          const paths = Array.from(folderPaths);
-          if (paths.length === 0) return "";
-          let commonRoot = paths[0];
-          for (let i = 1; i < paths.length; i++) {
-            const parts = commonRoot.split("/").filter(Boolean);
-            const otherParts = paths[i].split("/").filter(Boolean);
-            let j = 0;
-            while (j < parts.length && j < otherParts.length && parts[j] === otherParts[j]) {
-              j++;
-            }
-            commonRoot = "/" + parts.slice(0, j).join("/");
-          }
-          return commonRoot || "/";
-        })();
-
-      sortedPaths.forEach((folderPath) => {
-        const parts = folderPath.split("/").filter(Boolean);
-        const folderName = parts[parts.length - 1];
-
-        // Create folder node
-        const folderNode: FileNode = {
-          id: `search-folder-${folderPath}`,
-          name: folderName,
-          type: "folder",
-          path: folderPath,
-          loaded: false, // Not loaded yet - user can expand to see contents
-          children: undefined,
-        };
-
-        folderMap.set(folderPath, folderNode);
-
-        // Find parent folder
-        const parentPath = dirname(folderPath);
-        if (parentPath && parentPath !== treeRoot && parentPath !== "/") {
-          const parentNode = folderMap.get(parentPath);
-          if (parentNode) {
-            if (!parentNode.children) {
-              parentNode.children = [];
-            }
-            parentNode.children.push(folderNode);
-          } else {
-            // Parent not in our set yet, add to root
-            rootFolders.push(folderNode);
-          }
-        } else {
-          // Root level folder (relative to tree root)
-          rootFolders.push(folderNode);
-        }
-      });
-
-      // All and Files mode: add matching files as children of their parent folder
-      if (mode === "all" || mode === "files") {
-        results.forEach((result) => {
-          if (result.isDirectory) return;
-          const parentPath = dirname(result.path);
-          if (!parentPath || parentPath === "." || parentPath === "/") return;
-          if (searchRootPath && !parentPath.startsWith(searchRootPath)) return;
-
-          const parentNode = folderMap.get(parentPath);
-          if (parentNode) {
-            const fileNode: FileNode = {
-              id: `search-file-${result.path}`,
-              name: result.name,
-              type: "file",
-              path: result.path,
-              size: formatFileSize(result.size),
-              loaded: true,
-            };
-            if (!parentNode.children) {
-              parentNode.children = [];
-            }
-            if (!parentNode.children.some((c) => c.id === fileNode.id)) {
-              parentNode.children.push(fileNode);
-            }
-          }
-        });
-
-        folderMap.forEach((node) => {
-          if (node.children) {
-            node.children.sort((a, b) => {
-              if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-              return a.name.localeCompare(b.name);
-            });
-          }
-        });
-      }
-
-      // Sort root folders alphabetically
-      rootFolders.sort((a, b) => a.name.localeCompare(b.name));
-
-      return rootFolders;
-    },
-    [searchQuery],
-  );
-
   // Sync searchResultsTree when search results or mode change
   useEffect(() => {
     if (!searchQuery) {
@@ -4203,7 +4200,7 @@ export const FilePane = ({
             path: (() => {
               const parts = (currentRootPath || "").split("/").filter(Boolean);
               return (currentRootPath || "").startsWith("/")
-                ? "/" + parts.slice(0, -1).join("/")
+                ? `/${parts.slice(0, -1).join("/")}`
                 : parts.slice(0, -1).join("/") || "/";
             })(),
             loaded: false,
@@ -4226,7 +4223,7 @@ export const FilePane = ({
     if (el) {
       (el as HTMLElement).scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [selectedItems, lastSelectedIndex, activeTreeNodes, currentRootPath, rootPath, getFlatNodeList]);
+  }, [selectedItems, lastSelectedIndex, activeTreeNodes, currentRootPath, rootPath, getFlatNodeList, folderViewRoot]);
 
   // Keep selections independent per pane so source and destination can both remain selected.
   const handlePaneClick = () => {
@@ -4542,7 +4539,7 @@ export const FilePane = ({
                       .split("/")
                       .filter(Boolean)
                       .map((segment, i, parts) => {
-                        const pathUpToHere = "/" + parts.slice(0, i + 1).join("/");
+                        const pathUpToHere = `/${parts.slice(0, i + 1).join("/")}`;
                         const isCurrent = i === parts.length - 1;
                         return (
                           <span key={pathUpToHere} className="flex items-center gap-1 shrink-0">
@@ -4809,7 +4806,7 @@ export const FilePane = ({
       </Dialog>
 
       {/* Copy Progress Dialog */}
-      {copyProgress && copyProgress.isVisible && (
+      {copyProgress?.isVisible && (
         <Dialog open={true} onOpenChange={() => {}}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>

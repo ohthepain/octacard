@@ -276,7 +276,7 @@ export function CreatePackDialog({
       const totalPhases: string[] = [];
       if (imageFile) totalPhases.push("image");
       if (folderPath) totalPhases.push("samples");
-      let phaseIndex = 0;
+      let _phaseIndex = 0;
 
       if (imageFile) {
         setUploadProgress({ current: 0, total: 1, phase: "Uploading cover image…" });
@@ -289,7 +289,7 @@ export function CreatePackDialog({
         });
         if (!res.ok) throw new Error("Failed to upload cover image");
         await updatePack(pack.id, { coverImageS3Key: key });
-        phaseIndex++;
+        _phaseIndex++;
       }
 
       if (folderPath) {
@@ -414,18 +414,17 @@ export function CreatePackDialog({
       setLoading(false);
     }
   }, [
-    name,
-    isPublic,
-    priceTokens,
-    defaultSampleTokens,
-    imageFile,
-    folderPath,
-    paneType,
-    defaultSampleTokens,
-    handleOpenChange,
-    onCreated,
-    isEditMode,
-    editPackId,
+    name, 
+    isPublic, 
+    priceTokens, 
+    defaultSampleTokens, 
+    imageFile, 
+    folderPath, 
+    paneType, 
+    handleOpenChange, 
+    onCreated, 
+    isEditMode, 
+    editPackId, session?.user?.name
   ]);
 
   return (

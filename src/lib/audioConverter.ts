@@ -139,18 +139,18 @@ async function detectSilenceStart(file: File, ffmpeg: FFmpeg): Promise<number> {
 
     // Parse the silencedetect output
     const silenceEndMatch = logText.match(/silence_end:\s*([\d.]+)/);
-    if (silenceEndMatch && silenceEndMatch[1]) {
+    if (silenceEndMatch?.[1]) {
       const silenceEnd = parseFloat(silenceEndMatch[1]);
       return Math.max(0, silenceEnd);
     }
 
     // Check for silence_start
     const silenceStartMatch = logText.match(/silence_start:\s*([\d.]+)/);
-    if (silenceStartMatch && silenceStartMatch[1]) {
+    if (silenceStartMatch?.[1]) {
       const silenceStart = parseFloat(silenceStartMatch[1]);
       if (silenceStart < 0.5) {
         const silenceEndMatch2 = logText.match(/silence_end:\s*([\d.]+)/);
-        if (silenceEndMatch2 && silenceEndMatch2[1]) {
+        if (silenceEndMatch2?.[1]) {
           return Math.max(0, parseFloat(silenceEndMatch2[1]));
         }
       }

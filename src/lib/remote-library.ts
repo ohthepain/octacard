@@ -252,7 +252,7 @@ export async function getPackCoverUploadUrl(
   packId: string,
   contentType: string
 ): Promise<{ key: string; uploadUrl: string; expiresIn: number }> {
-  const res = await apiFetch("/api/library/packs/" + encodeURIComponent(packId) + "/cover-upload-url", {
+  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}/cover-upload-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contentType }),
@@ -274,7 +274,7 @@ export async function updatePack(
     defaultSampleTokens?: number;
   }
 ): Promise<void> {
-  const res = await apiFetch("/api/library/packs/" + encodeURIComponent(packId), {
+  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),

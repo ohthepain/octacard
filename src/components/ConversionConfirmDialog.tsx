@@ -75,7 +75,7 @@ export const ConversionConfirmDialog = ({
     if (settings.sampleRate !== "dont-change") {
       const hz = parseSampleRateToHz(settings.sampleRate);
       if (hz) {
-        parts.push(`Sample Rate: ${hz >= 1000 ? hz / 1000 + " kHz" : hz + " Hz"}`);
+        parts.push(`Sample Rate: ${hz >= 1000 ? `${hz / 1000} kHz` : `${hz} Hz`}`);
       }
     }
     if (settings.sampleDepth !== "dont-change") {

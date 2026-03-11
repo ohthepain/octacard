@@ -201,7 +201,7 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
         wavesurferRef.current = null;
       }
     };
-  }, [sample.path, sample.paneType, sample.name, sample.id, index, updateSampleBars, setPlayingSamplePosition]);
+  }, [sample.path, sample.paneType, sample.name, sample.id, index, updateSampleBars, setPlayingSamplePosition, sample.bpm]);
 
   // Sync playhead from unified player: multi uses playingSamplePositions/playingSamplePosition, single uses playerCurrentTime when this sample matches
   const currentTime =
@@ -216,7 +216,7 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
       const safeTime = Math.min(currentTime, dur * 0.9999);
       ws.seekTo(safeTime / dur);
     }
-  }, [sample.id, currentTime]);
+  }, [currentTime]);
 
   return (
     <div

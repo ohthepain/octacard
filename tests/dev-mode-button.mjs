@@ -1,6 +1,6 @@
-import assert from "node:assert/strict";
 
-export async function assertDevModeButton(page, { convertButton, formatButton }) {
+
+export async function assertDevModeButton(page, { convertButton: _convertButton, formatButton: _formatButton }) {
   const userMenuButton = page.getByTestId("user-menu");
   await userMenuButton.waitFor({ state: "visible" });
 

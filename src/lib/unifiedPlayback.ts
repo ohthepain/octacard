@@ -418,14 +418,14 @@ export async function startUnifiedPlayback(
       const playDuration = s.loopEnd - s.playStart;
       const remainingTime = playDuration - posInLoop;
       const envInterval = 0.01;
-      let lastGain = newGain;
+      let _lastGain = newGain;
       for (let bufT = envInterval; bufT < remainingTime; bufT += envInterval) {
         const bufTime = currentTimeSec + bufT;
         const envelopeGainAtTime = getGainAtTime(s.envelopePoints, bufTime);
         const gain = envelopeGainAtTime * masterVol * clampedVolume;
         const outTime = now + bufT / s.playbackRate;
         s.gainNode.gain.linearRampToValueAtTime(gain, outTime);
-        lastGain = gain;
+        _lastGain = gain;
       }
     } else {
       // Simple volume update

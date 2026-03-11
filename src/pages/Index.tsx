@@ -49,7 +49,7 @@ function dirname(filePath: string): string {
   if (parts.length <= 1) {
     return "/";
   }
-  return "/" + parts.slice(0, -1).join("/");
+  return `/${parts.slice(0, -1).join("/")}`;
 }
 
 function basename(filePath: string): string {
@@ -254,7 +254,7 @@ const Index = () => {
     if (!fileSystemService.hasRootForPane("source") || !fileSystemService.hasRootForPane("dest")) return;
     if (requestedDemoPaths.sourcePath) setRequestedSourcePath(requestedDemoPaths.sourcePath);
     if (requestedDemoPaths.destPath) setRequestedDestPath(requestedDemoPaths.destPath);
-  }, [tourActive, requestedDemoPaths?.sourcePath, requestedDemoPaths?.destPath]);
+  }, [tourActive, requestedDemoPaths?.sourcePath, requestedDemoPaths?.destPath, requestedDemoPaths]);
 
   useEffect(() => {
     if (!unsupportedBrowserDialogOpen) return;

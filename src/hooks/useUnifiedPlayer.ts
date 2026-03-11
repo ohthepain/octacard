@@ -33,7 +33,7 @@ export function useUnifiedPlayer() {
       // Check if only volume/mute changed (not structure)
       if (currKeys === prevKeys) {
         // Volume or mute changed - update in real-time
-        if (playbackRef.current && playbackRef.current.setSampleVolume) {
+        if (playbackRef.current?.setSampleVolume) {
           for (const s of multiStack) {
             const effectiveVolume = s.muted ? 0 : (s.volume ?? 1);
             playbackRef.current.setSampleVolume(s.id, effectiveVolume);
@@ -46,7 +46,7 @@ export function useUnifiedPlayer() {
       playbackRef.current?.stopSilent();
       playbackRef.current = null;
       usePlayerStore.setState({ stack: multiStack, activeSampleId: multiStack[0]?.id ?? null });
-      const { volume, playbackRate } = playerState;
+      const { volume } = playerState;
       const globalTempoBpm = useMultiSampleStore.getState().globalTempoBpm;
       const setPlayingSamplePosition = useMultiSampleStore.getState().setPlayingSamplePosition;
       const setPlayingSamplePositions = useMultiSampleStore.getState().setPlayingSamplePositions;

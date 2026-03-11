@@ -220,7 +220,7 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
         addLog("Folder selection cancelled.");
       } else {
         console.error(err);
-        addLog("Error: " + String(err));
+        addLog(`Error: ${String(err)}`);
         toast.error("Batch processing failed");
       }
     } finally {

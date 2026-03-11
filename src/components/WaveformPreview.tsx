@@ -6,7 +6,7 @@ interface WaveformPreviewProps {
   sampleId: string;
 }
 
-export const WaveformPreview = ({ sampleId }: WaveformPreviewProps) => {
+export const WaveformPreview = ({ sampleId: _sampleId }: WaveformPreviewProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
 
   return (

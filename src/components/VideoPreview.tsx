@@ -27,7 +27,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
   const [isLoading, setIsLoading] = useState(true);
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [_isFullscreen, setIsFullscreen] = useState(false);
 
   // Get video file as blob data URL
   useEffect(() => {
@@ -71,7 +71,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
   // Cleanup video URL when component unmounts or file changes
   useEffect(() => {
     return () => {
-      if (videoUrl && videoUrl.startsWith("data:")) {
+      if (videoUrl?.startsWith("data:")) {
         // Revoke object URL if it was created (though we're using data URLs, not object URLs)
         // Data URLs don't need cleanup, but we'll reset state
         setVideoUrl("");
@@ -80,7 +80,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
       setCurrentTime(0);
       setDuration(0);
     };
-  }, [filePath, videoUrl]);
+  }, [videoUrl]);
 
   // Video event handlers
   useEffect(() => {
@@ -240,7 +240,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
   }, []);
 
   const formatTime = (seconds: number): string => {
-    if (isNaN(seconds)) return "0:00";
+    if (Number.isNaN(seconds)) return "0:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
