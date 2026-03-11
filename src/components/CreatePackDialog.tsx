@@ -20,12 +20,13 @@ import {
   checkSamplesExist,
   getSampleUploadUrlByContent,
   createSampleFromContent,
+  fetchUnsplashRandomPhoto,
 } from "@/lib/remote-library";
 import { computeAudioContentHash } from "@/lib/content-hash";
 import { fileSystemService } from "@/lib/fileSystem";
 import { useSession } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { Loader2, ImagePlus } from "lucide-react";
+import { Loader2, ImagePlus, Dices } from "lucide-react";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
@@ -113,6 +114,7 @@ export function CreatePackDialog({
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; phase: string } | null>(null);
   const [editLoadError, setEditLoadError] = useState<string | null>(null);
+  const [unsplashLoading, setUnsplashLoading] = useState(false);
 
   const reset = useCallback(() => {
     setName(defaultName);
@@ -123,6 +125,7 @@ export function CreatePackDialog({
     setImagePreview(null);
     setUploadProgress(null);
     setEditLoadError(null);
+    setUnsplashLoading(false);
   }, [defaultName]);
 
   const handleOpenChange = useCallback(
@@ -204,6 +207,19 @@ export function CreatePackDialog({
     },
     [handleImage]
   );
+
+  const handleUnsplashRandom = useCallback(async () => {
+    setUnsplashLoading(true);
+    try {
+      const blob = await fetchUnsplashRandomPhoto(name.trim() || undefined);
+      const file = new File([blob], "unsplash-cover.jpg", { type: "image/jpeg" });
+      handleImage(file);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to fetch random image");
+    } finally {
+      setUnsplashLoading(false);
+    }
+  }, [name, handleImage]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = name.trim();
@@ -469,50 +485,68 @@ export function CreatePackDialog({
 
           <div className="grid gap-2">
             <Label>Cover image</Label>
-            <div
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className={`relative flex aspect-square w-full max-w-[200px] items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
-                isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 bg-muted/30"
-              }`}
-            >
-              {imagePreview ? (
-                <>
-                  <img
-                    src={imagePreview}
-                    alt="Cover preview"
-                    className="h-full w-full object-cover rounded-md"
-                    referrerPolicy="no-referrer"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="absolute right-2 top-2"
-                    onClick={() => {
-                      setImageFile(null);
-                      setImagePreview((p) => {
-                        if (p?.startsWith("blob:")) URL.revokeObjectURL(p);
-                        return null;
-                      });
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </>
-              ) : (
-                <label className="flex cursor-pointer flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground">
-                  <ImagePlus className="h-8 w-8" />
-                  <span>Drag an image here or click to browse</span>
-                  <input
-                    type="file"
-                    accept={IMAGE_TYPES.join(",")}
-                    className="sr-only"
-                    onChange={handleFileInput}
-                  />
-                </label>
-              )}
+            <div className="flex items-start gap-2">
+              <div
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                className={`relative flex aspect-square w-full max-w-[200px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
+                  isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 bg-muted/30"
+                }`}
+              >
+                {imagePreview ? (
+                  <>
+                    <img
+                      src={imagePreview}
+                      alt="Cover preview"
+                      className="h-full w-full object-cover rounded-md"
+                      referrerPolicy="no-referrer"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="absolute right-2 top-2"
+                      onClick={() => {
+                        setImageFile(null);
+                        setImagePreview((p) => {
+                          if (p?.startsWith("blob:")) URL.revokeObjectURL(p);
+                          return null;
+                        });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </>
+                ) : (
+                  <label className="flex cursor-pointer flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground">
+                    <ImagePlus className="h-8 w-8" />
+                    <span>Drag an image here or click to browse</span>
+                    <input
+                      type="file"
+                      accept={IMAGE_TYPES.join(",")}
+                      className="sr-only"
+                      onChange={handleFileInput}
+                    />
+                  </label>
+                )}
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="h-9 w-9 shrink-0"
+                onClick={handleUnsplashRandom}
+                disabled={unsplashLoading}
+                title="Get random image from Unsplash"
+                aria-label="Get random image from Unsplash"
+              >
+                {unsplashLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Dices className="h-4 w-4" />
+                )}
+              </Button>
             </div>
           </div>
 
