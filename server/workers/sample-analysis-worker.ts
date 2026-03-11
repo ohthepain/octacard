@@ -9,10 +9,7 @@ import { prisma } from "../db.js";
 import { getFromS3 } from "../s3.js";
 import { pipeline } from "@xenova/transformers";
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import ffmpegPath from "ffmpeg-static";
-import { TAXONOMY_ATTRIBUTES, TAXONOMY_VALUES } from "../../lib/taxonomy.js";
-import { TAXONOMY_PROMPTS } from "../../lib/taxonomy-prompts.js";
 
 const require = createRequire(import.meta.url);
 
@@ -26,6 +23,73 @@ process.stdout.write = _out;
 process.stderr.write = _err;
 
 const QUEUE_NAME = "sample-analysis";
+const TAXONOMY_CACHE_TTL_MS = 30_000;
+
+type TaxonomyCategory = {
+  attributeKey: string;
+  values: Array<{ id: string; key: string; prompt: string }>;
+};
+
+let taxonomyCache:
+  | {
+      loadedAt: number;
+      categories: TaxonomyCategory[];
+    }
+  | null = null;
+
+function buildTaxonomyPrompt(attributeKey: string, valueKey: string): string {
+  const value = valueKey.replace(/[_-]+/g, " ").trim();
+  switch (attributeKey) {
+    case "instrument_family":
+      return `${value} instrument`;
+    case "instrument_type":
+      return `${value} sound`;
+    case "style":
+      return `${value} style`;
+    case "descriptor":
+      return `${value} timbre`;
+    case "mood":
+      return `${value} mood`;
+    default:
+      return value;
+  }
+}
+
+async function loadTaxonomyCategoriesFromDb(): Promise<TaxonomyCategory[]> {
+  const now = Date.now();
+  if (taxonomyCache && now - taxonomyCache.loadedAt < TAXONOMY_CACHE_TTL_MS) {
+    return taxonomyCache.categories;
+  }
+
+  const attributes = await prisma.taxonomyAttribute.findMany({
+    select: { id: true, key: true },
+    orderBy: { key: "asc" },
+  });
+
+  const categories: TaxonomyCategory[] = [];
+  for (const attribute of attributes) {
+    const values = await prisma.$queryRaw<Array<{ id: string; key: string }>>`
+      SELECT id, key
+      FROM "taxonomy_value"
+      WHERE "attributeId" = ${attribute.id}
+      ORDER BY "sortOrder" ASC, key ASC
+    `;
+
+    if (values.length === 0) continue;
+
+    categories.push({
+      attributeKey: attribute.key,
+      values: values.map((value) => ({
+        id: value.id,
+        key: value.key,
+        prompt: buildTaxonomyPrompt(attribute.key, value.key),
+      })),
+    });
+  }
+
+  taxonomyCache = { loadedAt: now, categories };
+  return categories;
+}
 
 /** Decode audio file to Float32Array (mono, 44.1kHz) using ffmpeg. Node.js has no AudioContext. */
 async function decodeAudioToFloat32(
@@ -171,10 +235,11 @@ async function analyzeSample(sampleId: string, s3Key: string) {
     }> = [];
     let rank = 0;
 
-    for (const attr of TAXONOMY_ATTRIBUTES) {
-      const values = [...TAXONOMY_VALUES[attr]];
-      const prompts = TAXONOMY_PROMPTS[attr];
-      const candidateLabels = values.map((_, i) => prompts[i] ?? values[i]);
+    const taxonomyCategories = await loadTaxonomyCategoriesFromDb();
+
+    for (const category of taxonomyCategories) {
+      const candidateLabels = category.values.map((value) => value.prompt);
+      if (candidateLabels.length === 0) continue;
 
       const scores = await classifier(audio, candidateLabels, {
         hypothesis_template: "This is {}.",
@@ -184,11 +249,7 @@ async function analyzeSample(sampleId: string, s3Key: string) {
         const top = scores[0] as { label?: string; score?: number } | undefined;
         if (top?.label != null && top?.score != null) {
           const idx = candidateLabels.indexOf(top.label);
-          const canonicalKey = idx >= 0 ? values[idx] : values[0];
-          const taxonomyValue = await prisma.taxonomyValue.findFirst({
-            where: { key: canonicalKey },
-            select: { id: true },
-          });
+          const taxonomyValue = idx >= 0 ? category.values[idx] : category.values[0];
           if (taxonomyValue) {
             annotations.push({
               taxonomyValueId: taxonomyValue.id,

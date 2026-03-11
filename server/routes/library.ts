@@ -1009,6 +1009,42 @@ libraryApp.get("/samples/:id/analysis", async (c) => {
   });
 });
 
+libraryApp.post("/samples/:id/analysis/retry", async (c) => {
+  const user = c.get("user");
+  const sampleId = c.req.param("id");
+
+  const readable = await canReadSample(user.id, sampleId);
+  if (!readable) {
+    throw new HTTPException(403, { message: "You do not have access to this sample" });
+  }
+
+  const sample = await prisma.sample.findUnique({
+    where: { id: sampleId },
+    select: { id: true, s3Key: true, analysisStatus: true },
+  });
+  if (!sample) {
+    throw new HTTPException(404, { message: "Sample not found" });
+  }
+
+  if (sample.analysisStatus === "PROCESSING") {
+    throw new HTTPException(409, { message: "Analysis is already processing" });
+  }
+
+  await prisma.sample.update({
+    where: { id: sample.id },
+    data: {
+      analysisStatus: "PENDING",
+      analysisError: null,
+    },
+  });
+
+  enqueueSampleAnalysis(sample.id, sample.s3Key).catch((err) =>
+    console.error("[library] Failed to enqueue sample analysis:", err)
+  );
+
+  return c.json({ ok: true });
+});
+
 libraryApp.get("/samples/:id/download", async (c) => {
   const user = c.get("user");
   const sampleId = c.req.param("id");

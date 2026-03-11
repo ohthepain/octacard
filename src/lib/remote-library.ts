@@ -132,6 +132,15 @@ export async function getSampleAnalysis(sampleId: string): Promise<SampleAnalysi
   return (await res.json()) as SampleAnalysisResponse;
 }
 
+export async function retrySampleAnalysis(sampleId: string): Promise<void> {
+  const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/analysis/retry`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to queue sample analysis (${res.status})`);
+  }
+}
+
 export async function addSampleToCollection(sampleId: string): Promise<void> {
   const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/add-to-collection`, {
     method: "POST",

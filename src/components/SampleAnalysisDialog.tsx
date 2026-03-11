@@ -5,8 +5,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2, BarChart3 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { getSampleAnalysis, type SampleAnalysisResponse } from "@/lib/remote-library";
+import { Button } from "@/components/ui/button";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getSampleAnalysis, retrySampleAnalysis, type SampleAnalysisResponse } from "@/lib/remote-library";
+import { toast } from "sonner";
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
   bpm: "BPM",
@@ -35,10 +37,26 @@ export function SampleAnalysisDialog({
   sampleId,
   sampleName,
 }: SampleAnalysisDialogProps) {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["sample-analysis", sampleId],
     queryFn: () => getSampleAnalysis(sampleId!),
     enabled: open && !!sampleId,
+  });
+  const retryMutation = useMutation({
+    mutationFn: async () => {
+      if (!sampleId) return;
+      await retrySampleAnalysis(sampleId);
+    },
+    onSuccess: async () => {
+      toast.success("Analysis queued");
+      await queryClient.invalidateQueries({ queryKey: ["sample-analysis", sampleId] });
+    },
+    onError: (err) => {
+      toast.error("Failed to re-run analysis", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    },
   });
 
   return (
@@ -75,14 +93,28 @@ export function SampleAnalysisDialog({
               )}
             </div>
           )}
-          {data && <AnalysisContent data={data} />}
+          {data && (
+            <AnalysisContent
+              data={data}
+              onRetry={sampleId ? () => retryMutation.mutate() : undefined}
+              retrying={retryMutation.isPending}
+            />
+          )}
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function AnalysisContent({ data }: { data: SampleAnalysisResponse }) {
+function AnalysisContent({
+  data,
+  onRetry,
+  retrying,
+}: {
+  data: SampleAnalysisResponse;
+  onRetry?: () => void;
+  retrying?: boolean;
+}) {
   const { analysisStatus, analysisError, durationMs, sampleRate, channels, attributes, taxonomy } = data;
 
   if (analysisStatus === "PENDING" || analysisStatus === "PROCESSING") {
@@ -97,8 +129,14 @@ function AnalysisContent({ data }: { data: SampleAnalysisResponse }) {
   if (analysisStatus === "FAILED") {
     return (
       <div className="space-y-2">
-        <div className="text-sm font-medium text-destructive">Analysis failed</div>
+        <div className="text-sm font-medium text-destructive">Analysis failed (last run)</div>
         {analysisError && <p className="text-sm text-muted-foreground">{analysisError}</p>}
+        {onRetry && (
+          <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
+            {retrying && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Re-run analysis
+          </Button>
+        )}
       </div>
     );
   }
@@ -197,6 +235,12 @@ function AnalysisContent({ data }: { data: SampleAnalysisResponse }) {
             No attributes or taxonomy data available.
           </div>
         )}
+      {analysisStatus === "READY" && onRetry && (
+        <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
+          {retrying && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+          Re-run analysis
+        </Button>
+      )}
     </div>
   );
 }

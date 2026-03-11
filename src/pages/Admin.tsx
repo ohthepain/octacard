@@ -1,11 +1,29 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, ExternalLink } from "lucide-react";
+import { LayoutDashboard, ExternalLink, Tags } from "lucide-react";
 import { useSession } from "@/lib/auth-client";
 import { isAdminOrSuperadmin } from "@/lib/auth-client";
 import { useEffect } from "react";
 
-const ADMIN_TOOLS = [
+type AdminTool =
+  | {
+      id: string;
+      label: string;
+      description: string;
+      href: string;
+      external: true;
+      icon: typeof LayoutDashboard;
+    }
+  | {
+      id: string;
+      label: string;
+      description: string;
+      href: "/admin/taxonomy";
+      external: false;
+      icon: typeof LayoutDashboard;
+    };
+
+const ADMIN_TOOLS: readonly AdminTool[] = [
   {
     id: "bull-board",
     label: "Queue Dashboard",
@@ -14,7 +32,15 @@ const ADMIN_TOOLS = [
     external: true,
     icon: LayoutDashboard,
   },
-] as const;
+  {
+    id: "taxonomy-editor",
+    label: "Taxonomy Editor",
+    description: "Add/remove instrument families and instrument types",
+    href: "/admin/taxonomy",
+    external: false,
+    icon: Tags,
+  },
+];
 
 export default function Admin() {
   const { data: session, isPending } = useSession();

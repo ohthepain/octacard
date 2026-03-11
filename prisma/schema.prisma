@@ -168,13 +168,30 @@ model TaxonomyValue {
   id          String                    @id @default(cuid())
   attributeId String
   key         String                    // canonical ID: techno, kick, warm
+  sortOrder   Int                       @default(0)
   attribute   TaxonomyAttribute         @relation(fields: [attributeId], references: [id], onDelete: Cascade)
   annotations SampleAnnotation[]
   translations TaxonomyValueTranslation[]
+  familyTypeLinks TaxonomyFamilyType[]  @relation("FamilyTypeFamily")
+  typeFamilyLinks TaxonomyFamilyType[]  @relation("FamilyTypeType")
 
   @@unique([attributeId, key])
   @@index([attributeId])
   @@map("taxonomy_value")
+}
+
+// Mapping table for instrument_family -> instrument_type hierarchy in admin taxonomy editor
+model TaxonomyFamilyType {
+  familyValueId String
+  typeValueId   String
+  sortOrder     Int           @default(0)
+  createdAt     DateTime      @default(now())
+  familyValue   TaxonomyValue @relation("FamilyTypeFamily", fields: [familyValueId], references: [id], onDelete: Cascade)
+  typeValue     TaxonomyValue @relation("FamilyTypeType", fields: [typeValueId], references: [id], onDelete: Cascade)
+
+  @@id([familyValueId, typeValueId])
+  @@index([typeValueId])
+  @@map("taxonomy_family_type")
 }
 
 // Sample ↔ taxonomy value assignment (from rule layer interpreting model output)

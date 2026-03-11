@@ -34,6 +34,10 @@
     "release-screenshots": "concurrently -k -s first -n preview,capture \"pnpm:preview:it\" \"wait-on http://127.0.0.1:3010 && E2E_BASE_URL=http://127.0.0.1:3010 node scripts/capture-release-screenshots.mjs\"",
     "test": "vitest",
     "test:run": "vitest run",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "test:coverage": "vitest run --coverage",
     "test:e2e:coverage": "pnpm run build:coverage && concurrently -k -s first -n preview,e2e \"pnpm:preview:it\" \"wait-on http://127.0.0.1:3010 && E2E_BASE_URL=http://127.0.0.1:3010 pnpm exec playwright test --config=playwright.config.ts\"",
     "test:coverage:full": "pnpm run test:coverage && pnpm run test:e2e:coverage && node scripts/merge-coverage.mjs",
@@ -138,6 +142,7 @@
   },
   "devDependencies": {
     "@bgotink/playwright-coverage": "^0.3.2",
+    "@biomejs/biome": "^2.4.6",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^25.3.5",
