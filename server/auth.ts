@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { emailOTP, magicLink } from "better-auth/plugins";
+import { customSession, emailOTP, magicLink } from "better-auth/plugins";
 import { RoleName } from "@prisma/client";
 import { createRedisStorage } from "./redis.js";
 import { renderAuthEmailTemplate, sendAuthEmail } from "./auth-email.js";
@@ -135,6 +135,17 @@ export const auth = betterAuth({
         });
       },
       sendVerificationOnSignUp: true,
+    }),
+    customSession(async ({ user, session }) => {
+      const roles = await prisma.userRole.findMany({
+        where: { userId: session.userId },
+        select: { role: true },
+      });
+      return {
+        user,
+        session,
+        roles: roles.map((r) => r.role),
+      };
     }),
   ],
   trustedOrigins: (() => {

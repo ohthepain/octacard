@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api-client";
 
-export type RemoteScope = "mine" | "all";
+export type RemoteScope = "mine" | "all" | "explore";
 export type RemoteSearchType = "packs" | "samples" | "both";
 
 export interface RemotePackSummary {
@@ -22,6 +22,11 @@ export interface RemotePackDetails {
   isOwner: boolean;
   coverImageS3Key: string | null;
   coverImageUrl: string | null;
+  /** Same-origin proxy URL for embedding (avoids COEP issues in dialogs) */
+  coverImageProxyUrl: string | null;
+  isPublic: boolean;
+  priceTokens: number;
+  defaultSampleTokens: number;
   childPackCount: number;
   sampleCount: number;
 }
@@ -218,7 +223,14 @@ export async function getPackCoverUploadUrl(
 
 export async function updatePack(
   packId: string,
-  data: { name?: string; parentId?: string | null; coverImageS3Key?: string | null }
+  data: {
+    name?: string;
+    parentId?: string | null;
+    coverImageS3Key?: string | null;
+    isPublic?: boolean;
+    priceTokens?: number;
+    defaultSampleTokens?: number;
+  }
 ): Promise<void> {
   const res = await apiFetch("/api/library/packs/" + encodeURIComponent(packId), {
     method: "PATCH",

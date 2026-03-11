@@ -1,13 +1,16 @@
-import { ArrowLeft, Folder } from "lucide-react";
+import { ArrowLeft, Folder, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface PackViewProps {
   name: string;
   coverImageUrl: string | null;
+  creatorName?: string;
   onClose: () => void;
+  isOwner?: boolean;
+  onEdit?: () => void;
 }
 
-export function PackView({ name, coverImageUrl, onClose }: PackViewProps) {
+export function PackView({ name, coverImageUrl, creatorName, onClose, isOwner, onEdit }: PackViewProps) {
   return (
     <div className="flex items-center gap-3 p-3 border-b border-border bg-card/50 shrink-0">
       <Button
@@ -31,9 +34,22 @@ export function PackView({ name, coverImageUrl, onClose }: PackViewProps) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium truncate">{name}</div>
-          <div className="text-xs text-muted-foreground">Pack</div>
+          <div className="text-xs text-muted-foreground truncate">{creatorName ? `by ${creatorName}` : "Pack"}</div>
         </div>
       </div>
+      {isOwner && onEdit && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="shrink-0 gap-1.5"
+          onClick={onEdit}
+          aria-label="Edit pack"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          Edit pack
+        </Button>
+      )}
     </div>
   );
 }

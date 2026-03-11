@@ -18,6 +18,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "db:make-admin": "tsx scripts/make-admin.ts",
     "prisma": "prisma",
     "generate:key": "openssl rand -hex 32",
     "build": "vite build",

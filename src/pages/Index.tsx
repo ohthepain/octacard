@@ -31,6 +31,7 @@ import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
 import { toast } from "sonner";
 import { UserMenu } from "@/components/UserMenu";
+import { DevModeToggle } from "@/components/Header";
 import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { capture } from "@/lib/analytics";
 import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
@@ -188,7 +189,7 @@ const Index = () => {
   const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
   const [libraryMode, setLibraryMode] = useState<"local" | "global">("local");
-  const [globalScope, setGlobalScope] = useState<"mine" | "all">("all");
+  const [globalScope, setGlobalScope] = useState<"mine" | "all" | "explore">("all");
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const waveformEditor = useWaveformEditorStore(
     useShallow((s) => ({
@@ -795,9 +796,9 @@ const Index = () => {
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
-      <header className="h-14 border-b border-border bg-card grid grid-cols-[1fr_auto_1fr] items-center px-4 shrink-0 gap-3">
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="flex items-center gap-3">
+      <header className="h-14 border-b border-border bg-card flex items-center px-4 shrink-0 gap-4">
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
             <img src="/favicon.png" alt="" className="w-8 h-8 dark:hidden" aria-hidden />
             <img src="/logo_white.png" alt="" className="w-8 h-8 hidden dark:block" aria-hidden />
             <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
@@ -828,11 +829,11 @@ const Index = () => {
             bpmAuto={bpmAuto}
             onBpmAutoChange={setBpmAuto}
           />
-          <div className="flex items-center rounded-md border border-border overflow-hidden">
+          <div className="flex items-center rounded-md border border-border overflow-hidden shrink-0">
             <Button
               size="sm"
               variant={libraryMode === "global" ? "secondary" : "ghost"}
-              className="rounded-none h-8 px-2"
+              className="rounded-none h-8 px-2.5"
               aria-label="Global library mode"
               onClick={() => setLibraryMode("global")}
               title="Global"
@@ -842,7 +843,7 @@ const Index = () => {
             <Button
               size="sm"
               variant={libraryMode === "local" ? "secondary" : "ghost"}
-              className="rounded-none h-8 px-2"
+              className="rounded-none h-8 px-2.5"
               aria-label="Local files mode"
               onClick={() => setLibraryMode("local")}
               title="Local"
@@ -851,11 +852,11 @@ const Index = () => {
             </Button>
           </div>
           {libraryMode === "global" && (
-            <div className="flex items-center rounded-md border border-border overflow-hidden">
+            <div className="flex items-center rounded-md border border-border overflow-hidden shrink-0">
               <Button
                 size="sm"
                 variant={globalScope === "mine" ? "secondary" : "ghost"}
-                className="rounded-none h-8 px-2 text-xs"
+                className="rounded-none h-8 px-3 text-xs whitespace-nowrap"
                 onClick={() => setGlobalScope("mine")}
               >
                 Mine
@@ -863,25 +864,35 @@ const Index = () => {
               <Button
                 size="sm"
                 variant={globalScope === "all" ? "secondary" : "ghost"}
-                className="rounded-none h-8 px-2 text-xs"
+                className="rounded-none h-8 px-3 text-xs whitespace-nowrap"
                 onClick={() => setGlobalScope("all")}
               >
                 All
               </Button>
+              <Button
+                size="sm"
+                variant={globalScope === "explore" ? "secondary" : "ghost"}
+                className="rounded-none h-8 px-3 text-xs whitespace-nowrap"
+                onClick={() => setGlobalScope("explore")}
+              >
+                Explore
+              </Button>
             </div>
           )}
         </div>
-        <Button
-          onClick={handleStartConversion}
-          className="gap-2 justify-self-center"
-          data-testid="convert-button"
-          disabled={libraryMode === "global"}
-          title={libraryMode === "global" ? "Switch to local mode to convert local files" : undefined}
-        >
-          <Play className="w-4 h-4" />
-          Convert
-        </Button>
-        <div className="flex items-center gap-2 justify-self-end">
+        <div className="flex-1 min-w-0" aria-hidden />
+        {libraryMode !== "global" && (
+          <Button
+            onClick={handleStartConversion}
+            className="gap-2 shrink-0"
+            data-testid="convert-button"
+          >
+            <Play className="w-4 h-4" />
+            Convert
+          </Button>
+        )}
+        {libraryMode !== "global" && <div className="flex-1 min-w-0" aria-hidden />}
+        <div className="flex items-center gap-2 shrink-0">
           <FormatDropdown />
           <Button
             variant="ghost"
@@ -903,6 +914,7 @@ const Index = () => {
             About
           </Button>
           <ThemeToggle />
+          <DevModeToggle />
           <UserMenu />
         </div>
       </header>

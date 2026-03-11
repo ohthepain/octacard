@@ -14,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import {
   createPack,
+  getPack,
   getPackCoverUploadUrl,
   updatePack,
   checkSamplesExist,
@@ -87,6 +88,8 @@ interface CreatePackDialogProps {
   folderPath?: string;
   paneType?: "source" | "dest";
   onCreated?: (packId: string) => void;
+  /** When set, dialog opens in edit mode for this pack */
+  editPackId?: string | null;
 }
 
 export function CreatePackDialog({
@@ -96,8 +99,10 @@ export function CreatePackDialog({
   folderPath,
   paneType = "source",
   onCreated,
+  editPackId,
 }: CreatePackDialogProps) {
   const { data: session } = useSession();
+  const isEditMode = Boolean(editPackId);
   const [name, setName] = useState(defaultName);
   const [isPublic, setIsPublic] = useState(true);
   const [priceTokens, setPriceTokens] = useState(0);
@@ -107,6 +112,7 @@ export function CreatePackDialog({
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; phase: string } | null>(null);
+  const [editLoadError, setEditLoadError] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setName(defaultName);
@@ -116,6 +122,7 @@ export function CreatePackDialog({
     setImageFile(null);
     setImagePreview(null);
     setUploadProgress(null);
+    setEditLoadError(null);
   }, [defaultName]);
 
   const handleOpenChange = useCallback(
@@ -130,6 +137,32 @@ export function CreatePackDialog({
     if (open) setName(defaultName);
   }, [open, defaultName]);
 
+  useEffect(() => {
+    if (!open || !editPackId) return;
+    setEditLoadError(null);
+    setImageFile(null);
+    const loadingId = editPackId;
+    getPack(editPackId)
+      .then((pack) => {
+        if (loadingId !== editPackId) return;
+        setName(pack.name);
+        setIsPublic(pack.isPublic);
+        setPriceTokens(pack.priceTokens);
+        setDefaultSampleTokens(pack.defaultSampleTokens);
+        if (pack.coverImageProxyUrl) {
+          setImagePreview(pack.coverImageProxyUrl);
+        } else if (pack.coverImageUrl) {
+          setImagePreview(pack.coverImageUrl);
+        } else {
+          setImagePreview(null);
+        }
+      })
+      .catch((err) => {
+        if (loadingId !== editPackId) return;
+        setEditLoadError(err instanceof Error ? err.message : "Failed to load pack");
+      });
+  }, [open, editPackId]);
+
   const handleImage = useCallback((file: File) => {
     if (!IMAGE_TYPES.includes(file.type)) {
       toast.error("Please use a JPEG, PNG, WebP, or GIF image");
@@ -138,7 +171,7 @@ export function CreatePackDialog({
     setImageFile(file);
     const url = URL.createObjectURL(file);
     setImagePreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
       return url;
     });
   }, []);
@@ -182,18 +215,48 @@ export function CreatePackDialog({
     setUploadProgress(null);
 
     try {
+      let packId: string;
+
+      if (isEditMode && editPackId) {
+        packId = editPackId;
+        let coverImageS3Key: string | undefined;
+        if (imageFile) {
+          setUploadProgress({ current: 0, total: 1, phase: "Uploading cover image…" });
+          const squareBlob = await cropImageToSquare(imageFile);
+          const { uploadUrl, key } = await getPackCoverUploadUrl(packId, "image/jpeg");
+          const res = await fetch(uploadUrl, {
+            method: "PUT",
+            body: squareBlob,
+            headers: { "Content-Type": "image/jpeg" },
+          });
+          if (!res.ok) throw new Error("Failed to upload cover image");
+          coverImageS3Key = key;
+        }
+        await updatePack(packId, {
+          name: trimmed,
+          isPublic,
+          priceTokens,
+          defaultSampleTokens,
+          ...(coverImageS3Key !== undefined && { coverImageS3Key }),
+        });
+        setUploadProgress(null);
+        toast.success("Pack updated");
+        handleOpenChange(false);
+        onCreated?.(packId);
+        return;
+      }
+
       const pack = await createPack({
         name: trimmed,
         isPublic,
         priceTokens,
         defaultSampleTokens,
       });
+      packId = pack.id;
 
       const totalPhases: string[] = [];
       if (imageFile) totalPhases.push("image");
       if (folderPath) totalPhases.push("samples");
-      const phaseCount = totalPhases.length;
-
       let phaseIndex = 0;
 
       if (imageFile) {
@@ -303,6 +366,7 @@ export function CreatePackDialog({
           }
 
           const packJson = {
+            packId: pack.id,
             name: pack.name,
             coverImageS3Key: pack.coverImageS3Key,
             ownerName,
@@ -341,19 +405,26 @@ export function CreatePackDialog({
     defaultSampleTokens,
     handleOpenChange,
     onCreated,
+    isEditMode,
+    editPackId,
   ]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create pack</DialogTitle>
+          <DialogTitle>{isEditMode ? "Edit pack" : "Create pack"}</DialogTitle>
           <DialogDescription>
-            {folderPath
-              ? "Create a pack from this folder. Samples are deduplicated by content hash."
-              : "Create a pack. Add a cover image (optional) — it will be cropped to square."}
+            {isEditMode
+              ? "Update pack metadata and cover image."
+              : folderPath
+                ? "Create a pack from this folder. Samples are deduplicated by content hash."
+                : "Create a pack. Add a cover image (optional) — it will be cropped to square."}
           </DialogDescription>
         </DialogHeader>
+        {editLoadError && (
+          <p className="text-sm text-destructive">{editLoadError}</p>
+        )}
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
             <Label htmlFor="pack-name">Name</Label>
@@ -412,6 +483,7 @@ export function CreatePackDialog({
                     src={imagePreview}
                     alt="Cover preview"
                     className="h-full w-full object-cover rounded-md"
+                    referrerPolicy="no-referrer"
                   />
                   <Button
                     type="button"
@@ -421,7 +493,7 @@ export function CreatePackDialog({
                     onClick={() => {
                       setImageFile(null);
                       setImagePreview((p) => {
-                        if (p) URL.revokeObjectURL(p);
+                        if (p?.startsWith("blob:")) URL.revokeObjectURL(p);
                         return null;
                       });
                     }}
@@ -460,14 +532,14 @@ export function CreatePackDialog({
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={loading}>
+          <Button onClick={handleSubmit} disabled={loading || Boolean(editLoadError)}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating…
+                {isEditMode ? "Saving…" : "Creating…"}
               </>
             ) : (
-              "Create pack"
+              isEditMode ? "Save" : "Create pack"
             )}
           </Button>
         </DialogFooter>

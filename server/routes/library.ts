@@ -10,7 +10,7 @@ const libraryApp = new Hono<{ Variables: AppVariables }>();
 
 const searchSchema = z.object({
   q: z.string().trim().default(""),
-  scope: z.enum(["mine", "all"]).default("all"),
+  scope: z.enum(["mine", "all", "explore"]).default("all"),
   types: z.enum(["packs", "samples", "both"]).default("both"),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -27,6 +27,9 @@ const updatePackSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   parentId: z.string().trim().min(1).nullable().optional(),
   coverImageS3Key: z.string().trim().min(1).nullable().optional(),
+  isPublic: z.boolean().optional(),
+  priceTokens: z.number().int().min(0).optional(),
+  defaultSampleTokens: z.number().int().min(0).optional(),
 });
 
 const packCoverUploadSchema = z.object({
@@ -184,12 +187,15 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       }
     : {};
 
+  const packOwnerFilter =
+    scope === "mine" ? { ownerId: user.id } : scope === "explore" ? { ownerId: { not: user.id } } : {};
+
   const [packs, samples] = await Promise.all([
     types === "samples"
       ? Promise.resolve([])
       : prisma.pack.findMany({
           where: {
-            ...(scope === "mine" ? { ownerId: user.id } : {}),
+            ...packOwnerFilter,
             parentId: null,
             ...packNameFilter,
           },
@@ -213,7 +219,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       ? Promise.resolve([])
       : prisma.packSample.findMany({
           where: {
-            ...(scope === "mine" ? { ownerId: user.id } : {}),
+            ...(scope === "mine" ? { ownerId: user.id } : scope === "explore" ? { ownerId: { not: user.id } } : {}),
             ...sampleNameFilter,
           },
           include: {
@@ -307,7 +313,7 @@ libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
 libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const { name, parentId } = c.req.valid("json");
+  const { name, parentId, coverImageS3Key, isPublic, priceTokens, defaultSampleTokens } = c.req.valid("json");
 
   await requireOwnedPack(id, user.id);
 
@@ -324,9 +330,10 @@ libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) =
     data: {
       ...(name ? { name: normalizeName(name) } : {}),
       ...(parentId !== undefined ? { parentId } : {}),
-      ...(c.req.valid("json").coverImageS3Key !== undefined
-        ? { coverImageS3Key: c.req.valid("json").coverImageS3Key }
-        : {}),
+      ...(coverImageS3Key !== undefined ? { coverImageS3Key } : {}),
+      ...(isPublic !== undefined ? { isPublic } : {}),
+      ...(priceTokens !== undefined ? { priceTokens } : {}),
+      ...(defaultSampleTokens !== undefined ? { defaultSampleTokens } : {}),
     },
     select: {
       id: true,
@@ -442,6 +449,31 @@ libraryApp.get("/packs/:id/contents", async (c) => {
   });
 });
 
+libraryApp.get("/packs/:id/cover", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: { coverImageS3Key: true },
+  });
+  if (!pack || !pack.coverImageS3Key) {
+    throw new HTTPException(404, { message: "Pack cover not found" });
+  }
+
+  const buf = await getFromS3(pack.coverImageS3Key);
+  if (!buf) {
+    throw new HTTPException(404, { message: "Cover image not found" });
+  }
+
+  const ext = pack.coverImageS3Key.split(".").pop()?.toLowerCase();
+  const contentType = ext === "png" ? "image/png" : "image/jpeg";
+  return c.body(buf, 200, {
+    "Content-Type": contentType,
+    "Cache-Control": "private, max-age=3600",
+  });
+});
+
 libraryApp.get("/packs/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -453,6 +485,9 @@ libraryApp.get("/packs/:id", async (c) => {
       name: true,
       ownerId: true,
       coverImageS3Key: true,
+      isPublic: true,
+      priceTokens: true,
+      defaultSampleTokens: true,
       _count: { select: { children: true, packSamples: true } },
       owner: { select: { name: true } },
     },
@@ -462,8 +497,10 @@ libraryApp.get("/packs/:id", async (c) => {
   }
 
   let coverImageUrl: string | null = null;
+  let coverImageProxyUrl: string | null = null;
   if (pack.coverImageS3Key) {
     coverImageUrl = await getPresignedDownloadUrl(pack.coverImageS3Key, 3600);
+    coverImageProxyUrl = `/api/library/packs/${encodeURIComponent(id)}/cover`;
   }
 
   return c.json({
@@ -474,6 +511,10 @@ libraryApp.get("/packs/:id", async (c) => {
     isOwner: pack.ownerId === user.id,
     coverImageS3Key: pack.coverImageS3Key,
     coverImageUrl,
+    coverImageProxyUrl,
+    isPublic: pack.isPublic,
+    priceTokens: pack.priceTokens,
+    defaultSampleTokens: pack.defaultSampleTokens,
     childPackCount: pack._count.children,
     sampleCount: pack._count.packSamples,
   });

@@ -305,8 +305,10 @@ export const FilePane = ({
   const [createPackDialogOpen, setCreatePackDialogOpen] = useState(false);
   const [createPackFolderName, setCreatePackFolderName] = useState("");
   const [createPackFolderPath, setCreatePackFolderPath] = useState("");
+  const [createPackEditId, setCreatePackEditId] = useState<string | null>(null);
   const [folderViewRoot, setFolderViewRoot] = useState<string | null>(null);
   const [folderViewCoverUrl, setFolderViewCoverUrl] = useState<string | null>(null);
+  const [folderViewPackName, setFolderViewPackName] = useState<string | null>(null);
   const [packJsonCache, setPackJsonCache] = useState<Map<string, boolean>>(new Map());
   const { data: session } = useSession();
 
@@ -569,6 +571,10 @@ export const FilePane = ({
           // Directory exists, clear the error state
           setPathDoesNotExist(false);
           if (nodeId === "root") setLoading(false);
+
+          // Populate packJsonCache so context menu shows Edit pack correctly
+          const hasPackJson = result.data.some((e) => e.name === "pack.json");
+          setPackJsonCache((prev) => new Map(prev).set(dirPath, hasPackJson));
 
           // Filter out hidden files/folders (starting with '.' or '~')
           // Note: In web/File System Access API, "/" is the user's selected folder - show all contents.
@@ -1652,21 +1658,69 @@ export const FilePane = ({
         // Folder is the current view root - refresh the whole view
         await loadDirectory(folderPath, "root");
       } else {
-        // Folder not in tree (e.g. collapsed parent) - do full refresh
+        // Folder not in tree (e.g. collapsed parent) - do full refresh and populate cache for this folder
         await refreshCurrentDirectory();
+        const result = await fileSystemService.readDirectory(folderPath, paneType);
+        if (result.success && result.data) {
+          const hasPackJson = result.data.some((e) => e.name === "pack.json");
+          setPackJsonCache((prev) => new Map(prev).set(folderPath, hasPackJson));
+        }
+      }
+
+      // If we're viewing this folder as a pack, reload pack name from pack.json (e.g. after create/edit)
+      if (folderPath === folderViewRoot) {
+        const packJsonPath = joinPath(folderPath, "pack.json");
+        const packFile = await fileSystemService.getFile(packJsonPath, paneType);
+        if (packFile) {
+          try {
+            const text = await packFile.text();
+            const data = JSON.parse(text) as { name?: string };
+            if (typeof data.name === "string" && data.name.trim()) {
+              setFolderViewPackName(data.name.trim());
+            } else {
+              setFolderViewPackName(null);
+            }
+          } catch {
+            setFolderViewPackName(null);
+          }
+        } else {
+          setFolderViewPackName(null);
+        }
       }
     },
-    [fileTree, currentRootPath, folderViewRoot, loadDirectory, refreshCurrentDirectory],
+    [fileTree, currentRootPath, folderViewRoot, loadDirectory, refreshCurrentDirectory, paneType],
   );
 
-  // Load local pack cover image when in folder view
+  // Load local pack cover image and pack name when in folder view
   useEffect(() => {
     if (!folderViewRoot || !fileSystemService.hasRootForPane(paneType)) {
       setFolderViewCoverUrl(null);
+      setFolderViewPackName(null);
       return;
     }
     let cancelled = false;
-    const loadCover = async () => {
+    const loadPackMetadata = async () => {
+      // Load pack name from pack.json
+      const packJsonPath = joinPath(folderViewRoot, "pack.json");
+      const packFile = await fileSystemService.getFile(packJsonPath, paneType);
+      if (cancelled) return;
+      if (packFile) {
+        try {
+          const text = await packFile.text();
+          const data = JSON.parse(text) as { name?: string };
+          if (typeof data.name === "string" && data.name.trim()) {
+            setFolderViewPackName(data.name.trim());
+          } else {
+            setFolderViewPackName(null);
+          }
+        } catch {
+          setFolderViewPackName(null);
+        }
+      } else {
+        setFolderViewPackName(null);
+      }
+
+      // Load cover image
       for (const name of ["cover.png", "cover.jpg"]) {
         const path = joinPath(folderViewRoot, name);
         const result = await fileSystemService.getFileBlob(path, paneType);
@@ -1678,13 +1732,14 @@ export const FilePane = ({
       }
       setFolderViewCoverUrl(null);
     };
-    void loadCover();
+    void loadPackMetadata();
     return () => {
       cancelled = true;
       setFolderViewCoverUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
+      setFolderViewPackName(null);
     };
   }, [folderViewRoot, paneType]);
 
@@ -2671,6 +2726,7 @@ export const FilePane = ({
 
         // Write pack.json with pack metadata
         const packJson = {
+          packId: manifest.pack.id,
           name: packDetails.name,
           coverImageS3Key: packDetails.coverImageS3Key,
           ownerName: packDetails.ownerName,
@@ -3678,19 +3734,63 @@ export const FilePane = ({
                         return hasPackJson ? "Open pack" : "Open folder";
                       })()}
                     </ContextMenuItem>
-                    <ContextMenuItem
-                      onSelect={() => {
-                        if (!session?.user) {
-                          toast.error("Sign in to create packs");
-                          return;
-                        }
-                        setCreatePackFolderName(node.name);
-                        setCreatePackFolderPath(node.path);
-                        setCreatePackDialogOpen(true);
-                      }}
-                    >
-                      Create pack
-                    </ContextMenuItem>
+                    {(() => {
+                      const hasPackJson =
+                        node.children?.some((c) => c.name === "pack.json") ||
+                        packJsonCache.get(node.path) === true;
+                      if (hasPackJson) {
+                        return (
+                          <ContextMenuItem
+                            onSelect={async () => {
+                              if (!session?.user) {
+                                toast.error("Sign in to edit packs");
+                                return;
+                              }
+                              const packJsonPath = joinPath(node.path, "pack.json");
+                              const file = await fileSystemService.getFile(packJsonPath, paneType);
+                              if (!file) {
+                                toast.error("Could not read pack.json");
+                                return;
+                              }
+                              try {
+                                const text = await file.text();
+                                const data = JSON.parse(text) as { packId?: string };
+                                if (data.packId) {
+                                  setCreatePackFolderName(node.name);
+                                  setCreatePackFolderPath(node.path);
+                                  setCreatePackEditId(data.packId);
+                                  setCreatePackDialogOpen(true);
+                                } else {
+                                  toast.error(
+                                    "This pack was created before we stored remote IDs. Open it in the Remote library to edit."
+                                  );
+                                }
+                              } catch {
+                                toast.error("Invalid pack.json");
+                              }
+                            }}
+                          >
+                            Edit pack
+                          </ContextMenuItem>
+                        );
+                      }
+                      return (
+                        <ContextMenuItem
+                          onSelect={() => {
+                            if (!session?.user) {
+                              toast.error("Sign in to create packs");
+                              return;
+                            }
+                            setCreatePackFolderName(node.name);
+                            setCreatePackFolderPath(node.path);
+                            setCreatePackEditId(null);
+                            setCreatePackDialogOpen(true);
+                          }}
+                        >
+                          Create pack
+                        </ContextMenuItem>
+                      );
+                    })()}
                   </>
                 )}
                 {previewMode === "multi" && node.type === "file" && isAudioFile(node.name) && (
@@ -4254,7 +4354,7 @@ export const FilePane = ({
                 }}
               >
                 <PackView
-                  name={basename(folderViewRoot)}
+                  name={folderViewPackName ?? basename(folderViewRoot)}
                   coverImageUrl={folderViewCoverUrl}
                   onClose={() => {
                     const parent = dirname(folderViewRoot) || "/";
@@ -4603,10 +4703,14 @@ export const FilePane = ({
 
       <CreatePackDialog
         open={createPackDialogOpen}
-        onOpenChange={setCreatePackDialogOpen}
+        onOpenChange={(open) => {
+          setCreatePackDialogOpen(open);
+          if (!open) setCreatePackEditId(null);
+        }}
         defaultName={createPackFolderName}
         folderPath={createPackFolderPath}
         paneType={paneType}
+        editPackId={createPackEditId}
         onCreated={() => {
           if (createPackFolderPath) {
             refreshFolder(createPackFolderPath);

@@ -15,3 +15,16 @@ export const authClient = createAuthClient({
 });
 
 export const { signIn, signUp, signOut, useSession, deleteUser } = authClient;
+
+/** Session data with roles from customSession plugin (ADMIN, SUPERADMIN) */
+export interface SessionDataWithRoles {
+  roles?: string[];
+}
+
+/** True if user has admin or superadmin role */
+export function isAdminOrSuperadmin(
+  sessionData: (SessionDataWithRoles & { user?: unknown }) | null | undefined,
+): boolean {
+  const roles = sessionData?.roles ?? [];
+  return roles.includes("ADMIN") || roles.includes("SUPERADMIN");
+}

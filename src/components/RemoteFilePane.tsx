@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, FileAudio, Folder, FolderOpen, Loader2, Search, ShoppingCart } from "lucide-react";
+import { ArrowLeft, FileAudio, Folder, FolderOpen, Loader2, Pencil, Search, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,6 +21,7 @@ import {
   type RemoteSearchType,
 } from "@/lib/remote-library";
 import { PackView } from "@/components/PackView";
+import { CreatePackDialog } from "@/components/CreatePackDialog";
 
 type RemoteDragItem = { kind: "pack"; id: string; name: string } | { kind: "sample"; id: string; name: string };
 
@@ -36,13 +37,17 @@ function formatCredits(credits: number): string {
 
 function PackRow({
   onOpenPack,
+  onEditPack,
   onSelect,
   onDragStart,
+  isOwner,
   children,
 }: {
   onOpenPack: () => void;
+  onEditPack?: () => void;
   onSelect: () => void;
   onDragStart: (e: React.DragEvent) => void;
+  isOwner?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -62,6 +67,12 @@ function PackRow({
           <FolderOpen className="w-4 h-4 mr-2" />
           Open pack
         </ContextMenuItem>
+        {isOwner && onEditPack && (
+          <ContextMenuItem onSelect={onEditPack}>
+            <Pencil className="w-4 h-4 mr-2" />
+            Edit pack
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -75,7 +86,14 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
   const [samples, setSamples] = useState<RemoteSampleSummary[]>([]);
 
   const [currentPackId, setCurrentPackId] = useState<string | null>(null);
-  const [packDetails, setPackDetails] = useState<{ name: string; coverImageUrl: string | null } | null>(null);
+  const [packDetails, setPackDetails] = useState<{
+    name: string;
+    coverImageUrl: string | null;
+    creatorName?: string;
+    isOwner?: boolean;
+  } | null>(null);
+  const [editPackId, setEditPackId] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [packContents, setPackContents] = useState<{
     packs: RemotePackSummary[];
     samples: RemoteSampleSummary[];
@@ -127,6 +145,8 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
         setPackDetails({
           name: details.name,
           coverImageUrl: details.coverImageUrl,
+          creatorName: details.ownerName,
+          isOwner: details.isOwner,
         });
         setPackContents({
           packs: contents.packs,
@@ -206,6 +226,36 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
     setCurrentPackId(null);
   };
 
+  const handleEditPack = (packId: string) => {
+    setEditPackId(packId);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditDialogClose = (open: boolean) => {
+    setEditDialogOpen(open);
+    if (!open) setEditPackId(null);
+  };
+
+  const handlePackEdited = (packId: string) => {
+    if (currentPackId === packId) {
+      getPack(packId).then((details) =>
+        setPackDetails({
+          name: details.name,
+          coverImageUrl: details.coverImageUrl,
+          creatorName: details.ownerName,
+          isOwner: details.isOwner,
+        })
+      );
+      getPackContents(packId).then((contents) =>
+        setPackContents({ packs: contents.packs, samples: contents.samples })
+      );
+    }
+    searchRemoteLibrary({ q: query, scope, types: mode, limit: 100 }).then((result) => {
+      setPacks(result.packs);
+      setSamples(result.samples);
+    });
+  };
+
   const isPackView = currentPackId !== null;
 
   return (
@@ -215,7 +265,10 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
           <PackView
             name={packDetails.name}
             coverImageUrl={packDetails.coverImageUrl}
+            creatorName={packDetails.creatorName}
             onClose={handleClosePack}
+            isOwner={packDetails.isOwner}
+            onEdit={packDetails.isOwner && currentPackId ? () => handleEditPack(currentPackId) : undefined}
           />
         ) : (
           <div className="flex items-center gap-2 p-3 border-b border-border bg-card/50 shrink-0">
@@ -303,6 +356,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                     <PackRow
                       key={entry.key}
                       onOpenPack={() => setCurrentPackId(pack.id)}
+                      onEditPack={pack.isOwner ? () => handleEditPack(pack.id) : undefined}
                       onSelect={() =>
                         onSelectionChange?.({
                           path: `remote://pack/${pack.id}`,
@@ -313,6 +367,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                       onDragStart={(e) =>
                         startDrag(e, { kind: "pack", id: pack.id, name: pack.name })
                       }
+                      isOwner={pack.isOwner}
                     >
                       <div className="min-w-0 flex items-center gap-2">
                         <Folder className="w-4 h-4 text-amber-600 shrink-0" />
@@ -418,6 +473,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                   <PackRow
                     key={entry.key}
                     onOpenPack={() => setCurrentPackId(pack.id)}
+                    onEditPack={pack.isOwner ? () => handleEditPack(pack.id) : undefined}
                     onSelect={() =>
                       onSelectionChange?.({
                         path: `remote://pack/${pack.id}`,
@@ -432,6 +488,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                         name: pack.name,
                       })
                     }
+                    isOwner={pack.isOwner}
                   >
                     <div className="min-w-0 flex items-center gap-2">
                       <Folder className="w-4 h-4 text-amber-600 shrink-0" />
@@ -520,6 +577,13 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
           )}
         </div>
       </ScrollArea>
+      <CreatePackDialog
+        open={editDialogOpen}
+        onOpenChange={handleEditDialogClose}
+        defaultName=""
+        editPackId={editPackId}
+        onCreated={handlePackEdited}
+      />
     </div>
   );
 }
