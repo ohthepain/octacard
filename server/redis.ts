@@ -10,6 +10,15 @@ export const redis = new Redis(redisUrl, {
   },
 });
 
+/** Redis connection for BullMQ Worker. Workers need maxRetriesPerRequest: null for blocking commands (BRPOP). */
+export const workerRedis = new Redis(redisUrl, {
+  maxRetriesPerRequest: null,
+  retryStrategy(times) {
+    if (times > 10) return null;
+    return Math.min(times * 200, 2000);
+  },
+});
+
 export function createRedisStorage(prefix = "better-auth:") {
   return {
     async get(key: string): Promise<unknown> {

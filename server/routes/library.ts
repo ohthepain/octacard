@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { AppVariables } from "../types.js";
 import { prisma } from "../db.js";
 import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl } from "../s3.js";
+import { enqueueSampleAnalysis } from "../queues/sample-analysis.js";
+import { sampleSearchApp } from "./sample-search.js";
 
 const libraryApp = new Hono<{ Variables: AppVariables }>();
 
@@ -163,6 +165,94 @@ async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNod
 
   return map;
 }
+
+const unsplashRandomSchema = z.object({
+  query: z.string().trim().max(100).optional().default("music"),
+});
+
+libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchema), async (c) => {
+  const accessKey = process.env.UNSPLASH_ACCESS_KEY;
+  if (!accessKey) {
+    throw new HTTPException(503, { message: "Unsplash is not configured" });
+  }
+  const { query } = c.req.valid("query");
+  const searchTerm = query || "music";
+  const headers: Record<string, string> = {
+    "Accept-Version": "v1",
+    Authorization: `Client-ID ${accessKey}`,
+  };
+
+  type UnsplashPhoto = { urls?: { regular?: string } };
+  let imageUrl: string | undefined;
+
+  // Try /photos/random first (can return 404 when query has no matches)
+  const randomParams = new URLSearchParams({
+    query: searchTerm,
+    orientation: "squarish",
+  });
+  const randomRes = await fetch(
+    `https://api.unsplash.com/photos/random?${randomParams}`,
+    { headers }
+  );
+
+  if (randomRes.ok) {
+    const data = (await randomRes.json()) as UnsplashPhoto;
+    imageUrl = data.urls?.regular;
+  }
+
+  // Fallback: use /search/photos when random returns 404 or no results
+  if (!imageUrl) {
+    const searchParams = new URLSearchParams({
+      query: searchTerm,
+      per_page: "15",
+      orientation: "squarish",
+    });
+    const searchRes = await fetch(
+      `https://api.unsplash.com/search/photos?${searchParams}`,
+      { headers }
+    );
+    if (!searchRes.ok) {
+      const text = await searchRes.text();
+      throw new HTTPException(502, {
+        message: `Unsplash API error: ${searchRes.status} ${text.slice(0, 200)}`,
+      });
+    }
+    const searchData = (await searchRes.json()) as { results?: UnsplashPhoto[] };
+    const results = searchData.results ?? [];
+    if (results.length === 0) {
+      // Last resort: random photo with broad query
+      const fallbackRes = await fetch(
+        "https://api.unsplash.com/photos/random?orientation=squarish",
+        { headers }
+      );
+      if (!fallbackRes.ok) {
+        const text = await fallbackRes.text();
+        throw new HTTPException(502, {
+          message: `Unsplash API error: ${fallbackRes.status} ${text.slice(0, 200)}`,
+        });
+      }
+      const fallbackData = (await fallbackRes.json()) as UnsplashPhoto;
+      imageUrl = fallbackData.urls?.regular;
+    } else {
+      const pick = results[Math.floor(Math.random() * results.length)];
+      imageUrl = pick.urls?.regular;
+    }
+  }
+
+  if (!imageUrl) {
+    throw new HTTPException(502, { message: "Invalid Unsplash response" });
+  }
+
+  const imgRes = await fetch(imageUrl);
+  if (!imgRes.ok) {
+    throw new HTTPException(502, { message: "Failed to fetch image from Unsplash" });
+  }
+  const buf = await imgRes.arrayBuffer();
+  return c.body(buf, 200, {
+    "Content-Type": "image/jpeg",
+    "Cache-Control": "private, max-age=3600",
+  });
+});
 
 libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
   const user = c.get("user");
@@ -592,6 +682,8 @@ libraryApp.get("/packs/:id/download-manifest", async (c) => {
   });
 });
 
+libraryApp.route("/samples/search", sampleSearchApp);
+
 libraryApp.post("/samples/check-exist", zValidator("json", checkSamplesExistSchema), async (c) => {
   const { contentHashes } = c.req.valid("json");
   const existing = await prisma.sample.findMany({
@@ -636,7 +728,7 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
   const ext = contentTypeToExt(contentType);
   const s3Key = `samples/${contentHash}.${ext}`;
 
-  await prisma.sample.upsert({
+  const created = await prisma.sample.upsert({
     where: { id: contentHash },
     create: {
       id: contentHash,
@@ -646,6 +738,16 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
     },
     update: {},
   });
+
+  // Enqueue analysis for new samples (or re-analyze if PENDING/FAILED)
+  if (
+    created.analysisStatus === "PENDING" ||
+    created.analysisStatus === "FAILED"
+  ) {
+    enqueueSampleAnalysis(created.id, created.s3Key).catch((err) =>
+      console.error("[library] Failed to enqueue sample analysis:", err)
+    );
+  }
 
   const ps = await prisma.packSample.upsert({
     where: { packId_sampleId: { packId: pack.id, sampleId: contentHash } },
@@ -712,7 +814,7 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
   }
 
   const legacyContentId = `legacy_${crypto.randomUUID().replace(/-/g, "")}`;
-  await prisma.sample.create({
+  const created = await prisma.sample.create({
     data: {
       id: legacyContentId,
       s3Key,
@@ -720,6 +822,9 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
       sizeBytes: sizeBytes ?? null,
     },
   });
+  enqueueSampleAnalysis(created.id, created.s3Key).catch((err) =>
+    console.error("[library] Failed to enqueue sample analysis:", err)
+  );
 
   const ps = await prisma.packSample.create({
     data: {
@@ -837,6 +942,70 @@ libraryApp.post("/samples/:id/add-to-collection", async (c) => {
   });
 
   return c.json(item, 201);
+});
+
+libraryApp.get("/samples/:id/analysis", async (c) => {
+  const user = c.get("user");
+  const sampleId = c.req.param("id");
+
+  const readable = await canReadSample(user.id, sampleId);
+  if (!readable) {
+    throw new HTTPException(403, { message: "You do not have access to this sample" });
+  }
+
+  const sample = await prisma.sample.findUnique({
+    where: { id: sampleId },
+    select: {
+      id: true,
+      analysisStatus: true,
+      analysisError: true,
+      durationMs: true,
+      sampleRate: true,
+      channels: true,
+      attributes: { select: { key: true, value: true } },
+      annotations: {
+        include: {
+          taxonomyValue: {
+            include: { attribute: { select: { key: true } } },
+          },
+        },
+      },
+      embeddings: { select: { model: true, modelVersion: true, dimensions: true } },
+    },
+  });
+  if (!sample) {
+    throw new HTTPException(404, { message: "Sample not found" });
+  }
+
+  const attributes: Record<string, number> = {};
+  for (const a of sample.attributes) attributes[a.key] = a.value;
+
+  const taxonomy: Array<{ attribute: string; value: string; confidence: number }> = [];
+  for (const ann of sample.annotations) {
+    taxonomy.push({
+      attribute: ann.taxonomyValue.attribute.key,
+      value: ann.taxonomyValue.key,
+      confidence: ann.confidence,
+    });
+  }
+
+  const embeddings = sample.embeddings.map((e) => ({
+    model: e.model,
+    modelVersion: e.modelVersion,
+    dimensions: e.dimensions,
+  }));
+
+  return c.json({
+    id: sample.id,
+    analysisStatus: sample.analysisStatus,
+    analysisError: sample.analysisError,
+    durationMs: sample.durationMs,
+    sampleRate: sample.sampleRate,
+    channels: sample.channels,
+    attributes,
+    taxonomy,
+    embeddings,
+  });
 });
 
 libraryApp.get("/samples/:id/download", async (c) => {

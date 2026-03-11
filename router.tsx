@@ -10,6 +10,7 @@ import { resetPasswordRoute } from './routes/reset-password'
 import { legalRoute } from './routes/legal'
 import { termsRoute } from './routes/legal/terms'
 import { privacyRoute } from './routes/legal/privacy'
+import { adminRoute } from './routes/admin'
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -19,6 +20,7 @@ const routeTree = rootRoute.addChildren([
   legalRoute,
   termsRoute,
   privacyRoute,
+  adminRoute,
 ])
 
 export function createRouter() {

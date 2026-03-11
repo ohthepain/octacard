@@ -1,4 +1,4 @@
-import { User, LogIn, LogOut, Scale, ToggleLeft } from "lucide-react";
+import { User, LogIn, LogOut, Scale, ToggleLeft, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "@tanstack/react-router";
-import { useSession, signOut } from "@/lib/auth-client";
+import { useSession, signOut, isAdminOrSuperadmin } from "@/lib/auth-client";
 import { useAppOptionsStore } from "@/stores/app-options-store";
 
 export function UserMenu() {
@@ -60,6 +60,14 @@ export function UserMenu() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {isAdminOrSuperadmin(session) && (
+              <DropdownMenuItem asChild>
+                <Link to="/admin" className="flex items-center gap-2 cursor-pointer">
+                  <Shield className="h-4 w-4" />
+                  Admin
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild>
               <Link to="/legal" className="flex items-center gap-2 cursor-pointer">
                 <Scale className="h-4 w-4" />

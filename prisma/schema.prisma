@@ -113,15 +113,113 @@ model Pack {
 
 // Sample = content identified by hash. Single source of truth; survives DB reset.
 model Sample {
-  id          String        @id
-  s3Key       String        @unique
-  contentType String
-  sizeBytes   Int?
-  createdAt   DateTime      @default(now())
-  packSamples PackSample[]
-  collections SampleCollection[]
+  id             String              @id
+  s3Key          String               @unique
+  contentType    String
+  sizeBytes      Int?
+  createdAt      DateTime            @default(now())
+  // Basic measured scalars (from analysis)
+  durationMs     Int?
+  sampleRate     Int?
+  channels       Int?
+  analysisStatus SampleAnalysisStatus @default(PENDING)
+  analysisError  String?
+  packSamples    PackSample[]
+  collections    SampleCollection[]
+  attributes     SampleAttribute[]
+  annotations    SampleAnnotation[]
+  embeddings     SampleEmbedding[]
 
   @@map("sample")
+}
+
+enum SampleAnalysisStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+// Numeric continuous values from Essentia (brightness, energy, bpm, etc.)
+model SampleAttribute {
+  id       String  @id @default(cuid())
+  sampleId String
+  key      String  // brightness, energy, bpm, loudness, attack_ms, spectral_centroid, etc.
+  value    Float
+  sample   Sample  @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@unique([sampleId, key])
+  @@index([sampleId])
+  @@index([key])
+  @@map("sample_attribute")
+}
+
+// Taxonomy attribute = descriptor category (style, instrument_type, mood, etc.)
+model TaxonomyAttribute {
+  id    String          @id @default(cuid())
+  key   String          @unique // instrument_family, instrument_type, style, descriptor, mood
+  values TaxonomyValue[]
+
+  @@map("taxonomy_attribute")
+}
+
+// Taxonomy value = allowed canonical value within a category (techno, kick, moody, etc.)
+model TaxonomyValue {
+  id          String                    @id @default(cuid())
+  attributeId String
+  key         String                    // canonical ID: techno, kick, warm
+  attribute   TaxonomyAttribute         @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  annotations SampleAnnotation[]
+  translations TaxonomyValueTranslation[]
+
+  @@unique([attributeId, key])
+  @@index([attributeId])
+  @@map("taxonomy_value")
+}
+
+// Sample ↔ taxonomy value assignment (from rule layer interpreting model output)
+model SampleAnnotation {
+  id           String        @id @default(cuid())
+  sampleId     String
+  taxonomyValueId String
+  confidence   Float         // 0–1
+  source       String        @default("rule") // rule, essentia, clap
+  rank         Int?          // primary vs secondary
+  sample       Sample        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  taxonomyValue TaxonomyValue @relation(fields: [taxonomyValueId], references: [id], onDelete: Cascade)
+
+  @@unique([sampleId, taxonomyValueId])
+  @@index([sampleId])
+  @@index([taxonomyValueId])
+  @@map("sample_annotation")
+}
+
+// Embedding vectors for similarity search (CLAP, Essentia)
+model SampleEmbedding {
+  id        String   @id @default(cuid())
+  sampleId  String
+  model     String   // clap, essentia
+  modelVersion String @default("v1")
+  dimensions Int
+  vector    Bytes?  // Embedding as float32 bytes; use raw SQL for pgvector when available
+  sample    Sample   @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@unique([sampleId, model])
+  @@index([sampleId])
+  @@map("sample_embedding")
+}
+
+// Per-locale display labels for taxonomy values (localization)
+model TaxonomyValueTranslation {
+  id              String        @id @default(cuid())
+  taxonomyValueId String
+  locale          String        // en, de, etc.
+  label           String
+  taxonomyValue   TaxonomyValue @relation(fields: [taxonomyValueId], references: [id], onDelete: Cascade)
+
+  @@unique([taxonomyValueId, locale])
+  @@index([taxonomyValueId])
+  @@map("taxonomy_value_translation")
 }
 
 // Pack's reference to a sample. Sample ID = content hash.

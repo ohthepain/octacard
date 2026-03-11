@@ -14,6 +14,7 @@ import {
   ArrowUp,
   RotateCw,
   Star,
+  BarChart3,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { useFavorites } from "@/hooks/use-favorites";
 import { VideoPreview } from "@/components/VideoPreview";
@@ -49,6 +56,8 @@ import {
   getPackDownloadManifest,
   type RemoteScope,
 } from "@/lib/remote-library";
+import { computeAudioContentHash } from "@/lib/content-hash";
+import { SampleAnalysisDialog } from "@/components/SampleAnalysisDialog";
 import { useSession } from "@/lib/auth-client";
 import { CreatePackDialog } from "@/components/CreatePackDialog";
 import { PackView } from "@/components/PackView";
@@ -302,6 +311,9 @@ export const FilePane = ({
   const [shortenedFilenamesDialogOpen, setShortenedFilenamesDialogOpen] = useState(false);
   const [shortenedFilenamesDialogFolderPath, setShortenedFilenamesDialogFolderPath] = useState("");
   const [shortenedFilenamesDialogRows, setShortenedFilenamesDialogRows] = useState<ShortenedFilenamePreviewRow[]>([]);
+  const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false);
+  const [analysisSampleId, setAnalysisSampleId] = useState<string | null>(null);
+  const [analysisSampleName, setAnalysisSampleName] = useState<string>("");
   const [createPackDialogOpen, setCreatePackDialogOpen] = useState(false);
   const [createPackFolderName, setCreatePackFolderName] = useState("");
   const [createPackFolderPath, setCreatePackFolderPath] = useState("");
@@ -3828,6 +3840,35 @@ export const FilePane = ({
                       : "Add to multi"}
                   </ContextMenuItem>
                 )}
+                {node.type === "file" && isAudioFile(node.name) && (
+                  <>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onSelect={async () => {
+                      if (!session?.user) {
+                        toast.error("Sign in to view analysis");
+                        return;
+                      }
+                      const file = await fileSystemService.getFile(node.path, paneType);
+                      if (!file) {
+                        toast.error("Could not read file");
+                        return;
+                      }
+                      try {
+                        const contentHash = await computeAudioContentHash(file);
+                        setAnalysisSampleId(contentHash);
+                        setAnalysisSampleName(node.name);
+                        setAnalysisDialogOpen(true);
+                      } catch {
+                        toast.error("Could not compute file hash");
+                      }
+                    }}
+                  >
+                    <BarChart3 className="w-4 h-4 mr-2" />
+                    View analysis results
+                  </ContextMenuItem>
+                  </>
+                )}
                 <ContextMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
@@ -4716,6 +4757,13 @@ export const FilePane = ({
             refreshFolder(createPackFolderPath);
           }
         }}
+      />
+
+      <SampleAnalysisDialog
+        open={analysisDialogOpen}
+        onOpenChange={setAnalysisDialogOpen}
+        sampleId={analysisSampleId}
+        sampleName={analysisSampleName}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, FileAudio, Folder, FolderOpen, Loader2, Pencil, Search, ShoppingCart } from "lucide-react";
+import { ArrowLeft, BarChart3, FileAudio, Folder, FolderOpen, Loader2, Pencil, Search, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/remote-library";
 import { PackView } from "@/components/PackView";
 import { CreatePackDialog } from "@/components/CreatePackDialog";
+import { SampleAnalysisDialog } from "@/components/SampleAnalysisDialog";
 
 type RemoteDragItem = { kind: "pack"; id: string; name: string } | { kind: "sample"; id: string; name: string };
 
@@ -99,6 +100,9 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
     samples: RemoteSampleSummary[];
   } | null>(null);
   const [packLoading, setPackLoading] = useState(false);
+  const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false);
+  const [analysisSampleId, setAnalysisSampleId] = useState<string | null>(null);
+  const [analysisSampleName, setAnalysisSampleName] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -388,65 +392,80 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                 if (entry.type === "sample" && entry.sample) {
                   const sample = entry.sample;
                   return (
-                    <div
-                      key={entry.key}
-                      draggable={sample.canDownload}
-                      onDragStart={(e) =>
-                        sample.canDownload &&
-                        startDrag(e, {
-                          kind: "sample",
-                          id: sample.id,
-                          name: sample.name,
-                        })
-                      }
-                      onClick={() =>
-                        onSelectionChange?.({
-                          path: `remote://sample/${sample.id}`,
-                          type: "file",
-                          name: sample.name,
-                        })
-                      }
-                      className={`flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-accent ${sample.canDownload ? "cursor-grab active:cursor-grabbing" : "opacity-70"}`}
-                    >
-                      <div className="min-w-0 flex items-center gap-2">
-                        <FileAudio className="w-4 h-4 text-sky-600 shrink-0" />
-                        <div className="truncate">
-                          <div className="text-sm truncate">{sample.name}</div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {formatCredits(sample.credits)}
-                            {!sample.canDownload ? " • locked" : ""}
+                    <ContextMenu key={entry.key}>
+                      <ContextMenuTrigger asChild>
+                        <div
+                          draggable={sample.canDownload}
+                          onDragStart={(e) =>
+                            sample.canDownload &&
+                            startDrag(e, {
+                              kind: "sample",
+                              id: sample.id,
+                              name: sample.name,
+                            })
+                          }
+                          onClick={() =>
+                            onSelectionChange?.({
+                              path: `remote://sample/${sample.id}`,
+                              type: "file",
+                              name: sample.name,
+                            })
+                          }
+                          className={`flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-accent ${sample.canDownload ? "cursor-grab active:cursor-grabbing" : "opacity-70"}`}
+                        >
+                          <div className="min-w-0 flex items-center gap-2">
+                            <FileAudio className="w-4 h-4 text-sky-600 shrink-0" />
+                            <div className="truncate">
+                              <div className="text-sm truncate">{sample.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {formatCredits(sample.credits)}
+                                {!sample.canDownload ? " • locked" : ""}
+                              </div>
+                            </div>
                           </div>
+                          {!sample.canDownload && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 gap-1"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await addSampleToCollection(sample.id);
+                                  toast.success("Added to collection");
+                                  if (currentPackId) {
+                                    const contents = await getPackContents(currentPackId);
+                                    setPackContents({
+                                      packs: contents.packs,
+                                      samples: contents.samples,
+                                    });
+                                  }
+                                } catch (error) {
+                                  toast.error("Failed to add to collection", {
+                                    description: error instanceof Error ? error.message : "Unknown error",
+                                  });
+                                }
+                              }}
+                            >
+                              <ShoppingCart className="w-3 h-3" />
+                              Add
+                            </Button>
+                          )}
                         </div>
-                      </div>
-                      {!sample.canDownload && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 gap-1"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                              await addSampleToCollection(sample.id);
-                              toast.success("Added to collection");
-                              if (currentPackId) {
-                                const contents = await getPackContents(currentPackId);
-                                setPackContents({
-                                  packs: contents.packs,
-                                  samples: contents.samples,
-                                });
-                              }
-                            } catch (error) {
-                              toast.error("Failed to add to collection", {
-                                description: error instanceof Error ? error.message : "Unknown error",
-                              });
-                            }
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem
+                          onSelect={() => {
+                            setAnalysisSampleId(sample.id);
+                            setAnalysisSampleName(sample.name);
+                            setAnalysisDialogOpen(true);
                           }}
                         >
-                          <ShoppingCart className="w-3 h-3" />
-                          Add
-                        </Button>
-                      )}
-                    </div>
+                          <BarChart3 className="w-4 h-4 mr-2" />
+                          View analysis results
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   );
                 }
 
@@ -509,66 +528,81 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
               if (entry.type === "sample" && entry.sample) {
                 const sample = entry.sample;
                 return (
-                  <div
-                    key={entry.key}
-                    draggable={sample.canDownload}
-                    onDragStart={(e) =>
-                      sample.canDownload &&
-                      startDrag(e, {
-                        kind: "sample",
-                        id: sample.id,
-                        name: sample.name,
-                      })
-                    }
-                    onClick={() =>
-                      onSelectionChange?.({
-                        path: `remote://sample/${sample.id}`,
-                        type: "file",
-                        name: sample.name,
-                      })
-                    }
-                    className={`flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-accent ${sample.canDownload ? "cursor-grab active:cursor-grabbing" : "opacity-70"}`}
-                  >
-                    <div className="min-w-0 flex items-center gap-2">
-                      <FileAudio className="w-4 h-4 text-sky-600 shrink-0" />
-                      <div className="truncate">
-                        <div className="text-sm truncate">{sample.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {sample.packName} • {formatCredits(sample.credits)}
-                          {!sample.canDownload ? " • locked" : ""}
+                  <ContextMenu key={entry.key}>
+                    <ContextMenuTrigger asChild>
+                      <div
+                        draggable={sample.canDownload}
+                        onDragStart={(e) =>
+                          sample.canDownload &&
+                          startDrag(e, {
+                            kind: "sample",
+                            id: sample.id,
+                            name: sample.name,
+                          })
+                        }
+                        onClick={() =>
+                          onSelectionChange?.({
+                            path: `remote://sample/${sample.id}`,
+                            type: "file",
+                            name: sample.name,
+                          })
+                        }
+                        className={`flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-accent ${sample.canDownload ? "cursor-grab active:cursor-grabbing" : "opacity-70"}`}
+                      >
+                        <div className="min-w-0 flex items-center gap-2">
+                          <FileAudio className="w-4 h-4 text-sky-600 shrink-0" />
+                          <div className="truncate">
+                            <div className="text-sm truncate">{sample.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {sample.packName} • {formatCredits(sample.credits)}
+                              {!sample.canDownload ? " • locked" : ""}
+                            </div>
+                          </div>
                         </div>
+                        {!sample.canDownload && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await addSampleToCollection(sample.id);
+                                toast.success("Added to collection");
+                                const updated = await searchRemoteLibrary({
+                                  q: query,
+                                  scope,
+                                  types: mode,
+                                  limit: 100,
+                                });
+                                setPacks(updated.packs);
+                                setSamples(updated.samples);
+                              } catch (error) {
+                                toast.error("Failed to add to collection", {
+                                  description: error instanceof Error ? error.message : "Unknown error",
+                                });
+                              }
+                            }}
+                          >
+                            <ShoppingCart className="w-3 h-3" />
+                            Add
+                          </Button>
+                        )}
                       </div>
-                    </div>
-                    {!sample.canDownload && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 gap-1"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            await addSampleToCollection(sample.id);
-                            toast.success("Added to collection");
-                            const updated = await searchRemoteLibrary({
-                              q: query,
-                              scope,
-                              types: mode,
-                              limit: 100,
-                            });
-                            setPacks(updated.packs);
-                            setSamples(updated.samples);
-                          } catch (error) {
-                            toast.error("Failed to add to collection", {
-                              description: error instanceof Error ? error.message : "Unknown error",
-                            });
-                          }
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem
+                        onSelect={() => {
+                          setAnalysisSampleId(sample.id);
+                          setAnalysisSampleName(sample.name);
+                          setAnalysisDialogOpen(true);
                         }}
                       >
-                        <ShoppingCart className="w-3 h-3" />
-                        Add
-                      </Button>
-                    )}
-                  </div>
+                        <BarChart3 className="w-4 h-4 mr-2" />
+                        View analysis results
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 );
               }
 
@@ -583,6 +617,12 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
         defaultName=""
         editPackId={editPackId}
         onCreated={handlePackEdited}
+      />
+      <SampleAnalysisDialog
+        open={analysisDialogOpen}
+        onOpenChange={setAnalysisDialogOpen}
+        sampleId={analysisSampleId}
+        sampleName={analysisSampleName}
       />
     </div>
   );

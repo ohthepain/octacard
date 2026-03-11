@@ -112,6 +112,26 @@ export async function searchRemoteLibrary(params: {
   return (await res.json()) as RemoteSearchResponse;
 }
 
+export interface SampleAnalysisResponse {
+  id: string;
+  analysisStatus: "PENDING" | "PROCESSING" | "READY" | "FAILED";
+  analysisError: string | null;
+  durationMs: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+  attributes: Record<string, number>;
+  taxonomy: Array<{ attribute: string; value: string; confidence: number }>;
+  embeddings?: Array<{ model: string; modelVersion: string; dimensions: number }>;
+}
+
+export async function getSampleAnalysis(sampleId: string): Promise<SampleAnalysisResponse> {
+  const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/analysis`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch sample analysis (${res.status})`);
+  }
+  return (await res.json()) as SampleAnalysisResponse;
+}
+
 export async function addSampleToCollection(sampleId: string): Promise<void> {
   const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/add-to-collection`, {
     method: "POST",
@@ -204,6 +224,18 @@ export async function createPack(params: {
     throw new Error(`Failed to create pack (${res.status})`);
   }
   return res.json();
+}
+
+export async function fetchUnsplashRandomPhoto(query?: string): Promise<Blob> {
+  const params = new URLSearchParams();
+  if (query?.trim()) params.set("query", query.trim());
+  const url = `/api/library/unsplash/random-photo${params.toString() ? `?${params}` : ""}`;
+  const res = await apiFetch(url);
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || `Failed to fetch Unsplash image (${res.status})`);
+  }
+  return res.blob();
 }
 
 export async function getPackCoverUploadUrl(

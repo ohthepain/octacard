@@ -4,10 +4,11 @@ import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { auth } from "./auth.js";
-import { errorHandler, requestLogger, versionCheck, requireAuth } from "./middleware/index.js";
+import { errorHandler, requestLogger, versionCheck, requireAuth, requireAdmin } from "./middleware/index.js";
 import { healthApp } from "./routes/health.js";
 import { uploadApp } from "./routes/upload.js";
 import { libraryApp } from "./routes/library.js";
+import { adminApp } from "./routes/admin.js";
 import type { AppVariables } from "./types.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,6 +65,10 @@ app.route("/api/upload", uploadApp);
 app.use("/api/library/*", requireAuth);
 app.use("/api/library/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
 app.route("/api/library", libraryApp);
+
+// /api/admin/* - admin/superadmin only
+app.use("/api/admin/*", requireAdmin);
+app.route("/api/admin", adminApp);
 
 // 404 for /api/*
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
