@@ -50,12 +50,7 @@ import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/Overw
 import { fileSystemService } from "@/lib/fileSystem";
 import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
-import {
-  downloadRemoteSampleBlob,
-  getPack,
-  getPackDownloadManifest,
-  type RemoteScope,
-} from "@/lib/remote-library";
+import { downloadRemoteSampleBlob, getPack, getPackDownloadManifest, type RemoteScope } from "@/lib/remote-library";
 import { computeAudioContentHash } from "@/lib/content-hash";
 import { SampleAnalysisDialog } from "@/components/SampleAnalysisDialog";
 import { useSession } from "@/lib/auth-client";
@@ -323,7 +318,31 @@ export const FilePane = ({
   const [folderViewPackName, setFolderViewPackName] = useState<string | null>(null);
   const [folderViewPackId, setFolderViewPackId] = useState<string | null>(null);
   const [packJsonCache, setPackJsonCache] = useState<Map<string, boolean>>(new Map());
+  const [packCoverCache, setPackCoverCache] = useState<Map<string, string>>(new Map());
+  const loadingCoversRef = useRef<Set<string>>(new Set());
   const { data: session } = useSession();
+
+  // Load pack cover images for folders that have pack.json
+  useEffect(() => {
+    const loadCovers = async () => {
+      for (const [path, hasPack] of packJsonCache) {
+        if (!hasPack || packCoverCache.has(path) || loadingCoversRef.current.has(path)) continue;
+        loadingCoversRef.current.add(path);
+        try {
+          for (const name of ["cover.jpg", "cover.png"]) {
+            const result = await fileSystemService.getFileBlob(joinPath(path, name), paneType);
+            if (result.success && typeof result.data === "string") {
+              setPackCoverCache((prev) => new Map(prev).set(path, result.data));
+              break;
+            }
+          }
+        } finally {
+          loadingCoversRef.current.delete(path);
+        }
+      }
+    };
+    void loadCovers();
+  }, [packJsonCache, packCoverCache, paneType]);
 
   const promptOverwriteChoice = useCallback((): Promise<OverwriteChoice> => {
     setOverwriteConfirmOpen(true);
@@ -506,9 +525,13 @@ export const FilePane = ({
     rootPathRef.current = rootPath;
   }, [rootPath]);
 
-  // Clear folder view when root path changes (e.g. volume switch)
+  // Clear folder view and pack cover cache when root path changes (e.g. volume switch)
   useEffect(() => {
     setFolderViewRoot(null);
+    setPackCoverCache((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url));
+      return new Map();
+    });
   }, [rootPath]);
 
   useEffect(() => {
@@ -2714,10 +2737,7 @@ export const FilePane = ({
           continue;
         }
 
-        const [manifest, packDetails] = await Promise.all([
-          getPackDownloadManifest(item.id),
-          getPack(item.id),
-        ]);
+        const [manifest, packDetails] = await Promise.all([getPackDownloadManifest(item.id), getPack(item.id)]);
         const packRootName = sanitizeFolderSegment(manifest.pack.name);
         const packRootPath = await ensureFolderPath(destinationPath, packRootName);
 
@@ -3531,13 +3551,7 @@ export const FilePane = ({
         <div key={node.id}>
           <ContextMenu
             onOpenChange={(open) => {
-              if (
-                open &&
-                !isParentLink &&
-                node.type === "folder" &&
-                !node.children &&
-                !packJsonCache.has(node.path)
-              ) {
+              if (open && !isParentLink && node.type === "folder" && !node.children && !packJsonCache.has(node.path)) {
                 void checkPackJsonForFolder(node.path);
               }
             }}
@@ -3691,7 +3705,27 @@ export const FilePane = ({
                         ))
                       )}
                     </span>
-                    <Folder className={`w-4 h-4 shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`} />
+                    {(() => {
+                      const isPack =
+                        !isParentLink &&
+                        (node.children?.some((c) => c.name === "pack.json") || packJsonCache.get(node.path) === true);
+                      const coverUrl = isPack ? packCoverCache.get(node.path) : null;
+                      if (coverUrl) {
+                        return (
+                          <img
+                            src={coverUrl}
+                            alt=""
+                            className="w-5 h-5 shrink-0 rounded-sm object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        );
+                      }
+                      return (
+                        <Folder
+                          className={`w-4 h-4 shrink-0 ${isParentLink ? "text-muted-foreground" : "text-primary"}`}
+                        />
+                      );
+                    })()}
                   </>
                 ) : (
                   <>
@@ -3750,15 +3784,13 @@ export const FilePane = ({
                     >
                       {(() => {
                         const hasPackJson =
-                          node.children?.some((c) => c.name === "pack.json") ||
-                          packJsonCache.get(node.path) === true;
+                          node.children?.some((c) => c.name === "pack.json") || packJsonCache.get(node.path) === true;
                         return hasPackJson ? "Open pack" : "Open folder";
                       })()}
                     </ContextMenuItem>
                     {(() => {
                       const hasPackJson =
-                        node.children?.some((c) => c.name === "pack.json") ||
-                        packJsonCache.get(node.path) === true;
+                        node.children?.some((c) => c.name === "pack.json") || packJsonCache.get(node.path) === true;
                       if (hasPackJson) {
                         return (
                           <ContextMenuItem
@@ -3783,7 +3815,7 @@ export const FilePane = ({
                                   setCreatePackDialogOpen(true);
                                 } else {
                                   toast.error(
-                                    "This pack was created before we stored remote IDs. Open it in the Remote library to edit."
+                                    "This pack was created before we stored remote IDs. Open it in the Remote library to edit.",
                                   );
                                 }
                               } catch {
@@ -3854,28 +3886,28 @@ export const FilePane = ({
                     <ContextMenuSeparator />
                     <ContextMenuItem
                       onSelect={async () => {
-                      if (!session?.user) {
-                        toast.error("Sign in to view analysis");
-                        return;
-                      }
-                      const file = await fileSystemService.getFile(node.path, paneType);
-                      if (!file) {
-                        toast.error("Could not read file");
-                        return;
-                      }
-                      try {
-                        const contentHash = await computeAudioContentHash(file);
-                        setAnalysisSampleId(contentHash);
-                        setAnalysisSampleName(node.name);
-                        setAnalysisDialogOpen(true);
-                      } catch {
-                        toast.error("Could not compute file hash");
-                      }
-                    }}
-                  >
-                    <BarChart3 className="w-4 h-4 mr-2" />
-                    View analysis results
-                  </ContextMenuItem>
+                        if (!session?.user) {
+                          toast.error("Sign in to view analysis");
+                          return;
+                        }
+                        const file = await fileSystemService.getFile(node.path, paneType);
+                        if (!file) {
+                          toast.error("Could not read file");
+                          return;
+                        }
+                        try {
+                          const contentHash = await computeAudioContentHash(file);
+                          setAnalysisSampleId(contentHash);
+                          setAnalysisSampleName(node.name);
+                          setAnalysisDialogOpen(true);
+                        } catch {
+                          toast.error("Could not compute file hash");
+                        }
+                      }}
+                    >
+                      <BarChart3 className="w-4 h-4 mr-2" />
+                      View analysis results
+                    </ContextMenuItem>
                   </>
                 )}
                 <ContextMenuItem
@@ -4378,8 +4410,9 @@ export const FilePane = ({
             </div>
           </div>
           {/* Breadcrumb row: full width below header - accepts drops to copy/convert into currentRootPath */}
-          {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
-            folderViewRoot ? (
+          {fileSystemService.hasRootForPane(paneType) &&
+            currentRootPath &&
+            (folderViewRoot ? (
               <div
                 className="border-transparent"
                 onDragOver={(e) => {
@@ -4499,8 +4532,7 @@ export const FilePane = ({
                   <Star className={`w-4 h-4 ${isCurrentPathFavorite ? "fill-current" : ""}`} />
                 </Button>
               </div>
-            )
-          )}
+            ))}
         </div>
 
         {/* File Tree */}
