@@ -1,25 +1,10 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client.js";
-
-function resolveDatabaseUrl(rawUrl: string | undefined): string {
-  if (!rawUrl) {
-    throw new Error("[db] DATABASE_URL is not set.");
-  }
-
-  // RDS can reject non-TLS clients with "no pg_hba.conf entry ... no encryption".
-  if (process.env.NODE_ENV === "production" && !/([?&])sslmode=/.test(rawUrl)) {
-    const separator = rawUrl.includes("?") ? "&" : "?";
-    return `${rawUrl}${separator}sslmode=require`;
-  }
-
-  return rawUrl;
-}
-
-const databaseUrl = resolveDatabaseUrl(process.env.DATABASE_URL);
+import { buildPgConnectionConfig } from "./db-connection.js";
 
 const adapter = new PrismaPg({
-  connectionString: databaseUrl,
+  ...buildPgConnectionConfig(),
 });
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

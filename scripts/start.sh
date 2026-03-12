@@ -13,12 +13,12 @@ if [ "${NODE_ENV:-}" = "production" ] && ! [[ "${DATABASE_URL}" =~ [\?\&]sslmode
   if [[ "${DATABASE_URL}" == *\?* ]]; then
     separator="&"
   fi
-  export DATABASE_URL="${DATABASE_URL}${separator}sslmode=require"
-  echo "[start] DATABASE_URL missing sslmode; enforcing sslmode=require."
+  export DATABASE_URL="${DATABASE_URL}${separator}sslmode=verify-full"
+  echo "[start] DATABASE_URL missing sslmode; enforcing sslmode=verify-full."
 fi
 
 echo "[start] Checking database connectivity..."
-node --input-type=module -e "import { Client } from 'pg'; const client = new Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); await client.query('SELECT 1'); await client.end();"
+pnpm exec tsx ./scripts/check-db-connectivity.ts
 echo "[start] Database connectivity check passed."
 
 echo "[start] Running Prisma migrations..."
