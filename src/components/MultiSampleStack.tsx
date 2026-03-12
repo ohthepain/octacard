@@ -80,7 +80,7 @@ function EmptyBlock({ slotIndex, isActive, onDrop, onClick }: EmptyBlockProps) {
         {Array.from({ length: 20 }).map((_, i) => {
           const h = 4 + ((i * 7) % 9);
           const y = (20 - h) / 2;
-          return <rect key={i} x={i * 5} y={y} width="3" height={h} className="fill-current" />;
+          return <rect key={`${i}-${h}-${y}`} x={i * 5} y={y} width="3" height={h} className="fill-current" />;
         })}
       </svg>
     </div>
@@ -291,10 +291,10 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
       <div className="flex flex-col gap-3 min-w-0">
         {rows.map((rowSlots, rowIndex) => (
           <div
-            key={`stack-row-${rowIndex}`}
+            key={rowSlots[rowIndex]!.id}
             className={cn(
               "grid grid-cols-[44px_repeat(4,minmax(0,1fr))] gap-3 min-w-0",
-              dragOverRowIndex === rowIndex && "outline outline-1 outline-primary/60 rounded-md p-1",
+              dragOverRowIndex === rowIndex && "outline-1 outline-primary/60 rounded-md p-1",
             )}
             onDragOver={(e) => {
               e.preventDefault();
@@ -389,7 +389,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
                 />
               ) : (
                 <EmptyBlock
-                  key={`empty-${slotIndex}`}
+                  key={`empty-slot-${slotIndex}`}
                   slotIndex={slotIndex}
                   isActive={activeSlotIndex === slotIndex}
                   onDrop={(e) => {

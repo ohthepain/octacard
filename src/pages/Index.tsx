@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { FilePane } from "@/components/FilePane";
+import { RemoteFilePane } from "@/components/RemoteFilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
@@ -967,36 +968,43 @@ const Index = () => {
           {/* Source Browser - center separator only affects source vs dest */}
           <ResizablePanel id="source-browser" defaultSize="30%" minSize="15%">
             <div className="h-full min-h-0" data-testid="panel-source">
-              <FilePane
-                key={`source-${sourceRootVersion}`}
-                paneName="source"
-                title={libraryMode === "global" ? "Global Library" : "Source"}
-                mode={libraryMode === "global" ? "remote" : "local"}
-                remoteScope={globalScope}
-                showSidebar={false}
-                onPathChange={handleSourcePathChange}
-                onSelectionChange={setSelectedSourceItem}
-                onRequestedPathHandled={handleRequestedSourcePathHandled}
-                requestedPath={requestedSourcePath}
-                onRequestedRevealPathHandled={handleRequestedSourceRevealPathHandled}
-                requestedRevealPath={requestedSourceRevealPath}
-                dropMode="navigate"
-                sampleRate={formatSettings.sampleRate}
-                sampleDepth={formatSettings.sampleDepth}
-                fileFormat={formatSettings.fileFormat}
-                pitch={formatSettings.pitch}
-                sanitizeFilename={formatSettings.sanitizeFilename}
-                shortenFilename={formatSettings.shortenFilename}
-                shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
-                mono={formatSettings.mono}
-                normalize={formatSettings.normalize}
-                trimStart={formatSettings.trim}
-                convertFiles={false}
-                showEjectButton={false}
-                showNewFolderButton={false}
-                onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
-                refreshToken={sourceRefreshToken}
-              />
+              {libraryMode === "global" ? (
+                <RemoteFilePane
+                  key={`source-${sourceRootVersion}`}
+                  title="Global Library"
+                  scope={globalScope}
+                  onSelectionChange={setSelectedSourceItem}
+                />
+              ) : (
+                <FilePane
+                  key={`source-${sourceRootVersion}`}
+                  paneName="source"
+                  title="Source"
+                  showSidebar={false}
+                  onPathChange={handleSourcePathChange}
+                  onSelectionChange={setSelectedSourceItem}
+                  onRequestedPathHandled={handleRequestedSourcePathHandled}
+                  requestedPath={requestedSourcePath}
+                  onRequestedRevealPathHandled={handleRequestedSourceRevealPathHandled}
+                  requestedRevealPath={requestedSourceRevealPath}
+                  dropMode="navigate"
+                  sampleRate={formatSettings.sampleRate}
+                  sampleDepth={formatSettings.sampleDepth}
+                  fileFormat={formatSettings.fileFormat}
+                  pitch={formatSettings.pitch}
+                  sanitizeFilename={formatSettings.sanitizeFilename}
+                  shortenFilename={formatSettings.shortenFilename}
+                  shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
+                  mono={formatSettings.mono}
+                  normalize={formatSettings.normalize}
+                  trimStart={formatSettings.trim}
+                  convertFiles={false}
+                  showEjectButton={false}
+                  showNewFolderButton={false}
+                  onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
+                  refreshToken={sourceRefreshToken}
+                />
+              )}
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />

@@ -2,6 +2,7 @@ const COMBINING_MARKS_PATTERN = /\p{M}+/gu;
 const INVALID_FILENAME_CHAR_PATTERN = /[^a-zA-Z0-9_!&()+,\-.=@[\]{} ]/g;
 
 /** Path separators, control chars, null, and Windows-reserved chars. Preserves Unicode letters (å, ä, ö, etc.). */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally matching control chars for sanitization
 const DANGEROUS_FILENAME_CHARS = /[\x00-\x1F\x7F/\\:*?"<>|]+/g;
 
 /**

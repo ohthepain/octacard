@@ -35,13 +35,13 @@ export default function ResetPassword() {
     }
     setLoading(true);
     try {
-      const result = await authClient.$fetch("/reset-password", {
+      const result = (await authClient.$fetch("/reset-password", {
         method: "POST",
         body: {
           newPassword,
           token,
         },
-      }) as { error?: { message?: string } };
+      })) as { error?: { message?: string } };
       if (result.error) {
         toast.error(result.error.message ?? "Failed to reset password");
         return;
@@ -108,10 +108,13 @@ export default function ResetPassword() {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">New password</label>
+            <label htmlFor="newPassword" className="block text-sm font-medium text-foreground mb-1.5">
+              New password
+            </label>
             <div className="relative">
               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={17} />
               <input
+                id="newPassword"
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}

@@ -100,7 +100,9 @@ const listeners = new Set<Listener>();
 let storageListenerAttached = false;
 
 function emitChange() {
-  listeners.forEach((listener) => listener());
+  listeners.forEach((listener) => {
+  listener();
+});
 }
 
 function persistState(nextState: FavoritesState) {

@@ -321,7 +321,7 @@ export const AudioPreview = ({
     [parsedTimeSignature.beatsPerBar, secondsPerBeat],
   );
 
-  const sliceKey = (t: number) => t.toFixed(4);
+  const sliceKey = useCallback((t: number) => t.toFixed(4), []);
 
   const combinedSliceMarkers = useMemo(() => {
     const overridden = sliceMarkers.map((m) => {

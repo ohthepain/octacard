@@ -44,12 +44,11 @@ import {
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { useFavorites } from "@/hooks/use-favorites";
 import { VideoPreview } from "@/components/VideoPreview";
-import { RemoteFilePane } from "@/components/RemoteFilePane";
 import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
 import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
-import { downloadRemoteSampleBlob, getPack, getPackDownloadManifest, type RemoteScope } from "@/lib/remote-library";
+import { downloadRemoteSampleBlob, getPack, getPackDownloadManifest } from "@/lib/remote-library";
 import { SampleAnalysisDialog } from "@/components/SampleAnalysisDialog";
 import { useSession } from "@/lib/auth-client";
 import { CreatePackDialog } from "@/components/CreatePackDialog";
@@ -57,6 +56,7 @@ import { PackView } from "@/components/PackView";
 import { toast } from "sonner";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
+import type { FileSystemResult } from "@/lib/fileSystem";
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -196,8 +196,6 @@ function formatFileSize(bytes: number): string {
 interface FilePaneProps {
   paneName: string;
   title?: string;
-  mode?: "local" | "remote";
-  remoteScope?: RemoteScope;
   onFileTransfer?: (sourcePath: string, destinationPath: string) => void;
   sampleRate?: string;
   sampleDepth?: string;
@@ -236,8 +234,6 @@ interface FilePaneProps {
 export const FilePane = ({
   paneName,
   title = "Files",
-  mode = "local",
-  remoteScope = "all",
   onFileTransfer,
   sampleRate = "dont-change",
   sampleDepth = "dont-change",
@@ -263,10 +259,6 @@ export const FilePane = ({
   onBrowseForFolder,
   refreshToken,
 }: FilePaneProps) => {
-  if (mode === "remote") {
-    return <RemoteFilePane title={title} scope={remoteScope} onSelectionChange={onSelectionChange} />;
-  }
-
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -283,7 +275,7 @@ export const FilePane = ({
   const [isDraggingOverBreadcrumb, setIsDraggingOverBreadcrumb] = useState(false);
   const [currentVolumeUUID, setCurrentVolumeUUID] = useState<string | null>(null);
   const [pathDoesNotExist, setPathDoesNotExist] = useState(false);
-  const [isCardMounted, setIsCardMounted] = useState(false);
+  const [_isCardMounted, setIsCardMounted] = useState(false);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [_selectedAudioFile, setSelectedAudioFile] = useState<{ path: string; name: string } | null>(null);
@@ -517,7 +509,9 @@ export const FilePane = ({
     setFolderViewRoot(null);
     packManifestCacheRef.current.clear();
     setPackCoverCache((prev) => {
-      prev.forEach((url) => URL.revokeObjectURL(url));
+      prev.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
       return new Map();
     });
   }, []);
@@ -527,7 +521,11 @@ export const FilePane = ({
       const testResolver = (
         window as Window & {
           __octacardTestHooks?: {
-            resolveAnalysisSampleId?: (args: { path: string; name: string; paneType: "source" | "dest" }) => string | null | Promise<string | null>;
+            resolveAnalysisSampleId?: (args: {
+              path: string;
+              name: string;
+              paneType: "source" | "dest";
+            }) => string | null | Promise<string | null>;
           };
         }
       ).__octacardTestHooks?.resolveAnalysisSampleId;
@@ -589,8 +587,7 @@ export const FilePane = ({
           if (statsResult.success && statsResult.data?.isDirectory) {
             return parentPath;
           }
-        } catch {
-        }
+        } catch {}
       }
 
       // If no parent found, try root path
@@ -898,7 +895,9 @@ export const FilePane = ({
     // Cleanup function
     return () => {
       cancelled = true;
-      timeouts.forEach((timeout) => clearTimeout(timeout));
+      timeouts.forEach((timeout) => {
+        clearTimeout(timeout);
+      });
     };
   }, [pendingExpandedFolders, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Include fileTree so restoration can run once async directory load completes
 
@@ -1380,10 +1379,23 @@ export const FilePane = ({
     // Cleanup function
     return () => {
       cancelled = true;
-      timeouts.forEach((timeout) => clearTimeout(timeout));
+      timeouts.forEach((timeout) => {
+        clearTimeout(timeout);
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoNavigateToCard, paneName, getLastRightPaneVolumeUUID, getNavigationState, getVolumeName, getVolumeUUIDForPath, loadDirectory, paneType, refreshAvailableVolumes, saveLastRightPaneVolumeUUID]);
+  }, [
+    autoNavigateToCard,
+    paneName,
+    getLastRightPaneVolumeUUID,
+    getNavigationState,
+    getVolumeName,
+    getVolumeUUIDForPath,
+    loadDirectory,
+    paneType,
+    refreshAvailableVolumes,
+    saveLastRightPaneVolumeUUID,
+  ]);
   // getNavigationState is intentionally omitted - it's stable (memoized) and only used inside async functions
 
   const loadSearchFolderContents = useCallback(
@@ -1504,66 +1516,76 @@ export const FilePane = ({
     [searchQuery, searchResults, treeViewMode, paneType],
   );
 
-  const toggleFolder = async (node: FileNode) => {
-    const newExpanded = new Set(expandedFolders);
-    if (newExpanded.has(node.id)) {
-      newExpanded.delete(node.id);
-    } else {
-      newExpanded.add(node.id);
-      if (!node.loaded && node.type === "folder" && node.path) {
-        if (node.id.startsWith("search-folder-")) {
-          setSearchResultsTree((prev) => {
-            const updateNode = (nodes: FileNode[]): FileNode[] => {
-              return nodes.map((n) => {
-                if (n.id === node.id) {
-                  return { ...n, isLoading: true };
-                }
-                if (n.children) {
-                  return { ...n, children: updateNode(n.children) };
-                }
-                return n;
-              });
-            };
-            return updateNode(prev);
-          });
-          const children = await loadSearchFolderContents(node.path, node.id);
-          setSearchResultsTree((prev) => {
-            const updateNode = (nodes: FileNode[]): FileNode[] => {
-              return nodes.map((n) => {
-                if (n.id === node.id) {
-                  return { ...n, children, loaded: true, isLoading: false };
-                }
-                if (n.children) {
-                  return { ...n, children: updateNode(n.children) };
-                }
-                return n;
-              });
-            };
-            return updateNode(prev);
-          });
-        } else {
-          setFileTree((prev) => {
-            const updateNode = (nodes: FileNode[]): FileNode[] => {
-              return nodes.map((n) => {
-                if (n.id === node.id) {
-                  return { ...n, isLoading: true };
-                }
-                if (n.children) {
-                  return { ...n, children: updateNode(n.children) };
-                }
-                return n;
-              });
-            };
-            return updateNode(prev);
-          });
-          await loadDirectory(node.path, node.id);
+  const toggleFolder = useCallback(
+    async (node: FileNode) => {
+      const newExpanded = new Set(expandedFolders);
+      if (newExpanded.has(node.id)) {
+        newExpanded.delete(node.id);
+      } else {
+        newExpanded.add(node.id);
+        if (!node.loaded && node.type === "folder" && node.path) {
+          if (node.id.startsWith("search-folder-")) {
+            setSearchResultsTree((prev) => {
+              const updateNode = (nodes: FileNode[]): FileNode[] => {
+                return nodes.map((n) => {
+                  if (n.id === node.id) {
+                    return { ...n, isLoading: true };
+                  }
+                  if (n.children) {
+                    return { ...n, children: updateNode(n.children) };
+                  }
+                  return n;
+                });
+              };
+              return updateNode(prev);
+            });
+            const children = await loadSearchFolderContents(node.path, node.id);
+            setSearchResultsTree((prev) => {
+              const updateNode = (nodes: FileNode[]): FileNode[] => {
+                return nodes.map((n) => {
+                  if (n.id === node.id) {
+                    return { ...n, children, loaded: true, isLoading: false };
+                  }
+                  if (n.children) {
+                    return { ...n, children: updateNode(n.children) };
+                  }
+                  return n;
+                });
+              };
+              return updateNode(prev);
+            });
+          } else {
+            setFileTree((prev) => {
+              const updateNode = (nodes: FileNode[]): FileNode[] => {
+                return nodes.map((n) => {
+                  if (n.id === node.id) {
+                    return { ...n, isLoading: true };
+                  }
+                  if (n.children) {
+                    return { ...n, children: updateNode(n.children) };
+                  }
+                  return n;
+                });
+              };
+              return updateNode(prev);
+            });
+            await loadDirectory(node.path, node.id);
+          }
         }
       }
-    }
-    setExpandedFolders(newExpanded);
+      setExpandedFolders(newExpanded);
 
-    saveNavigationState(currentVolumeUUID ?? NAV_STATE_FALLBACK_VOLUME, currentRootPath, newExpanded);
-  };
+      saveNavigationState(currentVolumeUUID ?? NAV_STATE_FALLBACK_VOLUME, currentRootPath, newExpanded);
+    },
+    [
+      expandedFolders,
+      loadDirectory,
+      loadSearchFolderContents,
+      saveNavigationState,
+      currentVolumeUUID,
+      currentRootPath,
+    ],
+  );
 
   const navigateToFolder = useCallback(
     async (folderPath: string) => {
@@ -1720,15 +1742,16 @@ export const FilePane = ({
       }
     },
     [
-      autoNavigateToCard, 
-      getNavigationState, 
-      getVolumeName, 
-      getVolumeUUIDForPath, 
-      loadDirectory, 
-      normalizeVolumePath, 
-      refreshAvailableVolumes, 
-      rootPath, 
-      saveLastRightPaneVolumeUUID, paneType
+      autoNavigateToCard,
+      getNavigationState,
+      getVolumeName,
+      getVolumeUUIDForPath,
+      loadDirectory,
+      normalizeVolumePath,
+      refreshAvailableVolumes,
+      rootPath,
+      saveLastRightPaneVolumeUUID,
+      paneType,
     ],
   );
 
@@ -2228,16 +2251,18 @@ export const FilePane = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    lastSelectedIndex, 
-    fileTree, 
-    searchQuery, 
-    searchResults, 
-    currentRootPath, 
-    rootPath, 
-    getFlatNodeList, 
-    expandedFolders, 
-    navigateToFolder, 
-    toggleFolder, buildFolderTreeFromSearchResults, folderViewRoot
+    lastSelectedIndex,
+    fileTree,
+    searchQuery,
+    searchResults,
+    currentRootPath,
+    rootPath,
+    getFlatNodeList,
+    expandedFolders,
+    navigateToFolder,
+    toggleFolder,
+    buildFolderTreeFromSearchResults,
+    folderViewRoot,
   ]);
 
   const navigateToParent = async () => {
@@ -2461,7 +2486,7 @@ export const FilePane = ({
                   normalize ||
                   trimStart);
 
-              let copyResult;
+              let copyResult: FileSystemResult<unknown>;
               if (needsConversion) {
                 const overwriteAction = await resolveOverwriteAction(finalDestPath);
                 if (overwriteAction === "abort") {
@@ -2570,7 +2595,7 @@ export const FilePane = ({
               normalize ||
               trimStart);
 
-          let result;
+          let result: FileSystemResult<unknown>;
           if (needsConversion) {
             const overwriteAction = await resolveOverwriteAction(finalDestFilePath);
             if (overwriteAction === "abort") {
@@ -2686,30 +2711,27 @@ export const FilePane = ({
       });
     },
     [
-      countFilesRecursively, 
-      convertFiles, 
-      fileFormat, 
-      loadDirectory, 
-      mono, 
-      normalize, 
-      onFileTransfer, 
-      paneType, 
-      pitch, 
-      sanitizeFilename, 
-      shortenFilename, 
-      shortenFilenameMaxLength, 
-      sampleDepth, 
-      sampleRate, 
-      trimStart, promptOverwriteChoice
+      countFilesRecursively,
+      convertFiles,
+      fileFormat,
+      loadDirectory,
+      mono,
+      normalize,
+      onFileTransfer,
+      paneType,
+      pitch,
+      sanitizeFilename,
+      shortenFilename,
+      shortenFilenameMaxLength,
+      sampleDepth,
+      sampleRate,
+      trimStart,
+      promptOverwriteChoice,
     ],
   );
 
   const performExternalConversion = useCallback(
-    async (
-      itemsToProcess: ExternalConversionItem[],
-      destinationPath: string,
-      destinationNode?: FileNode,
-    ) => {
+    async (itemsToProcess: ExternalConversionItem[], destinationPath: string, destinationNode?: FileNode) => {
       if (!fileSystemService.hasRootForPane(paneType)) return;
 
       let currentFileIndex = 0;
@@ -2822,7 +2844,7 @@ export const FilePane = ({
             continue;
           }
 
-          let result;
+          let result: FileSystemResult<unknown>;
           if (needsConversion) {
             convertedFileCount++;
             const addResult = await fileSystemService.addFileFromDrop(file, item.targetDir, paneType);
@@ -2896,19 +2918,20 @@ export const FilePane = ({
       });
     },
     [
-      paneType, 
-      pitch, 
-      sanitizeFilename, 
-      shortenFilename, 
-      shortenFilenameMaxLength, 
-      fileFormat, 
-      sampleRate, 
-      sampleDepth, 
-      mono, 
-      normalize, 
-      trimStart, 
-      loadDirectory, 
-      onFileTransfer, promptOverwriteChoice
+      paneType,
+      pitch,
+      sanitizeFilename,
+      shortenFilename,
+      shortenFilenameMaxLength,
+      fileFormat,
+      sampleRate,
+      sampleDepth,
+      mono,
+      normalize,
+      trimStart,
+      loadDirectory,
+      onFileTransfer,
+      promptOverwriteChoice,
     ],
   );
 
@@ -3062,8 +3085,7 @@ export const FilePane = ({
     // Internal drag-and-drop between panes should convert/copy immediately without confirmation.
     // This matches the Convert button flow while skipping the modal prompt.
     if (paneType === "dest") {
-      const testDrop = (window as Window & { __octacardTestDropData?: OctacardTestDropData })
-        .__octacardTestDropData;
+      const testDrop = (window as Window & { __octacardTestDropData?: OctacardTestDropData }).__octacardTestDropData;
       const sourcePath =
         e.dataTransfer.getData("sourcePath") || (typeof testDrop === "object" ? testDrop?.sourcePath : "");
       const sourceType =
@@ -3134,13 +3156,13 @@ export const FilePane = ({
       // Try OS drop - get path from directory handle if it's under our root
       const items = e.dataTransfer.items;
       if (items && items.length > 0) {
-          const item = items[0];
-          if (item.kind === "file") {
-            try {
+        const item = items[0];
+        if (item.kind === "file") {
+          try {
             const handle = await (item as DataTransferItemWithFileSystemHandle).getAsFileSystemHandle?.();
-              if (handle?.kind === "directory") {
-                const path = fileSystemService.getVirtualPath(handle as FileSystemDirectoryHandle, paneType);
-                if (path) {
+            if (handle?.kind === "directory") {
+              const path = fileSystemService.getVirtualPath(handle as FileSystemDirectoryHandle, paneType);
+              if (path) {
                 await navigateToFolder(path);
                 return;
               }
@@ -3364,153 +3386,89 @@ export const FilePane = ({
     }
   };
 
-  const handleDelete = async (node?: FileNode) => {
-    // Check if we have multiple selected items
-    const selectedNodes = node ? [node] : getSelectedNodes(fileTree);
+  const handleDelete = useCallback(
+    async (node?: FileNode) => {
+      // Check if we have multiple selected items
+      const selectedNodes = node ? [node] : getSelectedNodes(fileTree);
 
-    if (selectedNodes.length === 0) return;
+      if (selectedNodes.length === 0) return;
 
-    const itemCount = selectedNodes.length;
-    const itemType = itemCount === 1 ? (selectedNodes[0].type === "file" ? "file" : "folder") : "items";
-    const confirmMessage =
-      itemCount === 1
-        ? `Are you sure you want to delete ${itemType} "${selectedNodes[0].name}"?`
-        : `Are you sure you want to delete ${itemCount} ${itemType}?`;
+      const itemCount = selectedNodes.length;
+      const itemType = itemCount === 1 ? (selectedNodes[0].type === "file" ? "file" : "folder") : "items";
+      const confirmMessage =
+        itemCount === 1
+          ? `Are you sure you want to delete ${itemType} "${selectedNodes[0].name}"?`
+          : `Are you sure you want to delete ${itemCount} ${itemType}?`;
 
-    if (!confirm(confirmMessage)) {
-      return;
-    }
-
-    const errors: Array<{ name: string; error: string }> = [];
-    const deletedPaths = new Set<string>();
-
-    for (const nodeToDelete of selectedNodes) {
-      try {
-        let result;
-        if (nodeToDelete.type === "file") {
-          result = await fileSystemService.deleteFile(nodeToDelete.path, paneType);
-        } else {
-          result = await fileSystemService.deleteFolder(nodeToDelete.path, paneType);
-        }
-
-        if (result.success) {
-          deletedPaths.add(nodeToDelete.path);
-          // Find parent directory to refresh
-          const parentPath = nodeToDelete.path.split("/").slice(0, -1).join("/");
-          if (parentPath && !deletedPaths.has(parentPath)) {
-            // Find the parent node ID
-            const findParentNodeId = (nodes: FileNode[], targetPath: string): string | null => {
-              for (const n of nodes) {
-                if (n.path === targetPath) {
-                  return n.id;
-                }
-                if (n.children) {
-                  const found = findParentNodeId(n.children, targetPath);
-                  if (found) return found;
-                }
-              }
-              return null;
-            };
-
-            const parentNodeId = findParentNodeId(fileTree, parentPath) || "root";
-            await loadDirectory(parentPath, parentNodeId);
-          } else {
-            // If it's the root, reload the root
-            if (rootPath) {
-              await loadDirectory(rootPath, "root");
-            }
-          }
-        } else {
-          errors.push({ name: nodeToDelete.name, error: result.error || "Unknown error" });
-        }
-      } catch (error) {
-        errors.push({ name: nodeToDelete.name, error: String(error) });
+      if (!confirm(confirmMessage)) {
+        return;
       }
-    }
 
-    // Clear selection after deletion
-    setSelectedItems(new Set());
+      const errors: Array<{ name: string; error: string }> = [];
+      const deletedPaths = new Set<string>();
 
-    // Show errors if any
-    if (errors.length > 0) {
-      const errorMessage = `Failed to delete ${errors.length} item(s):\n${errors
-        .map((e) => `- ${e.name}: ${e.error}`)
-        .join("\n")}`;
-      toast.error(errorMessage);
-    }
-  };
+      for (const nodeToDelete of selectedNodes) {
+        try {
+          let result: FileSystemResult<unknown>;
+          if (nodeToDelete.type === "file") {
+            result = await fileSystemService.deleteFile(nodeToDelete.path, paneType);
+          } else {
+            result = await fileSystemService.deleteFolder(nodeToDelete.path, paneType);
+          }
+
+          if (result.success) {
+            deletedPaths.add(nodeToDelete.path);
+            // Find parent directory to refresh
+            const parentPath = nodeToDelete.path.split("/").slice(0, -1).join("/");
+            if (parentPath && !deletedPaths.has(parentPath)) {
+              // Find the parent node ID
+              const findParentNodeId = (nodes: FileNode[], targetPath: string): string | null => {
+                for (const n of nodes) {
+                  if (n.path === targetPath) {
+                    return n.id;
+                  }
+                  if (n.children) {
+                    const found = findParentNodeId(n.children, targetPath);
+                    if (found) return found;
+                  }
+                }
+                return null;
+              };
+
+              const parentNodeId = findParentNodeId(fileTree, parentPath) || "root";
+              await loadDirectory(parentPath, parentNodeId);
+            } else {
+              // If it's the root, reload the root
+              if (rootPath) {
+                await loadDirectory(rootPath, "root");
+              }
+            }
+          } else {
+            errors.push({ name: nodeToDelete.name, error: result.error || "Unknown error" });
+          }
+        } catch (error) {
+          errors.push({ name: nodeToDelete.name, error: String(error) });
+        }
+      }
+
+      // Clear selection after deletion
+      setSelectedItems(new Set());
+
+      // Show errors if any
+      if (errors.length > 0) {
+        const errorMessage = `Failed to delete ${errors.length} item(s):\n${errors
+          .map((e) => `- ${e.name}: ${e.error}`)
+          .join("\n")}`;
+        toast.error(errorMessage);
+      }
+    },
+    [fileTree, paneType, loadDirectory, rootPath, getSelectedNodes],
+  );
 
   // Update ref after handleDelete is defined
   useEffect(() => {
     handleDeleteRef.current = handleDelete;
   }, [handleDelete]);
-
-  const _handleEject = async () => {
-    if (!isCardMounted || !rootPath) return;
-
-    try {
-      console.log(`${paneName} - Ejecting volume:`, rootPath);
-      // Eject not available in web
-      const ejectResult = { success: false, error: "Eject not available in web browser" };
-
-      if (!ejectResult.success) {
-        console.error("Failed to eject volume:", ejectResult.error);
-        toast.error(`Failed to eject card: ${ejectResult.error}`);
-        return;
-      }
-
-      // Then navigate back to home directory
-      const homeResult = { success: true, data: "/" };
-      if (homeResult?.success && homeResult.data) {
-        const homePath = homeResult.data;
-        const volumeUUID = await getVolumeUUIDForPath(homePath);
-        setCurrentVolumeUUID(volumeUUID);
-        setRootPath(homePath);
-        rootPathRef.current = homePath;
-        setDisplayTitle("Local Files");
-        saveLastRightPaneVolumeUUID(null);
-
-        // Try to restore saved navigation state
-        let initialPath = homePath;
-        const navStateVolumeUUID = volumeUUID ?? NAV_STATE_FALLBACK_VOLUME;
-        const savedState = getNavigationState(navStateVolumeUUID);
-        if (savedState) {
-          try {
-            const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
-            if (statsResult.success && statsResult.data?.isDirectory) {
-              initialPath = savedState.currentPath;
-              console.log(
-                `${paneName} - Restored navigation state for home volume UUID:`,
-                navStateVolumeUUID,
-                "to:",
-                savedState.currentPath,
-              );
-            } else {
-              console.log(`${paneName} - Saved path exists but is not a directory, using home directory`);
-            }
-          } catch {
-            console.log(`${paneName} - Saved path no longer exists, using home directory`);
-          }
-        }
-
-        setCurrentRootPath(initialPath);
-        setIsCardMounted(false);
-        currentRootPathRef.current = initialPath;
-        setExpandedFolders(new Set());
-        setFileTree([]);
-        await loadDirectory(initialPath, "root");
-
-        // Restore expanded folders after loading
-        if (savedState?.expandedFolders && savedState.expandedFolders.length > 0) {
-          setPendingExpandedFolders(savedState.expandedFolders);
-        }
-        void refreshAvailableVolumes();
-      }
-    } catch (error) {
-      console.error(`${paneName} - Error ejecting card:`, error);
-      toast.error(`Error ejecting card: ${error}`);
-    }
-  };
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim() || !fileSystemService.hasRootDirectory()) return;

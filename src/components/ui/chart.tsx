@@ -67,10 +67,13 @@ function sanitizeChartId(id: string): string {
 /** Sanitize color value for safe use in CSS; prevents </style> breakout and injection. */
 function sanitizeCssValue(value: string): string {
   if (!value || typeof value !== "string") return "";
-  return value
-    .replace(/<\/style>/gi, "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/[\0-\x1F\x7F]/g, "");
+  return (
+    value
+      .replace(/<\/style>/gi, "")
+      .replace(/<[^>]*>/g, "")
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally matching control chars for sanitization
+      .replace(/[\0-\x1F\x7F]/g, "")
+  );
 }
 
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {

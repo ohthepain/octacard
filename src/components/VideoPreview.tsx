@@ -1,13 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  X,
-  Maximize2,
-} from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, X, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
@@ -113,7 +105,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
     const handleError = () => {
       const error = video.error;
       let errorMessage = "Failed to load video";
-      
+
       if (error) {
         // Map error codes to user-friendly messages
         const errorMessages: Record<number, string> = {
@@ -122,7 +114,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
           3: "Video decoding error - file may be corrupted or unsupported format",
           4: "Video format not supported - codec may not be available",
         };
-        
+
         errorMessage = errorMessages[error.code] || error.message || `Video error (code: ${error.code})`;
         console.error("Video error:", {
           code: error.code,
@@ -144,7 +136,7 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
           error: video.error,
         });
       }
-      
+
       setErrorMessage(errorMessage);
       setIsLoading(false);
     };
@@ -213,17 +205,23 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
     if (!videoRef.current) return;
 
     if (!document.fullscreenElement) {
-      videoRef.current.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch((err) => {
-        console.error("Error attempting to enable fullscreen:", err);
-      });
+      videoRef.current
+        .requestFullscreen()
+        .then(() => {
+          setIsFullscreen(true);
+        })
+        .catch((err) => {
+          console.error("Error attempting to enable fullscreen:", err);
+        });
     } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false);
-      }).catch((err) => {
-        console.error("Error attempting to exit fullscreen:", err);
-      });
+      document
+        .exitFullscreen()
+        .then(() => {
+          setIsFullscreen(false);
+        })
+        .catch((err) => {
+          console.error("Error attempting to exit fullscreen:", err);
+        });
     }
   };
 
@@ -278,12 +276,15 @@ export const VideoPreview = ({ filePath, fileName, onClose, paneType = "source" 
       <div className="space-y-2">
         <div className="relative bg-black rounded overflow-hidden aspect-video">
           <video
+            aria-label="Video player"
             ref={videoRef}
             src={videoUrl}
             className="w-full h-full"
             playsInline
             preload="metadata"
-          />
+          >
+            <track kind="captions" />
+          </video>
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />

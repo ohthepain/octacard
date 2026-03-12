@@ -25,7 +25,17 @@ export const WaveformPreview = ({ sampleId: _sampleId }: WaveformPreviewProps) =
           {Array.from({ length: 100 }).map((_, i) => {
             const height = Math.random() * 60 + 20;
             const y = (80 - height) / 2;
-            return <rect key={i} x={`${i}%`} y={y} width="0.8%" height={height} className="fill-waveform opacity-70" />;
+            return (
+              <rect
+                aria-label="Waveform bar"
+                key={`waveform-bar-${i}`}
+                x={`${i}%`}
+                y={y}
+                width="0.8%"
+                height={height}
+                className="fill-waveform opacity-70"
+              />
+            );
           })}
         </svg>
 

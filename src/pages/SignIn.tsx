@@ -378,7 +378,9 @@ export default function SignIn() {
             <form onSubmit={handleSubmit} className="space-y-5">
               {mode === "sign-up" && (
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">Name</label>
+                  <label id="name" htmlFor="name" className="block text-sm font-medium text-foreground mb-1.5">
+                    Name
+                  </label>
                   <div className="relative">
                     <input
                       type="text"
@@ -394,7 +396,9 @@ export default function SignIn() {
 
               {/* Email */}
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
+                <label id="email" htmlFor="email" className="block text-sm font-medium text-foreground mb-1.5">
+                  Email
+                </label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={17} />
                   <input
@@ -413,7 +417,9 @@ export default function SignIn() {
               {(mode === "sign-up" || (mode === "sign-in" && tab === "password")) && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-sm font-medium text-foreground">Password</label>
+                    <label id="password" htmlFor="password" className="block text-sm font-medium text-foreground">
+                      Password
+                    </label>
                     {mode === "sign-in" && tab === "password" && (
                       <button
                         type="button"
@@ -450,11 +456,26 @@ export default function SignIn() {
               {/* Submit */}
               <button
                 type="submit"
+                aria-label={
+                  mode === "sign-in" && tab === "magic"
+                    ? "Send Magic Link"
+                    : mode === "sign-in"
+                      ? "Sign in"
+                      : "Create account"
+                }
                 disabled={loading}
                 className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-primary-foreground font-semibold text-sm transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-70 bg-primary"
               >
                 {loading ? (
-                  <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <svg
+                    className="animate-spin"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden
+                    aria-label="Loading"
+                  >
                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
                     <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                   </svg>
@@ -550,7 +571,13 @@ export default function SignIn() {
                 {!forgotPasswordSent ? (
                   <form onSubmit={handleForgotPassword} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
+                      <label
+                        id="forgot-password-email"
+                        htmlFor="forgot-password-email"
+                        className="block text-sm font-medium text-foreground mb-1.5"
+                      >
+                        Email
+                      </label>
                       <input
                         type="email"
                         value={forgotPasswordEmail}

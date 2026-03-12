@@ -99,7 +99,7 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
     try {
       if (!hasDirectoryPickerSupport()) {
         toast.error(
-          "Folder picker not supported. Use Brave, Chrome, or another Chromium-based browser (including ChatGPT Atlas)."
+          "Folder picker not supported. Use Brave, Chrome, or another Chromium-based browser (including ChatGPT Atlas).",
         );
         return;
       }
@@ -252,8 +252,8 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
                   <h3 className="font-semibold">Pitch Shift to C</h3>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Scans filenames for notes (e.g., &quot;Synth_F#m.wav&quot;), calculates the offset to C, and
-                  slows down/speeds up the audio (Varispeed) to match C.
+                  Scans filenames for notes (e.g., &quot;Synth_F#m.wav&quot;), calculates the offset to C, and slows
+                  down/speeds up the audio (Varispeed) to match C.
                 </p>
               </div>
               <Button onClick={() => processFiles("NOTE")} disabled={processing} className="w-full">
@@ -273,8 +273,8 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
                   <h3 className="font-semibold">BPM Resampler</h3>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Reads source BPM from the <strong>Folder Name</strong> (e.g., folder &quot;170&quot;)
-                  and resamples audio to match Target BPM.
+                  Reads source BPM from the <strong>Folder Name</strong> (e.g., folder &quot;170&quot;) and resamples
+                  audio to match Target BPM.
                 </p>
                 <div className="flex items-center gap-4">
                   <Label htmlFor="bpm">Target BPM</Label>
@@ -307,12 +307,10 @@ export function BatchToolsDialog({ open, onOpenChange }: BatchToolsDialogProps) 
           <Progress value={progress} className="h-2" />
           <ScrollArea className="flex-1">
             <div className="text-xs font-mono text-green-400 space-y-1">
-              {logs.map((log, i) => (
-                <div key={i}>{log}</div>
+              {logs.map((log) => (
+                <div key={`log-${log}`}>{log}</div>
               ))}
-              {logs.length === 0 && (
-                <span className="text-muted-foreground opacity-50">Waiting to start...</span>
-              )}
+              {logs.length === 0 && <span className="text-muted-foreground opacity-50">Waiting to start...</span>}
             </div>
           </ScrollArea>
         </div>
