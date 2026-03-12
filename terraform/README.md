@@ -154,7 +154,7 @@ pnpm run terraform:force-unlock:staging
 
 Standalone VPC with ALB, ECS Fargate, RDS Postgres, ElastiCache Redis.
 
-**Secrets:** Edit `terraform/environments/staging/terraform.tfvars` and replace `REPLACE_ME` with your `db_password` and `better_auth_secret` (generate with `openssl rand -hex 32`). For Google sign-in, add `google_client_id` and `google_client_secret` (from Google Cloud Console → APIs & Services → Credentials). The tfvars files are gitignored. If they were previously committed, run `git rm --cached terraform/environments/*/terraform.tfvars` once to stop tracking them.
+**Secrets:** Edit `terraform/environments/staging/terraform.tfvars` and replace `REPLACE_ME` with your `db_password` and `better_auth_secret` (generate with `openssl rand -hex 32`). Prefer AWS-managed RDS CA trust by setting `db_ca_cert_identifier` (for example from `aws rds describe-certificates`) and leaving `database_ca_cert_base64` empty. Only set `database_ca_cert_base64` if you intentionally use a private/self-signed CA chain. For Google sign-in, add `google_client_id` and `google_client_secret` (from Google Cloud Console → APIs & Services → Credentials). The tfvars files are gitignored. If they were previously committed, run `git rm --cached terraform/environments/*/terraform.tfvars` once to stop tracking them.
 
 Then apply:
 
@@ -192,6 +192,8 @@ terraform workspace select staging   # or production
 terraform import aws_secretsmanager_secret.database_url octacard-staging/database-url
 terraform import aws_secretsmanager_secret.redis_url octacard-staging/redis-url
 terraform import aws_secretsmanager_secret.better_auth_secret octacard-staging/better-auth-secret
+# Optional: only when database_ca_cert_base64 is set in tfvars
+terraform import aws_secretsmanager_secret.database_ca_cert_base64[0] octacard-staging/database-ca-cert-base64
 
 # Then apply again
 pnpm run terraform:apply:staging
@@ -288,10 +290,10 @@ aws ecs update-service --cluster octacard-staging-cluster --service octacard-sta
 
 This means the app is attempting a non-SSL Postgres connection while RDS requires SSL.
 
-`DATABASE_URL` must include `?sslmode=require`, for example:
+`DATABASE_URL` must include `?sslmode=verify-full`, for example:
 
 ```text
-postgresql://<user>:<password>@<host>/octacard?sslmode=require
+postgresql://<user>:<password>@<host>/octacard?sslmode=verify-full
 ```
 
 If production is currently down, update `octacard-production/database-url` in Secrets Manager with the SSL URL and force a new ECS deployment.

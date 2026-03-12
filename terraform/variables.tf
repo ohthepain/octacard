@@ -50,6 +50,12 @@ variable "db_password" {
   sensitive   = true
 }
 
+variable "db_ca_cert_identifier" {
+  description = "RDS CA certificate identifier (AWS-managed). Leave empty to use AWS/account default."
+  type        = string
+  default     = ""
+}
+
 variable "redis_node_type" {
   description = "ElastiCache node type"
   type        = string
@@ -59,6 +65,13 @@ variable "redis_node_type" {
 variable "better_auth_secret" {
   description = "Better Auth secret (generate with: openssl rand -hex 32)"
   type        = string
+  sensitive   = true
+}
+
+variable "database_ca_cert_base64" {
+  description = "Optional base64-encoded PEM CA certificate for Postgres TLS validation (set when DB uses private/self-signed CA chain)"
+  type        = string
+  default     = ""
   sensitive   = true
 }
 

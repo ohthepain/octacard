@@ -226,11 +226,12 @@ resource "aws_db_instance" "postgres" {
   vpc_security_group_ids = [aws_security_group.db.id]
   db_subnet_group_name   = aws_db_subnet_group.main.name
   publicly_accessible    = false
+  ca_cert_identifier     = var.db_ca_cert_identifier != "" ? var.db_ca_cert_identifier : null
 
   backup_retention_period = local.environment == "production" ? 7 : 1
   multi_az                = local.environment == "production"
 
-  skip_final_snapshot     = local.environment != "production"
+  skip_final_snapshot       = local.environment != "production"
   final_snapshot_identifier = local.environment == "production" ? "${local.name_prefix}-db-final" : null
 
   tags = { Name = "${local.name_prefix}-db" }
@@ -275,8 +276,8 @@ resource "aws_iam_role" "ecs_execution" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "ecs-tasks.amazonaws.com" }
     }]
   })
@@ -294,14 +295,17 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
+      Effect = "Allow"
+      Action = ["secretsmanager:GetSecretValue"]
       Resource = concat(
         [
           aws_secretsmanager_secret.database_url.arn,
           aws_secretsmanager_secret.redis_url.arn,
           aws_secretsmanager_secret.better_auth_secret.arn
         ],
+        var.database_ca_cert_base64 != "" ? [
+          aws_secretsmanager_secret.database_ca_cert_base64[0].arn
+        ] : [],
         var.google_client_id != "" && var.google_client_secret != "" ? [
           aws_secretsmanager_secret.google_client_id[0].arn,
           aws_secretsmanager_secret.google_client_secret[0].arn
@@ -318,8 +322,8 @@ resource "aws_iam_role" "ecs_task" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "ecs-tasks.amazonaws.com" }
     }]
   })
@@ -361,8 +365,8 @@ resource "aws_secretsmanager_secret" "database_url" {
 
 resource "aws_secretsmanager_secret_version" "database_url" {
   secret_id     = aws_secretsmanager_secret.database_url.id
-  secret_string = "postgresql://${var.db_username}:${urlencode(var.db_password)}@${aws_db_instance.postgres.endpoint}/octacard?sslmode=require"
-  depends_on   = [aws_db_instance.postgres]
+  secret_string = "postgresql://${var.db_username}:${urlencode(var.db_password)}@${aws_db_instance.postgres.endpoint}/octacard?sslmode=verify-full"
+  depends_on    = [aws_db_instance.postgres]
   lifecycle { ignore_changes = [secret_string] }
 }
 
@@ -388,10 +392,23 @@ resource "aws_secretsmanager_secret_version" "better_auth_secret" {
   secret_string = var.better_auth_secret
 }
 
+resource "aws_secretsmanager_secret" "database_ca_cert_base64" {
+  count = var.database_ca_cert_base64 != "" ? 1 : 0
+  name  = "${local.name_prefix}/database-ca-cert-base64"
+  tags  = { Name = "${local.name_prefix}-database-ca-cert-base64" }
+  lifecycle { prevent_destroy = true }
+}
+
+resource "aws_secretsmanager_secret_version" "database_ca_cert_base64" {
+  count         = var.database_ca_cert_base64 != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.database_ca_cert_base64[0].id
+  secret_string = var.database_ca_cert_base64
+}
+
 resource "aws_secretsmanager_secret" "google_client_id" {
-  count  = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
-  name   = "${local.name_prefix}/google-client-id"
-  tags   = { Name = "${local.name_prefix}-google-client-id" }
+  count = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
+  name  = "${local.name_prefix}/google-client-id"
+  tags  = { Name = "${local.name_prefix}-google-client-id" }
   lifecycle { prevent_destroy = true }
 }
 
@@ -402,9 +419,9 @@ resource "aws_secretsmanager_secret_version" "google_client_id" {
 }
 
 resource "aws_secretsmanager_secret" "google_client_secret" {
-  count  = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
-  name   = "${local.name_prefix}/google-client-secret"
-  tags   = { Name = "${local.name_prefix}-google-client-secret" }
+  count = var.google_client_id != "" && var.google_client_secret != "" ? 1 : 0
+  name  = "${local.name_prefix}/google-client-secret"
+  tags  = { Name = "${local.name_prefix}-google-client-secret" }
   lifecycle { prevent_destroy = true }
 }
 
@@ -456,11 +473,11 @@ resource "aws_lb_target_group" "app" {
 
 # ACM Certificate in us-east-1 (required for CloudFront)
 resource "aws_acm_certificate" "cloudfront" {
-  count                    = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
-  provider                 = aws.us_east_1
-  domain_name              = var.domain_name
+  count                     = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  provider                  = aws.us_east_1
+  domain_name               = var.domain_name
   subject_alternative_names = var.domain_aliases
-  validation_method        = "DNS"
+  validation_method         = "DNS"
 
   lifecycle { create_before_destroy = true }
   tags = { Name = "${local.name_prefix}-cloudfront-cert" }
@@ -492,10 +509,10 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 
 # CloudFront distribution (when domain configured)
 resource "aws_cloudfront_distribution" "main" {
-  count    = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
-  enabled  = true
-  comment  = "${local.name_prefix} app"
-  aliases  = concat([var.domain_name], var.domain_aliases)
+  count   = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  enabled = true
+  comment = "${local.name_prefix} app"
+  aliases = concat([var.domain_name], var.domain_aliases)
 
   origin {
     domain_name = aws_lb.main.dns_name
@@ -530,7 +547,7 @@ resource "aws_cloudfront_distribution" "main" {
 
   viewer_certificate {
     acm_certificate_arn      = aws_acm_certificate_validation.cloudfront[0].certificate_arn
-    ssl_support_method      = "sni-only"
+    ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }
 
@@ -545,10 +562,10 @@ resource "aws_cloudfront_distribution" "main" {
 
 # Route 53: A records point to CloudFront (not ALB)
 resource "aws_route53_record" "main" {
-  count          = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
-  zone_id        = var.route53_zone_id
-  name           = var.domain_name
-  type           = "A"
+  count           = var.domain_name != "" && var.route53_zone_id != "" ? 1 : 0
+  zone_id         = var.route53_zone_id
+  name            = var.domain_name
+  type            = "A"
   allow_overwrite = true
 
   alias {
@@ -598,13 +615,13 @@ resource "aws_ecs_task_definition" "app" {
 
   runtime_platform {
     cpu_architecture        = "ARM64"
-    operating_system_family  = "LINUX"
+    operating_system_family = "LINUX"
   }
 
   container_definitions = jsonencode([{
-    name      = "${local.name_prefix}-app"
-    image     = "${aws_ecr_repository.app.repository_url}:${local.environment}"
-    essential = true
+    name         = "${local.name_prefix}-app"
+    image        = "${aws_ecr_repository.app.repository_url}:${local.environment}"
+    essential    = true
     portMappings = [{ containerPort = 3000, protocol = "tcp" }]
 
     environment = [
@@ -625,6 +642,9 @@ resource "aws_ecs_task_definition" "app" {
         { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.redis_url.arn },
         { name = "BETTER_AUTH_SECRET", valueFrom = aws_secretsmanager_secret.better_auth_secret.arn }
       ],
+      var.database_ca_cert_base64 != "" ? [
+        { name = "DATABASE_CA_CERT_BASE64", valueFrom = aws_secretsmanager_secret.database_ca_cert_base64[0].arn }
+      ] : [],
       var.google_client_id != "" && var.google_client_secret != "" ? [
         { name = "GOOGLE_CLIENT_ID", valueFrom = aws_secretsmanager_secret.google_client_id[0].arn },
         { name = "GOOGLE_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.google_client_secret[0].arn }
@@ -688,7 +708,7 @@ output "s3_bucket_arn" {
 }
 
 output "database_url" {
-  value       = "postgresql://${var.db_username}:${urlencode(var.db_password)}@${aws_db_instance.postgres.endpoint}/octacard?sslmode=require"
+  value       = "postgresql://${var.db_username}:${urlencode(var.db_password)}@${aws_db_instance.postgres.endpoint}/octacard?sslmode=verify-full"
   description = "Postgres connection string (DATABASE_URL)"
   sensitive   = true
 }
@@ -740,8 +760,8 @@ output "ses_configuration_set" {
 
 # SES Configuration Set (optional - for event publishing)
 resource "aws_sesv2_configuration_set" "main" {
-  count                   = local.ses_configuration_set_name != "" ? 1 : 0
-  configuration_set_name  = local.ses_configuration_set_name
+  count                  = local.ses_configuration_set_name != "" ? 1 : 0
+  configuration_set_name = local.ses_configuration_set_name
   reputation_options {
     reputation_metrics_enabled = true
   }
