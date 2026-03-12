@@ -108,17 +108,25 @@ export default function Admin() {
               </div>
             );
             return tool.external ? (
-              <a key={tool.id} href={tool.href} target="_blank" rel="noopener noreferrer">
-                <Button variant="ghost" className="w-full justify-start h-auto p-0">
+              <Button
+                key={tool.id}
+                variant="ghost"
+                className="w-full justify-start h-auto p-0"
+                asChild
+              >
+                <a href={tool.href} target="_blank" rel="noopener noreferrer">
                   {content}
-                </Button>
-              </a>
+                </a>
+              </Button>
             ) : (
-              <Link key={tool.id} to={tool.href}>
-                <Button variant="ghost" className="w-full justify-start h-auto p-0">
-                  {content}
-                </Button>
-              </Link>
+              <Button
+                key={tool.id}
+                variant="ghost"
+                className="w-full justify-start h-auto p-0"
+                asChild
+              >
+                <Link to={tool.href}>{content}</Link>
+              </Button>
             );
           })}
         </div>

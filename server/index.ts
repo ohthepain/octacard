@@ -1,17 +1,24 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { bodyLimit } from "hono/body-limit";
-import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { auth } from "./auth.js";
-import { errorHandler, requestLogger, versionCheck, requireAuth, requireAdmin } from "./middleware/index.js";
-import { healthApp } from "./routes/health.js";
-import { uploadApp } from "./routes/upload.js";
-import { libraryApp } from "./routes/library.js";
-import { adminApp } from "./routes/admin.js";
-import type { AppVariables } from "./types.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { cors } from "hono/cors";
+import { auth } from "./auth.js";
+import {
+  errorHandler,
+  requestLogger,
+  requireAdmin,
+  requireAuth,
+  versionCheck,
+} from "./middleware/index.js";
+import { adminApp } from "./routes/admin.js";
+import { healthApp } from "./routes/health.js";
+import { libraryApp } from "./routes/library.js";
+import { uploadApp } from "./routes/upload.js";
+import type { AppVariables } from "./types.js";
+import { setSampleAnalysisWorkerEnabled } from "./workers/sample-analysis-state.js";
 import { startSampleAnalysisWorker } from "./workers/sample-analysis-worker.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -86,7 +93,10 @@ if (isProduction) {
   app.use("/privacy-policy.html", serveStatic({ root: distDir }));
   app.use("/terms-of-service.html", serveStatic({ root: distDir }));
   app.use("/release-notes/*", serveStatic({ root: distDir }));
-  app.get("*", serveStatic({ root: distDir, rewriteRequestPath: () => "/index.html" }));
+  app.get(
+    "*",
+    serveStatic({ root: distDir, rewriteRequestPath: () => "/index.html" }),
+  );
 }
 
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
@@ -94,11 +104,15 @@ console.log(`[API] Server running on http://localhost:${port}`);
 
 serve({ fetch: app.fetch, port });
 
-const sampleAnalysisWorkerEnabled = process.env.SAMPLE_ANALYSIS_WORKER_ENABLED !== "false";
+const sampleAnalysisWorkerEnabled =
+  process.env.SAMPLE_ANALYSIS_WORKER_ENABLED !== "false";
+setSampleAnalysisWorkerEnabled(sampleAnalysisWorkerEnabled);
 console.log(`[worker] Auto-start enabled: ${sampleAnalysisWorkerEnabled}`);
 if (sampleAnalysisWorkerEnabled) {
   startSampleAnalysisWorker();
 }
 if (!sampleAnalysisWorkerEnabled) {
-  console.log("[worker] Sample analysis worker disabled (SAMPLE_ANALYSIS_WORKER_ENABLED=false)");
+  console.log(
+    "[worker] Sample analysis worker disabled (SAMPLE_ANALYSIS_WORKER_ENABLED=false)",
+  );
 }

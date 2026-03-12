@@ -611,6 +611,8 @@ resource "aws_ecs_task_definition" "app" {
       { name = "NODE_ENV", value = "production" },
       { name = "AWS_REGION", value = var.aws_region },
       { name = "S3_BUCKET", value = aws_s3_bucket.uploads.id },
+      { name = "SAMPLE_ANALYSIS_WORKER_ENABLED", value = "true" },
+      { name = "SEED_TAXONOMY_ON_START", value = "true" },
       { name = "BETTER_AUTH_URL", value = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}" },
       { name = "BETTER_AUTH_TRUSTED_ORIGINS", value = var.domain_name != "" ? join(",", [for d in concat([var.domain_name], var.domain_aliases) : "https://${d}"]) : "" },
       { name = "SES_FROM_EMAIL", value = var.ses_from_email },

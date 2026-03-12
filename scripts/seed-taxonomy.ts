@@ -2,12 +2,13 @@
  * Seed taxonomy attributes and values for V1 sound classification.
  * Run: pnpm exec tsx scripts/seed-taxonomy.ts
  */
-import { prisma } from "../server/db.js";
+
 import {
   INSTRUMENT_FAMILY_TYPE_MAP,
   TAXONOMY_ATTRIBUTES,
   TAXONOMY_VALUES,
 } from "../lib/taxonomy.js";
+import { prisma } from "../server/db.js";
 
 async function main() {
   const attributes = new Map<string, { id: string; key: string }>();
@@ -54,10 +55,14 @@ async function main() {
     }),
   ]);
 
-  const familyIdByKey = new Map(familyValues.map((item) => [item.key, item.id]));
+  const familyIdByKey = new Map(
+    familyValues.map((item) => [item.key, item.id]),
+  );
   const typeIdByKey = new Map(typeValues.map((item) => [item.key, item.id]));
 
-  for (const [familyKey, typeKeys] of Object.entries(INSTRUMENT_FAMILY_TYPE_MAP)) {
+  for (const [familyKey, typeKeys] of Object.entries(
+    INSTRUMENT_FAMILY_TYPE_MAP,
+  )) {
     const familyId = familyIdByKey.get(familyKey);
     if (!familyId) continue;
     for (const [index, typeKey] of typeKeys.entries()) {
@@ -81,7 +86,36 @@ async function main() {
       });
     }
   }
-  console.log(`Seeded family/type links: ${Object.keys(INSTRUMENT_FAMILY_TYPE_MAP).length} families`);
+  console.log(
+    `Seeded family/type links: ${Object.keys(INSTRUMENT_FAMILY_TYPE_MAP).length} families`,
+  );
+
+  const attributeCount = await prisma.taxonomyAttribute.count({
+    where: { key: { in: [...TAXONOMY_ATTRIBUTES] } },
+  });
+  if (attributeCount !== TAXONOMY_ATTRIBUTES.length) {
+    throw new Error(
+      `Taxonomy seed verification failed: expected ${TAXONOMY_ATTRIBUTES.length} attributes, found ${attributeCount}`,
+    );
+  }
+
+  const valueCount = await prisma.taxonomyValue.count();
+  if (valueCount === 0) {
+    throw new Error(
+      "Taxonomy seed verification failed: taxonomy_value is empty",
+    );
+  }
+
+  const linkCount = await prisma.taxonomyFamilyType.count();
+  if (linkCount === 0) {
+    throw new Error(
+      "Taxonomy seed verification failed: taxonomy_family_type is empty",
+    );
+  }
+
+  console.log(
+    `Taxonomy verification passed: attributes=${attributeCount}, values=${valueCount}, familyTypeLinks=${linkCount}`,
+  );
 }
 
 main()

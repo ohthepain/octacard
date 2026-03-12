@@ -321,6 +321,22 @@ export const AudioPreview = ({
     [parsedTimeSignature.beatsPerBar, secondsPerBeat],
   );
 
+  // Refs for timeline format - avoid WaveSurfer re-init when BPM is parsed from file
+  const timelineFormatRef = useRef({
+    formatBarsBeats,
+    formatTime,
+    timeDisplayMode,
+    secondsPerBar,
+    secondsPerBeat,
+  });
+  timelineFormatRef.current = {
+    formatBarsBeats,
+    formatTime,
+    timeDisplayMode,
+    secondsPerBar,
+    secondsPerBeat,
+  };
+
   const sliceKey = useCallback((t: number) => t.toFixed(4), []);
 
   const combinedSliceMarkers = useMemo(() => {
@@ -363,6 +379,7 @@ export const AudioPreview = ({
     debugScrollSamples: number;
   } | null>(null);
 
+  const handleMinimapMouseDownRef = useRef<(e: MouseEvent) => void>(() => {});
   // Handle mouse down on minimap: click=seek, drag=zoom (vertical) + scroll (horizontal)
   // Dragging the visible area overlay scrolls only (navigate) when overlay is narrower than minimap.
   const handleMinimapMouseDown = useCallback(
@@ -410,6 +427,10 @@ export const AudioPreview = ({
     },
     [isLoading],
   );
+  handleMinimapMouseDownRef.current = handleMinimapMouseDown;
+  const stableMinimapHandler = useCallback((e: MouseEvent) => {
+    handleMinimapMouseDownRef.current(e);
+  }, []);
 
   // Handle mouse down on waveform (for click-to-seek; zoom only via minimap)
   const handleWaveformMouseDown = (e: React.MouseEvent) => {
@@ -456,10 +477,12 @@ export const AudioPreview = ({
       }
       return;
     }
+    let cancelled = false;
     async function loadAudioUrl() {
       try {
         // Check file size first to avoid loading huge files
         const statsResult = await fileSystemService.getFileStats(filePath!, paneType!);
+        if (cancelled) return;
         if (statsResult.success && statsResult.data) {
           const fileSizeMB = statsResult.data.size / (1024 * 1024);
           // Warn for very large files but still try to load
@@ -469,25 +492,32 @@ export const AudioPreview = ({
         }
 
         const result = await fileSystemService.getAudioFileBlob(filePath!, paneType!);
+        if (cancelled) return;
 
         if (result.success && result.data) {
           const decodableUrl = await ensureAudioDecodable(result.data, filePath!);
+          if (cancelled) return;
           console.log("AudioPreview - Got audio blob data URL for file:", filePath);
           setAudioUrl(decodableUrl);
           setErrorMessage("");
-        } else {
+        } else if (!cancelled) {
           console.error("Failed to get audio file blob:", result.error);
           setErrorMessage(result.error || "Failed to get audio file blob");
           setIsLoading(false);
         }
       } catch (error) {
-        console.error("Error getting audio file blob:", error);
-        setErrorMessage(String(error));
-        setIsLoading(false);
+        if (!cancelled) {
+          console.error("Error getting audio file blob:", error);
+          setErrorMessage(String(error));
+          setIsLoading(false);
+        }
       }
     }
 
     loadAudioUrl();
+    return () => {
+      cancelled = true;
+    };
   }, [filePath, paneType, isEmptyState]);
 
   const sliceDetectionRunForRef = useRef<string | null>(null);
@@ -971,20 +1001,24 @@ export const AudioPreview = ({
         }
       });
 
-      // Add Timeline plugin
+      // Add Timeline plugin - use ref for format so BPM parse doesn't trigger WaveSurfer re-init
+      const tf = timelineFormatRef.current;
       const timelineTimeInterval =
-        timeDisplayMode === "bars" && secondsPerBeat > 0 ? secondsPerBeat / 4 : 0.2;
+        tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat / 4 : 0.2;
       const timelinePrimaryInterval =
-        timeDisplayMode === "bars" && secondsPerBar > 0 ? secondsPerBar : 5;
+        tf.timeDisplayMode === "bars" && tf.secondsPerBar > 0 ? tf.secondsPerBar : 5;
       const timelineSecondaryInterval =
-        timeDisplayMode === "bars" && secondsPerBeat > 0 ? secondsPerBeat : 1;
+        tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat : 1;
       const timeline = TimelinePlugin.create({
         height: 20,
         insertPosition: "beforebegin",
         timeInterval: timelineTimeInterval,
         primaryLabelInterval: timelinePrimaryInterval,
         secondaryLabelInterval: timelineSecondaryInterval,
-        formatTimeCallback: (sec: number) => (timeDisplayMode === "bars" ? formatBarsBeats(sec) : formatTime(sec)),
+        formatTimeCallback: (sec: number) => {
+          const t = timelineFormatRef.current;
+          return t.timeDisplayMode === "bars" ? t.formatBarsBeats(sec) : t.formatTime(sec);
+        },
         style: {
           fontSize: "10px",
           color: "#B0B0B0", // Light grey text (Ableton style)
@@ -1158,7 +1192,7 @@ export const AudioPreview = ({
       try {
         // Remove minimap event listener if attached
         if (minimapContainerRef.current) {
-          minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+          minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
           minimapContainerRef.current = null;
         }
         if (wavesurferRef.current) {
@@ -1208,18 +1242,15 @@ export const AudioPreview = ({
       setWavesurferPlaying(false);
     };
   }, [
-    audioUrl, 
-    normalize, 
-    filePath, 
-    setEdits, 
-    debouncedWaveformHeight, 
-    timeDisplayMode, 
-    secondsPerBar, 
-    secondsPerBeat, 
-    formatBarsBeats, 
-    formatTime, 
-    stopPlayer, 
-    requestSwitchAtNextBar, handleMinimapMouseDown, paneType, zoom
+    audioUrl,
+    normalize,
+    filePath,
+    setEdits,
+    debouncedWaveformHeight,
+    stopPlayer,
+    requestSwitchAtNextBar,
+    paneType,
+    zoom,
   ]);
 
   // Effect to find and attach handler to minimap element after it's created
@@ -1241,11 +1272,11 @@ export const AudioPreview = ({
         if (minimapElement) {
           if (minimapContainerRef.current !== minimapElement) {
             if (minimapContainerRef.current) {
-              minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+              minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
             }
             minimapContainerRef.current = minimapElement;
             minimapElement.style.cursor = "crosshair";
-            minimapElement.addEventListener("mousedown", handleMinimapMouseDown);
+            minimapElement.addEventListener("mousedown", stableMinimapHandler);
           }
           return true;
         }
@@ -1260,7 +1291,7 @@ export const AudioPreview = ({
         clearTimeout(timeout);
         clearTimeout(timeout2);
         if (minimapContainerRef.current) {
-          minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+          minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
           minimapContainerRef.current = null;
         }
       };
@@ -1268,11 +1299,11 @@ export const AudioPreview = ({
 
     return () => {
       if (minimapContainerRef.current) {
-        minimapContainerRef.current.removeEventListener("mousedown", handleMinimapMouseDown);
+        minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
         minimapContainerRef.current = null;
       }
     };
-  }, [isLoading, duration, handleMinimapMouseDown]);
+  }, [isLoading, duration]);
 
   useEffect(() => {
     const handlePointerDownCapture = (e: PointerEvent) => {

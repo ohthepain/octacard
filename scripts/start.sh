@@ -3,12 +3,25 @@
 set -e
 cd "$(dirname "$0")/.."
 
-if [ -n "$DATABASE_URL" ]; then
-  echo "[start] Running Prisma migrations..."
-  pnpm exec prisma migrate deploy --schema=./prisma/schema.prisma
-  echo "[start] Migrations complete."
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "[start] ERROR: DATABASE_URL is not set; refusing to start."
+  exit 1
+fi
+
+echo "[start] Checking database connectivity..."
+node --input-type=module -e "import { Client } from 'pg'; const client = new Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); await client.query('SELECT 1'); await client.end();"
+echo "[start] Database connectivity check passed."
+
+echo "[start] Running Prisma migrations..."
+pnpm exec prisma migrate deploy --schema=./prisma/schema.prisma
+echo "[start] Migrations complete."
+
+if [ "${SEED_TAXONOMY_ON_START:-true}" = "true" ]; then
+  echo "[start] Seeding taxonomy..."
+  pnpm exec tsx scripts/seed-taxonomy.ts
+  echo "[start] Taxonomy seed complete."
 else
-  echo "[start] DATABASE_URL not set, skipping migrations."
+  echo "[start] SEED_TAXONOMY_ON_START=false, skipping taxonomy seed."
 fi
 
 exec pnpm exec tsx server/index.ts
