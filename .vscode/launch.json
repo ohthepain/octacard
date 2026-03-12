@@ -9,8 +9,10 @@
       "webRoot": "${workspaceFolder}",
       "preLaunchTask": "start:dev",
       "sourceMaps": true,
+      "perScriptSourcemaps": "yes",
       "skipFiles": ["<node_internals>/**"],
-      "runtimeArgs": ["--new-window"],
+      "runtimeExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "runtimeArgs": ["--new-window", "--disable-extensions", "--no-first-run", "--no-default-browser-check"],
       "userDataDir": "${workspaceFolder}/.vscode/.chrome"
     },
     {
