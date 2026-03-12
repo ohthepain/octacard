@@ -39,10 +39,12 @@ RUN pnpm install --frozen-lockfile
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
+COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/prisma ./prisma
 COPY prisma.config.ts ./
 COPY scripts/start.sh ./scripts/start.sh
 COPY --from=builder /app/scripts/check-db-connectivity.ts ./scripts/check-db-connectivity.ts
+COPY --from=builder /app/scripts/seed-taxonomy.ts ./scripts/seed-taxonomy.ts
 RUN chmod +x ./scripts/start.sh
 
 # Generate Prisma client (pnpm stores it in .pnpm; copying from builder doesn't work)
