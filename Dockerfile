@@ -23,6 +23,14 @@ FROM node:20
 
 WORKDIR /app
 
+# AWS RDS CA bundle for TLS verification (Node.js doesn't include cloud provider CAs by default)
+RUN curl -fsSL -o /etc/ssl/certs/rds-global-bundle.pem \
+    "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem" \
+    || curl -fsSL -o /etc/ssl/certs/rds-global-bundle.pem \
+    "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem"
+
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/rds-global-bundle.pem
+
 RUN npm install -g pnpm@9.15.0
 
 COPY package.json pnpm-lock.yaml ./
