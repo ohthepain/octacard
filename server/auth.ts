@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { customSession, emailOTP, magicLink } from "better-auth/plugins";
-import { RoleName } from "@prisma/client";
+import { RoleName } from "../generated/prisma/client.js";
 import { createRedisStorage } from "./redis.js";
 import { renderAuthEmailTemplate, sendAuthEmail } from "./auth-email.js";
 import { prisma } from "./db.js";

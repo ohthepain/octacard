@@ -32,6 +32,7 @@ RUN pnpm install --frozen-lockfile
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/prisma ./prisma
+COPY prisma.config.ts ./
 COPY scripts/start.sh ./scripts/start.sh
 RUN chmod +x ./scripts/start.sh
 

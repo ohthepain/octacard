@@ -26,6 +26,7 @@ package-lock.json
 
 node_modules
 dist
+generated
 dist-ssr
 *.local
 

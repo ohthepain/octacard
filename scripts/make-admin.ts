@@ -7,7 +7,7 @@
  */
 
 import { prisma } from "../server/db.js";
-import { RoleName } from "@prisma/client";
+import { RoleName } from "../generated/prisma/client.js";
 
 async function main() {
   const arg = process.argv[2];

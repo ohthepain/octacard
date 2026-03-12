@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { auth } from "../auth.js";
-import type { RoleName } from "@prisma/client";
+import type { RoleName } from "../../generated/prisma/client.js";
 
 export const requireAuth: MiddlewareHandler = async (c, next) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
