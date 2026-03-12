@@ -816,7 +816,7 @@ const Index = () => {
           <Button
             variant={previewMode === "multi" ? "default" : "outline"}
             size="sm"
-            aria-pressed={previewMode === "multi"}
+            aria-pressed={previewMode === "multi" ? "true" : "false"}
             aria-label="Multi preview"
             data-testid="multi-mode-toggle"
             onClick={() => handlePreviewModeChange(previewMode === "multi" ? "single" : "multi")}

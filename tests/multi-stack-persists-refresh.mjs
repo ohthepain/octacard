@@ -27,7 +27,7 @@ export async function assertMultiStackPersistsAfterReload(page) {
   await multiToggle.waitFor({ state: "visible" });
   if ((await multiToggle.getAttribute("aria-pressed")) !== "true") {
     await multiToggle.click();
-    await waitForAriaPressed(multiToggle, "true");
+    await waitForAriaPressed(page, "multi-mode-toggle", "true");
   }
 
   const bulkNode = page.getByTestId("tree-node-source-_Bulk");
@@ -50,7 +50,7 @@ export async function assertMultiStackPersistsAfterReload(page) {
   await reloadedMultiToggle.waitFor({ state: "visible" });
   if ((await reloadedMultiToggle.getAttribute("aria-pressed")) !== "true") {
     await reloadedMultiToggle.click();
-    await waitForAriaPressed(reloadedMultiToggle, "true");
+    await waitForAriaPressed(page, "multi-mode-toggle", "true");
   }
 
   const reloadedRemoveButtons = page.getByLabel("Remove from stack");
@@ -58,9 +58,9 @@ export async function assertMultiStackPersistsAfterReload(page) {
   assert.equal(await reloadedRemoveButtons.count(), 1, "Expected stack to survive refresh.");
 
   await reloadedRemoveButtons.first().click();
-  await waitForAriaPressed(reloadedMultiToggle, "true");
+  await waitForAriaPressed(page, "multi-mode-toggle", "true");
   await reloadedMultiToggle.click();
-  await waitForAriaPressed(reloadedMultiToggle, "false");
+  await waitForAriaPressed(page, "multi-mode-toggle", "false");
 
   await openSourceAndDestRoots(page);
 }

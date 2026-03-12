@@ -261,6 +261,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
         <div
           className="flex flex-col gap-2 border border-border rounded-lg bg-muted/30 p-3 w-full max-w-[240px]"
           data-testid="stack-transport"
+          aria-label="Transport controls"
         >
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transport</div>
           <div className="flex items-center gap-2">
@@ -291,7 +292,8 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
       <div className="flex flex-col gap-3 min-w-0">
         {rows.map((rowSlots, rowIndex) => (
           <div
-            key={rowSlots[rowIndex]!.id}
+            //biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+            key={rowSlots[rowIndex]?.id ?? `stack-row-${rowIndex}`}
             className={cn(
               "grid grid-cols-[44px_repeat(4,minmax(0,1fr))] gap-3 min-w-0",
               dragOverRowIndex === rowIndex && "outline-1 outline-primary/60 rounded-md p-1",

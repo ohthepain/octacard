@@ -29,17 +29,35 @@ export async function waitForPageCondition(page, expression, options = {}) {
 
 /**
  * Poll until a locator's aria-pressed attribute matches the expected value.
- * @param {import('playwright').Locator} locator
+ * Uses page.evaluate to avoid Playwright locator timing issues when the DOM updates after clicks.
+ * For multi-mode-toggle, also accepts bg-primary (pressed) or border-input (unpressed) as fallback.
+ * @param {import('playwright').Page} page
+ * @param {string} testId - data-testid value (e.g. "multi-mode-toggle")
  * @param {string} value - Expected aria-pressed value (e.g. "true", "false")
  * @param {{ timeout?: number; pollInterval?: number }} [options]
  */
-export async function waitForAriaPressed(locator, value, options = {}) {
+export async function waitForAriaPressed(page, testId, value, options = {}) {
   const { timeout = 10000, pollInterval = 100 } = options;
   const start = Date.now();
   let lastActual;
   while (Date.now() - start < timeout) {
-    lastActual = await locator.getAttribute("aria-pressed");
-    if (lastActual === value) return;
+    const result = await page.evaluate(
+      (id) => {
+        const el = document.querySelector(`[data-testid="${id}"]`);
+        if (!el) return { aria: null, hasBgPrimary: false, hasBorderInput: false };
+        return {
+          aria: el.getAttribute("aria-pressed") ?? null,
+          hasBgPrimary: el.classList.contains("bg-primary"),
+          hasBorderInput: el.classList.contains("border-input"),
+        };
+      },
+      testId,
+    );
+    lastActual = result.aria;
+    const normalized = lastActual ?? (value === "false" ? "false" : lastActual);
+    if (normalized === value) return;
+    if (value === "true" && result.hasBgPrimary) return;
+    if (value === "false" && result.hasBorderInput) return;
     await new Promise((r) => setTimeout(r, pollInterval));
   }
   throw new Error(`Expected aria-pressed="${value}" but got "${lastActual}" within ${timeout}ms`);

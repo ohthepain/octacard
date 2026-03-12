@@ -6,7 +6,7 @@ async function ensureMultiMode(page) {
   await toggle.waitFor({ state: "visible" });
   if ((await toggle.getAttribute("aria-pressed")) !== "true") {
     await toggle.click();
-    await waitForAriaPressed(toggle, "true");
+    await waitForAriaPressed(page, "multi-mode-toggle", "true");
   }
 }
 
