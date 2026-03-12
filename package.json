@@ -86,7 +86,7 @@
     "@aws-sdk/client-sesv2": "^3.1006.0",
     "@aws-sdk/s3-request-presigner": "^3.1004.0",
     "@bull-board/api": "^6.20.3",
-    "@bull-board/hono": "^6.20.3",
+    "@bull-board/hono": "^6.20.5",
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@hono/node-server": "^1.13.7",

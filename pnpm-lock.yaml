@@ -24,10 +24,10 @@ importers:
         version: 3.1004.0
       '@bull-board/api':
         specifier: ^6.20.3
-        version: 6.20.3(@bull-board/ui@6.20.3)
+        version: 6.20.3(@bull-board/ui@6.20.5)
       '@bull-board/hono':
-        specifier: ^6.20.3
-        version: 6.20.3(hono@4.12.5)
+        specifier: ^6.20.5
+        version: 6.20.5(hono@4.12.5)
       '@ffmpeg/ffmpeg':
         specifier: 0.12.15
         version: 0.12.15
@@ -818,13 +818,18 @@ packages:
     peerDependencies:
       '@bull-board/ui': 6.20.3
 
-  '@bull-board/hono@6.20.3':
-    resolution: {integrity: sha512-6MyvSZZ4Kt/3o88vbmBoviamU6Us3N8tMKu56vNzzZ7d9CHcVCPw8kKm7HGVpLTuysVetzl7MduJ3UMltzXOSw==}
+  '@bull-board/api@6.20.5':
+    resolution: {integrity: sha512-tKKwGWtVBL7YL5lAgrBaOGEVtOAOpevhQFKj94cnVHD/yhXRaHr9LSTKbat21kkG2/fl95YWU6Gegzs4QIlImQ==}
+    peerDependencies:
+      '@bull-board/ui': 6.20.5
+
+  '@bull-board/hono@6.20.5':
+    resolution: {integrity: sha512-8b4bw6qm2CyaB7eIgNA0jmC7ONaY3LaAYoGE/H6ci0QApAC8/9FrqBMuUW1eK6/IL0WGT4TqkCbs/3QgS3gCgw==}
     peerDependencies:
       hono: ^4
 
-  '@bull-board/ui@6.20.3':
-    resolution: {integrity: sha512-oANyYoW0X+xd0j/09DRyh3u7Q3wqBtXiLEWyZUJIi/Bjp/hINwiw20RwWuRcaFkqkFylEJL9l+pjmeSA9X5L2A==}
+  '@bull-board/ui@6.20.5':
+    resolution: {integrity: sha512-JYuMImdQYmEicnwyeV5CIfRW9EP0kiIuKHV1cQu4KIhNl0Y7LX+ivjrVXloVhNGZeTaajrkxzTY9OnZvYnGLOA==}
 
   '@chevrotain/cst-dts-gen@10.5.0':
     resolution: {integrity: sha512-lhmC/FyqQ2o7pGK4Om+hzuDrm9rhFYIJ/AXoQBeongmn870Xeb0L6oGEiuR8nohFNL5sMaQEJWCxr1oIVIVXrw==}
@@ -8265,21 +8270,26 @@ snapshots:
     dependencies:
       css-tree: 3.1.0
 
-  '@bull-board/api@6.20.3(@bull-board/ui@6.20.3)':
+  '@bull-board/api@6.20.3(@bull-board/ui@6.20.5)':
     dependencies:
-      '@bull-board/ui': 6.20.3
+      '@bull-board/ui': 6.20.5
       redis-info: 3.1.0
 
-  '@bull-board/hono@6.20.3(hono@4.12.5)':
+  '@bull-board/api@6.20.5(@bull-board/ui@6.20.5)':
     dependencies:
-      '@bull-board/api': 6.20.3(@bull-board/ui@6.20.3)
-      '@bull-board/ui': 6.20.3
+      '@bull-board/ui': 6.20.5
+      redis-info: 3.1.0
+
+  '@bull-board/hono@6.20.5(hono@4.12.5)':
+    dependencies:
+      '@bull-board/api': 6.20.5(@bull-board/ui@6.20.5)
+      '@bull-board/ui': 6.20.5
       ejs: 3.1.10
       hono: 4.12.5
 
-  '@bull-board/ui@6.20.3':
+  '@bull-board/ui@6.20.5':
     dependencies:
-      '@bull-board/api': 6.20.3(@bull-board/ui@6.20.3)
+      '@bull-board/api': 6.20.5(@bull-board/ui@6.20.5)
 
   '@chevrotain/cst-dts-gen@10.5.0':
     dependencies:
