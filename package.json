@@ -13,6 +13,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "concurrently -k -n vite,api \"pnpm run dev:vite\" \"pnpm run dev:api\"",
+    "dev:debug": "DEBUG=* pnpm run dev",
     "dev:vite": "vite",
     "dev:api": "tsx watch server/index.ts",
     "db:generate": "prisma generate",
