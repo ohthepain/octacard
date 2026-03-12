@@ -284,6 +284,18 @@ aws ecs update-service --cluster octacard-staging-cluster --service octacard-sta
 
 **Password with special characters:** If your `db_password` contains `@`, `:`, `/`, `#`, etc., Terraform now URL-encodes it. If the secret was created before that fix, update it manually with the output from `terraform output -raw database_url`.
 
+### `no pg_hba.conf entry ..., no encryption`
+
+This means the app is attempting a non-SSL Postgres connection while RDS requires SSL.
+
+`DATABASE_URL` must include `?sslmode=require`, for example:
+
+```text
+postgresql://<user>:<password>@<host>/octacard?sslmode=require
+```
+
+If production is currently down, update `octacard-production/database-url` in Secrets Manager with the SSL URL and force a new ECS deployment.
+
 ### Registration emails not received (staging/production)
 
 1. **SES env vars** – Ensure `SES_FROM_EMAIL` and `SES_CONFIGURATION_SET` are set in the ECS task (Terraform passes these from `ses_from_email` and `ses_configuration_set`).
