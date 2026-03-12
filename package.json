@@ -114,7 +114,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.166.2",
-    "@tanstack/router-plugin": "^1.164.0",
+    "@tanstack/router-plugin": "^1.166.7",
     "@tanstack/router-vite-plugin": "^1.166.7",
     "@tanstack/start": "^1.120.20",
     "@tanstack/start-plugin": "^1.111.2",
