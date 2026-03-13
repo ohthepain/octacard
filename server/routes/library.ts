@@ -560,7 +560,7 @@ libraryApp.get("/packs/:id/cover", async (c) => {
 
   const ext = pack.coverImageS3Key.split(".").pop()?.toLowerCase();
   const contentType = ext === "png" ? "image/png" : "image/jpeg";
-  return c.body(buf, 200, {
+  return c.body(new Uint8Array(buf), 200, {
     "Content-Type": contentType,
     "Cache-Control": "private, max-age=3600",
   });

@@ -328,7 +328,7 @@ export async function convertAudio(
 
     // Convert to Blob
     if (data instanceof Uint8Array) {
-      return new Blob([data], { type: 'audio/wav' });
+      return new Blob([new Uint8Array(data)], { type: 'audio/wav' });
     } else {
       throw new Error('Unexpected output format from FFmpeg');
     }
