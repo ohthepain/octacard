@@ -329,6 +329,11 @@ export const FilePane = ({
   const [folderViewCoverUrl, setFolderViewCoverUrl] = useState<string | null>(null);
   const [folderViewPackName, setFolderViewPackName] = useState<string | null>(null);
   const [folderViewPackId, setFolderViewPackId] = useState<string | null>(null);
+  const [folderViewCreatorName, setFolderViewCreatorName] = useState<string | null>(null);
+  const [folderViewSampleStats, setFolderViewSampleStats] = useState<{
+    count: number;
+    totalSizeBytes: number;
+  } | null>(null);
   const [packJsonCache, setPackJsonCache] = useState<Map<string, boolean>>(new Map());
   const [packCoverCache, setPackCoverCache] = useState<Map<string, string>>(new Map());
   const packManifestCacheRef = useRef<Map<string, Awaited<ReturnType<typeof getPackDownloadManifest>>>>(new Map());
@@ -515,6 +520,7 @@ export const FilePane = ({
   // Clear folder view and pack cover cache when root path changes (e.g. volume switch)
   useEffect(() => {
     setFolderViewRoot(null);
+    setFolderViewSampleStats(null);
     packManifestCacheRef.current.clear();
     setPackCoverCache((prev) => {
       prev.forEach((url) => {
@@ -1887,27 +1893,34 @@ export const FilePane = ({
         }
       }
 
-      // If we're viewing this folder as a pack, reload pack name and packId from pack.json (e.g. after create/edit)
+      // If we're viewing this folder as a pack, reload pack name, packId, and creator from pack.json (e.g. after create/edit)
       if (folderPath === folderViewRoot) {
         const packJsonPath = joinPath(folderPath, "pack.json");
         const packFile = await fileSystemService.getFile(packJsonPath, paneType);
         if (packFile) {
           try {
             const text = await packFile.text();
-            const data = JSON.parse(text) as { name?: string; packId?: string };
+            const data = JSON.parse(text) as { name?: string; packId?: string; ownerName?: string };
             if (typeof data.name === "string" && data.name.trim()) {
               setFolderViewPackName(data.name.trim());
             } else {
               setFolderViewPackName(null);
             }
             setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
+            setFolderViewCreatorName(
+              typeof data.ownerName === "string" && data.ownerName.trim()
+                ? data.ownerName.trim()
+                : null,
+            );
           } catch {
             setFolderViewPackName(null);
             setFolderViewPackId(null);
+            setFolderViewCreatorName(null);
           }
         } else {
           setFolderViewPackName(null);
           setFolderViewPackId(null);
+          setFolderViewCreatorName(null);
         }
       }
     },
@@ -1938,6 +1951,7 @@ export const FilePane = ({
             packId?: string;
             coverImage?: string;
             coverImageUrl?: string;
+            ownerName?: string;
           };
           if (typeof data.name === "string" && data.name.trim()) {
             setFolderViewPackName(data.name.trim());
@@ -1945,6 +1959,11 @@ export const FilePane = ({
             setFolderViewPackName(null);
           }
           setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
+          setFolderViewCreatorName(
+            typeof data.ownerName === "string" && data.ownerName.trim()
+              ? data.ownerName.trim()
+              : null,
+          );
           if (typeof data.coverImage === "string" && data.coverImage.trim()) {
             coverImageFromJson = data.coverImage.trim();
           }
@@ -1954,10 +1973,12 @@ export const FilePane = ({
         } catch {
           setFolderViewPackName(null);
           setFolderViewPackId(null);
+          setFolderViewCreatorName(null);
         }
       } else {
         setFolderViewPackName(null);
         setFolderViewPackId(null);
+        setFolderViewCreatorName(null);
       }
 
       if (coverImageUrlFromJson) {
@@ -1987,6 +2008,33 @@ export const FilePane = ({
       });
       setFolderViewPackName(null);
       setFolderViewPackId(null);
+      setFolderViewCreatorName(null);
+    };
+  }, [folderViewRoot, paneType]);
+
+  // Load sample count and total size for local pack folder view
+  useEffect(() => {
+    if (!folderViewRoot || !fileSystemService.hasRootForPane(paneType)) {
+      setFolderViewSampleStats(null);
+      return;
+    }
+    let cancelled = false;
+    fileSystemService
+      .listAudioFilesRecursively(folderViewRoot, paneType)
+      .then((result) => {
+        if (cancelled || !result.success || !result.data) {
+          if (!cancelled) setFolderViewSampleStats(null);
+          return;
+        }
+        const count = result.data.length;
+        const totalSizeBytes = result.data.reduce((sum, e) => sum + (e.size ?? 0), 0);
+        if (!cancelled) setFolderViewSampleStats({ count, totalSizeBytes });
+      })
+      .catch(() => {
+        if (!cancelled) setFolderViewSampleStats(null);
+      });
+    return () => {
+      cancelled = true;
     };
   }, [folderViewRoot, paneType]);
 
@@ -4392,7 +4440,7 @@ export const FilePane = ({
                 <PackView
                   name={folderViewPackName ?? basename(folderViewRoot)}
                   coverImageUrl={folderViewCoverUrl}
-                  creatorName={undefined}
+                  creatorName={folderViewCreatorName ?? undefined}
                   onClose={() => {
                     const parent = dirname(folderViewRoot) || "/";
                     setFolderViewRoot(null);
@@ -4409,6 +4457,8 @@ export const FilePane = ({
                         }
                       : undefined
                   }
+                  sampleCount={folderViewSampleStats?.count}
+                  totalSizeBytes={folderViewSampleStats?.totalSizeBytes}
                 />
               </div>
             ) : (

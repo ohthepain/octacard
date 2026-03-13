@@ -70,6 +70,8 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
     coverImageUrl: string | null;
     creatorName?: string;
     isOwner?: boolean;
+    totalSampleCount?: number;
+    totalSizeBytes?: number;
   } | null>(null);
   const [editPackId, setEditPackId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -130,6 +132,8 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
             details.coverImageProxyUrl ?? details.coverImageUrl,
           creatorName: details.ownerName,
           isOwner: details.isOwner,
+          totalSampleCount: details.totalSampleCount,
+          totalSizeBytes: details.totalSizeBytes,
         });
         setPackContents({
           packs: contents.packs,
@@ -227,6 +231,8 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
           coverImageUrl: details.coverImageProxyUrl ?? details.coverImageUrl,
           creatorName: details.ownerName,
           isOwner: details.isOwner,
+          totalSampleCount: details.totalSampleCount,
+          totalSizeBytes: details.totalSizeBytes,
         })
       );
       getPackContents(packId).then((contents) =>
@@ -252,6 +258,8 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
             onClose={handleClosePack}
             isOwner={packDetails.isOwner}
             onEdit={packDetails.isOwner && currentPackId ? () => handleEditPack(currentPackId) : undefined}
+            sampleCount={packDetails.totalSampleCount}
+            totalSizeBytes={packDetails.totalSizeBytes}
           />
         ) : (
           <div className="flex items-center gap-2 p-3 border-b border-border bg-card/50 shrink-0">

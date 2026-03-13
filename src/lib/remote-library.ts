@@ -30,6 +30,10 @@ export interface RemotePackDetails {
   defaultSampleTokens: number;
   childPackCount: number;
   sampleCount: number;
+  /** Total samples in pack tree (including sub-packs) */
+  totalSampleCount: number;
+  /** Total size in bytes of all sample files in pack tree */
+  totalSizeBytes: number;
 }
 
 export interface RemotePackContentsResponse {

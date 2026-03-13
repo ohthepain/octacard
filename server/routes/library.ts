@@ -598,6 +598,21 @@ libraryApp.get("/packs/:id", async (c) => {
     coverImageProxyUrl = pack.coverImageUrl;
   }
 
+  const tree = await loadPackTree(pack.id);
+  const packIds = Array.from(tree.keys());
+  const packSamples =
+    packIds.length === 0
+      ? []
+      : await prisma.packSample.findMany({
+          where: { packId: { in: packIds } },
+          include: { sample: { select: { sizeBytes: true } } },
+        });
+  const totalSampleCount = packSamples.length;
+  const totalSizeBytes = packSamples.reduce(
+    (sum, ps) => sum + (ps.sample?.sizeBytes ?? 0),
+    0,
+  );
+
   return c.json({
     id: pack.id,
     name: pack.name,
@@ -612,6 +627,8 @@ libraryApp.get("/packs/:id", async (c) => {
     defaultSampleTokens: pack.defaultSampleTokens,
     childPackCount: pack._count.children,
     sampleCount: pack._count.packSamples,
+    totalSampleCount,
+    totalSizeBytes,
   });
 });
 

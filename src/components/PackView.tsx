@@ -8,9 +8,36 @@ export interface PackViewProps {
   onClose: () => void;
   isOwner?: boolean;
   onEdit?: () => void;
+  /** Number of sample files in the pack */
+  sampleCount?: number;
+  /** Total size in bytes of sample files in the pack */
+  totalSizeBytes?: number;
 }
 
-export function PackView({ name, coverImageUrl, creatorName, onClose, isOwner, onEdit }: PackViewProps) {
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+export function PackView({
+  name,
+  coverImageUrl,
+  creatorName,
+  onClose,
+  isOwner,
+  onEdit,
+  sampleCount,
+  totalSizeBytes,
+}: PackViewProps) {
+  const statsText =
+    sampleCount !== undefined && sampleCount >= 0
+      ? totalSizeBytes !== undefined && totalSizeBytes > 0
+        ? `${sampleCount} sample${sampleCount !== 1 ? "s" : ""} · ${formatSize(totalSizeBytes)}`
+        : `${sampleCount} sample${sampleCount !== 1 ? "s" : ""}`
+      : null;
+
   return (
     <div className="flex items-center gap-3 p-3 border-b border-border bg-card/50 shrink-0">
       <Button
@@ -39,7 +66,10 @@ export function PackView({ name, coverImageUrl, creatorName, onClose, isOwner, o
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium truncate">{name}</div>
-          <div className="text-xs text-muted-foreground truncate">{creatorName ? `by ${creatorName}` : "Pack"}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            {creatorName ? `by ${creatorName}` : "Pack"}
+            {statsText && ` · ${statsText}`}
+          </div>
         </div>
       </div>
       {isOwner && onEdit && (
