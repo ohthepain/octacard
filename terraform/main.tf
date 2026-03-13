@@ -237,14 +237,25 @@ resource "aws_db_instance" "postgres" {
   tags = { Name = "${local.name_prefix}-db" }
 }
 
-# ElastiCache Redis (session cache)
+# ElastiCache Redis parameter group (noeviction required by BullMQ)
+resource "aws_elasticache_parameter_group" "redis" {
+  name   = "${local.name_prefix}-redis-params"
+  family = "redis7"
+
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
+}
+
+# ElastiCache Redis (session cache + BullMQ queues)
 resource "aws_elasticache_cluster" "redis" {
   cluster_id           = "${local.name_prefix}-redis"
   engine               = "redis"
   engine_version       = "7.0"
   node_type            = var.redis_node_type
   num_cache_nodes      = 1
-  parameter_group_name = "default.redis7"
+  parameter_group_name = aws_elasticache_parameter_group.redis.name
   port                 = 6379
 
   subnet_group_name  = aws_elasticache_subnet_group.main.name
@@ -679,6 +690,10 @@ resource "aws_ecs_service" "app" {
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.ecs_desired_count
   launch_type     = "FARGATE"
+
+  # Allow time for cold start: DB check, migrations, taxonomy seed, then server listen.
+  # Without this, ALB marks target unhealthy before app is ready (staging-up after RDS wake).
+  health_check_grace_period_seconds = 300
 
   network_configuration {
     subnets          = local.public_subnet_ids
