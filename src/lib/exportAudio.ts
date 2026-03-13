@@ -286,9 +286,7 @@ export async function getAudioFileInfo(blob: Blob): Promise<AudioFileInfo | null
  * Parse WAV file for embedded cue markers.
  * Returns slice sample frame positions and sample rate, or null if no cue chunk.
  */
-export function parseWavCueMarkers(
-  arrayBuffer: ArrayBuffer
-): { sampleFrames: number[]; sampleRate: number } | null {
+export function parseWavCueMarkers(arrayBuffer: ArrayBuffer): { sampleFrames: number[]; sampleRate: number } | null {
   const parsed = parseWavMetadata(arrayBuffer);
   if (!parsed || parsed.sampleRate <= 0 || parsed.sliceFrames.length === 0) return null;
   return { sampleFrames: parsed.sliceFrames, sampleRate: parsed.sampleRate };
@@ -415,9 +413,6 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
   if (embeddedMarkers && sliceFrames.length > 0) {
     let subchunksBytes = 0;
     for (let i = 0; i < sliceFrames.length; i++) {
-      const _thisStart = sliceFrames[i];
-      const _nextStart = i < sliceFrames.length - 1 ? sliceFrames[i + 1] : sampleEndFrame;
-
       // ltxt: size=20 bytes payload
       subchunksBytes += 8 + 20;
 
@@ -469,7 +464,8 @@ function encodeWav(buffer: AudioBuffer, options?: EncodeWavOptions): Blob {
 
   const dataChunkBytes = 8 + dataLength;
   const fmtChunkBytes = 8 + 16;
-  const totalSize = 12 + fmtChunkBytes + dataChunkBytes + cueChunkBytes + listChunkBytes + ixmlChunkBytes + smplChunkBytes;
+  const totalSize =
+    12 + fmtChunkBytes + dataChunkBytes + cueChunkBytes + listChunkBytes + ixmlChunkBytes + smplChunkBytes;
   const riffSize = totalSize - 8;
 
   const arrayBuffer = new ArrayBuffer(totalSize);
@@ -680,7 +676,10 @@ export async function exportAudioWithEdits(
   const sampleEnd = params.sampleEnd ?? regionEnd;
 
   const sampleStartInBuffer = Math.max(0, Math.min(regionDuration, sampleStart - regionStart));
-  const sampleEndInBuffer = Math.max(sampleStartInBuffer + 1 / rendered.sampleRate, Math.min(regionDuration, sampleEnd - regionStart));
+  const sampleEndInBuffer = Math.max(
+    sampleStartInBuffer + 1 / rendered.sampleRate,
+    Math.min(regionDuration, sampleEnd - regionStart),
+  );
   const sampleStartFrame = Math.floor(sampleStartInBuffer * rendered.sampleRate);
   const sampleEndFrame = Math.floor(sampleEndInBuffer * rendered.sampleRate);
 
@@ -730,11 +729,7 @@ export async function exportAudioWithEdits(
 /**
  * Replace a segment of existing audio with recorded audio, starting at startTimeSeconds.
  */
-export async function replaceSegment(
-  existingBlob: Blob,
-  recordedBlob: Blob,
-  startTimeSeconds: number,
-): Promise<Blob> {
+export async function replaceSegment(existingBlob: Blob, recordedBlob: Blob, startTimeSeconds: number): Promise<Blob> {
   const ctx = new AudioContext();
   const [existing, recorded] = await Promise.all([
     ctx.decodeAudioData(await existingBlob.arrayBuffer()),
@@ -777,11 +772,7 @@ export async function replaceSegment(
  * Mix overdub recording into existing audio at startTime.
  * Returns a new Blob with existing + overdub mixed (additive).
  */
-export async function mixOverdub(
-  existingBlob: Blob,
-  overdubBlob: Blob,
-  startTimeSeconds: number,
-): Promise<Blob> {
+export async function mixOverdub(existingBlob: Blob, overdubBlob: Blob, startTimeSeconds: number): Promise<Blob> {
   const ctx = new AudioContext();
   const [existing, overdub] = await Promise.all([
     ctx.decodeAudioData(await existingBlob.arrayBuffer()),

@@ -106,12 +106,23 @@ async function initializeFFmpeg(): Promise<FFmpeg> {
   }
 }
 
+/** Run ffmpeg.exec and return captured log output. */
+async function execAndGetLogs(ffmpeg: FFmpeg, args: string[]): Promise<string> {
+  const logs: string[] = [];
+  const handler = ({ message }: { message: string }) => logs.push(message);
+  ffmpeg.on('log', handler);
+  try {
+    await ffmpeg.exec(args);
+    return logs.join('\n');
+  } finally {
+    ffmpeg.off('log', handler);
+  }
+}
+
 async function probeSampleRate(ffmpeg: FFmpeg, inputName: string): Promise<number> {
   const probeOut = 'probe_null.tmp';
   try {
-    await ffmpeg.exec(['-i', inputName, '-t', '0.001', '-f', 'null', probeOut]);
-    const logs = ffmpeg.exec.getLogs();
-    const logText = logs.map((log) => (typeof log === 'object' && 'message' in log ? (log as { message: string }).message : String(log))).join('\n');
+    const logText = await execAndGetLogs(ffmpeg, ['-i', inputName, '-t', '0.001', '-f', 'null', probeOut]);
     const match = logText.match(/Audio:.*?(\d+)\s*Hz/);
     await ffmpeg.deleteFile(probeOut).catch(() => {});
     return match ? parseInt(match[1], 10) : 44100;
@@ -127,15 +138,12 @@ async function detectSilenceStart(file: File, ffmpeg: FFmpeg): Promise<number> {
     await ffmpeg.writeFile(inputFileName, await fetchFile(file));
 
     // Use silencedetect filter to find where silence ends
-    await ffmpeg.exec([
+    const logText = await execAndGetLogs(ffmpeg, [
       '-i', inputFileName,
       '-af', 'silencedetect=noise=-30dB:d=0.3',
       '-f', 'null',
       '-'
     ]);
-
-    const logs = ffmpeg.exec.getLogs();
-    const logText = logs.map(log => log.message).join('\n');
 
     // Parse the silencedetect output
     const silenceEndMatch = logText.match(/silence_end:\s*([\d.]+)/);

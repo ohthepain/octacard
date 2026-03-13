@@ -3,7 +3,7 @@
  * Run: pnpm exec tsx server/workers/sample-analysis-worker.ts
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { pipeline } from "@xenova/transformers";
@@ -309,10 +309,11 @@ async function decodeAudioToFloat32(
   if (!ffmpegPath || typeof ffmpegPath !== "string") {
     throw new Error("ffmpeg-static binary not found");
   }
+  const ffmpeg = ffmpegPath;
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const proc = spawn(
-      ffmpegPath,
+      ffmpeg,
       [
         "-i",
         tmpFile,
@@ -327,11 +328,11 @@ async function decodeAudioToFloat32(
         "pipe:1",
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
-    );
-    proc.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
-    proc.stderr?.on("data", () => {}); // ffmpeg logs to stderr
+    ) as unknown as ChildProcessWithoutNullStreams;
+    proc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    proc.stderr.on("data", () => {}); // ffmpeg logs to stderr
     proc.on("error", reject);
-    proc.on("close", (code) => {
+    proc.on("close", (code: number | null) => {
       if (code !== 0) {
         reject(new Error(`ffmpeg exited with code ${code}`));
         return;

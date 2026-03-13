@@ -99,24 +99,25 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
     }
 
     const items = e.dataTransfer.items;
-    if (items?.length && items[0].kind === "file") {
-      const item = items[0];
-      item.getAsFile().then(async (file) => {
-        if (!file || !isAudioFile(file.name)) return;
-        if (!fileSystemService.hasRootForPane("source")) {
-          toast.error("Select a source folder first to add files from your computer");
-          return;
-        }
-        const result = await fileSystemService.addFileFromDrop(file, "/", "source");
-        if (result.success && result.data) {
-          const path = result.data;
-          const name = path.split("/").filter(Boolean).pop() || file.name;
-          onDropSample({ path, name, paneType: "source" });
-        } else {
-          toast.error(result.error || "Failed to add file");
-        }
-      });
+    const item = items?.[0];
+    if (item?.kind !== "file") return;
+
+    const file = item.getAsFile();
+    if (!file || !isAudioFile(file.name)) return;
+    if (!fileSystemService.hasRootForPane("source")) {
+      toast.error("Select a source folder first to add files from your computer");
+      return;
     }
+    void (async () => {
+      const result = await fileSystemService.addFileFromDrop(file, "/", "source");
+      if (result.success && result.data) {
+        const path = result.data;
+        const name = path.split("/").filter(Boolean).pop() || file.name;
+        onDropSample({ path, name, paneType: "source" });
+      } else {
+        toast.error(result.error || "Failed to add file");
+      }
+    })();
   };
 
   useEffect(() => {

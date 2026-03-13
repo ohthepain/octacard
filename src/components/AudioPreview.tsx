@@ -71,6 +71,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
+function isAbortError(e: unknown): boolean {
+  return e instanceof Error && (e.name === "AbortError" || e.message?.includes("aborted"));
+}
+
 function createSilentWavDataUrl(durationSeconds: number): string {
   const sampleRate = 44100;
   const numSamples = sampleRate * durationSeconds * 2;
@@ -164,10 +168,8 @@ export const AudioPreview = ({
   const isPlaying = playerIsPlaying || wavesurferPlaying;
   const playerCurrentTime = usePlayerStore((s) => s.currentTime);
   const playSingle = usePlayerStore((s) => s.playSingle);
-  const _playMulti = usePlayerStore((s) => s.playMulti);
   const stopPlayer = usePlayerStore((s) => s.stop);
   const requestSwitchAtNextBar = usePlayerStore((s) => s.requestSwitchAtNextBar);
-  const _setActiveSample = usePlayerStore((s) => s.setActiveSample);
   const muted = usePlayerStore((s) => s.muted);
   const setMuted = usePlayerStore((s) => s.setMuted);
   const stack = useMultiSampleStore((s) => s.stack);
@@ -219,7 +221,6 @@ export const AudioPreview = ({
   ]);
 
   const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
-  const _playStartTimeRef = useRef<number>(0);
   const playSliceEndRef = useRef<number | null>(null);
   const playSliceStartRef = useRef<number | null>(null);
   const onFileSavedRef = useRef(onFileSaved);
@@ -568,7 +569,6 @@ export const AudioPreview = ({
               ? parsed.sampleEndFrame / parsed.sampleRate
               : Math.max(metadataStart, duration || durationFromFile);
           const edits = getEdits(filePath);
-          const _dur = duration || metadataEnd;
           prevFilePathForLoopRef.current = filePath;
           setLoopStart(edits?.loopStart ?? Math.max(0, metadataStart));
           setLoopEnd(edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd));
@@ -781,13 +781,13 @@ export const AudioPreview = ({
             wavesurferRef.current.destroy();
           } catch (error) {
             // Ignore AbortError - it's expected when switching files
-            if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+            if (!isAbortError(error)) {
               console.error("Error cleaning up WaveSurfer:", error);
             }
           }
         } catch (error) {
           // Ignore AbortError during cleanup
-          if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+          if (!isAbortError(error)) {
             console.error("Error cleaning up WaveSurfer:", error);
           }
         }
@@ -853,13 +853,13 @@ export const AudioPreview = ({
             await new Promise((resolve) => setTimeout(resolve, 50));
           } catch (error) {
             // Ignore AbortError during cleanup
-            if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+            if (!isAbortError(error)) {
               console.error("Error destroying previous WaveSurfer:", error);
             }
           }
         } catch (error) {
           // Ignore cleanup errors
-          if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+          if (!isAbortError(error)) {
             console.error("Error in cleanup:", error);
           }
         }
@@ -870,6 +870,9 @@ export const AudioPreview = ({
       await cleanupPrevious();
 
       if (cancelled) return;
+
+      const container = waveformRef.current;
+      if (!container) return;
 
       setIsLoading(true);
       const playerState = usePlayerStore.getState();
@@ -887,7 +890,7 @@ export const AudioPreview = ({
 
       // Create WaveSurfer instance - entire waveform in darker grey (no progress color)
       const wavesurfer = WaveSurfer.create({
-        container: waveformRef.current,
+        container,
         waveColor: "#9E9E9E", // Darker grey waveform
         progressColor: "#9E9E9E", // Same grey (no orange to left of playhead)
         cursorColor: "#757575", // Slightly darker for cursor
@@ -1128,12 +1131,12 @@ export const AudioPreview = ({
         if (cancelled) return;
         isInitializingRef.current = false;
         // Ignore AbortError - it's expected when switching files or destroying WaveSurfer
-        if (error.name === "AbortError" || error.message?.includes("aborted")) {
+        if (isAbortError(error)) {
           console.log("WaveSurfer load aborted (expected when switching files)");
           return;
         }
         console.error("WaveSurfer error:", error);
-        setErrorMessage(`Failed to load audio: ${error.message || "Unknown error"}`);
+        setErrorMessage(`Failed to load audio: ${error instanceof Error ? error.message : "Unknown error"}`);
         setIsLoading(false);
       });
 
@@ -1147,7 +1150,7 @@ export const AudioPreview = ({
 
       // Sync region changes to store
       regions.on("region-updated", (region) => {
-        if (cancelled) return;
+        if (cancelled || !filePath) return;
         const pts = envelope.getPoints();
         setEdits(filePath, {
           region: { start: region.start, end: region.end },
@@ -1155,7 +1158,7 @@ export const AudioPreview = ({
         });
       });
       regions.on("region-removed", () => {
-        if (cancelled) return;
+        if (cancelled || !filePath) return;
         const pts = envelope.getPoints();
         setEdits(filePath, {
           region: null,
@@ -1165,7 +1168,7 @@ export const AudioPreview = ({
 
       // Sync envelope changes to store
       envelope.on("points-change", (newPoints) => {
-        if (cancelled) return;
+        if (cancelled || !filePath) return;
         const regs = regions.getRegions();
         const r = regs[0];
         setEdits(filePath, {
@@ -1180,7 +1183,7 @@ export const AudioPreview = ({
           if (cancelled) return;
           isInitializingRef.current = false;
           // Ignore AbortError - it's expected when switching files
-          if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+          if (!isAbortError(error)) {
             console.error("WaveSurfer load promise rejected:", error);
           }
         });
@@ -1188,7 +1191,7 @@ export const AudioPreview = ({
         if (cancelled) return;
         isInitializingRef.current = false;
         // Ignore AbortError during load
-        if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+        if (!isAbortError(error)) {
           console.error("Error loading audio in WaveSurfer:", error);
         }
       }
@@ -1219,14 +1222,14 @@ export const AudioPreview = ({
             instance.destroy();
           } catch (e) {
             // Ignore AbortError and other cleanup errors
-            if (e.name !== "AbortError" && !e.message?.includes("aborted")) {
+            if (!isAbortError(e)) {
               console.error("Error destroying WaveSurfer:", e);
             }
           }
         }
       } catch (error) {
         // Ignore AbortError during cleanup
-        if (error.name !== "AbortError" && !error.message?.includes("aborted")) {
+        if (!isAbortError(error)) {
           console.error("Error cleaning up WaveSurfer in effect:", error);
         }
       }
@@ -1507,11 +1510,6 @@ export const AudioPreview = ({
     if (!wavesurferRef.current) return;
     const current = wavesurferRef.current.getCurrentTime();
     wavesurferRef.current.seekTo(Math.min(duration, current + 10) / duration);
-  };
-
-  const _handleSeek = (value: number[]) => {
-    if (!wavesurferRef.current) return;
-    wavesurferRef.current.seekTo(value[0] / duration);
   };
 
   const handleZoomIn = () => {
@@ -2124,11 +2122,7 @@ export const AudioPreview = ({
             const overlayEl = minimapContainerRef.current?.querySelector(
               '[part="minimap-overlay"]',
             ) as HTMLElement | null;
-            const minimapRect = minimapContainerRef.current?.getBoundingClientRect();
             const waveformRect = waveformRef.current?.getBoundingClientRect();
-            const _overlayLeftBefore =
-              overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
-            const _scrollBefore = ws.getScroll();
             // Axis lock: ignore tiny/secondary horizontal jitter during mostly vertical drags.
             const shouldApplyHorizontal =
               Math.abs(actualDeltaX) >= Math.abs(actualDeltaY) && Math.abs(actualDeltaX) >= 2;
@@ -2140,8 +2134,6 @@ export const AudioPreview = ({
             const mappedDeltaX = shouldApplyHorizontal ? actualDeltaX * minimapPixelToScroll : 0;
             const newScroll = Math.max(0, dragStateRef.current.startScroll + mappedDeltaX);
             ws.setScroll(newScroll);
-            const _overlayLeftAfter =
-              overlayEl && minimapRect ? overlayEl.getBoundingClientRect().left - minimapRect.left : null;
             if (dragStateRef.current.debugScrollSamples < 6) {
               dragStateRef.current.debugScrollSamples += 1;
             }

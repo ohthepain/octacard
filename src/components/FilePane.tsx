@@ -476,11 +476,6 @@ export const FilePane = ({
     return "Local Files";
   }, []);
 
-  const normalizeVolumePath = useCallback((value: string | null | undefined): string => {
-    if (!value) return "";
-    return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-  }, []);
-
   // Refresh the "available volumes" list.
   // In the web app we cannot enumerate OS volumes, so we treat the
   // user-selected root directory as a single "Local Files" volume.
@@ -1659,107 +1654,6 @@ export const FilePane = ({
       }
     }
   };
-
-  const _handleVolumeSelect = useCallback(
-    async (volume: VolumeOption) => {
-      if (typeof window === "undefined") return;
-
-      if (normalizeVolumePath(rootPath) === normalizeVolumePath(volume.path)) {
-        return;
-      }
-
-      setLoading(true);
-      setSearchQuery("");
-      setSelectedAudioFile(null);
-      setPathDoesNotExist(false);
-
-      try {
-        // For "Local Files" (isHome), use home directory to match initialization behavior
-        let targetPath = volume.path;
-        if (volume.isHome) {
-          // Home directory not available in web - use root
-          const homeResult = { success: true, data: "/" };
-          if (homeResult.success && homeResult.data) {
-            targetPath = homeResult.data;
-          } else {
-            // Fallback to "/" if home directory can't be retrieved
-            targetPath = "/";
-          }
-        }
-        const resolvedUUID = volume.uuid ?? (await getVolumeUUIDForPath(targetPath));
-        const displayName = volume.isHome ? "Local Files" : getVolumeName(volume.path);
-
-        setRootPath(targetPath);
-        rootPathRef.current = targetPath;
-        setDisplayTitle(displayName);
-        setIsCardMounted(volume.isRemovable);
-        setCurrentVolumeUUID(resolvedUUID);
-
-        if (autoNavigateToCard) {
-          if (volume.isRemovable && resolvedUUID) {
-            saveLastRightPaneVolumeUUID(resolvedUUID);
-          } else {
-            saveLastRightPaneVolumeUUID(null);
-          }
-        }
-
-        // For "Local Files", always start at the home directory root (don't restore saved subdirectory)
-        // For removable volumes, restore saved navigation state if available
-        let initialPath = targetPath;
-        let restoredExpanded: string[] | undefined;
-
-        if (!volume.isHome && resolvedUUID) {
-          // Only restore saved state for non-home volumes (removable drives)
-          const savedState = getNavigationState(resolvedUUID);
-          if (savedState?.currentPath) {
-            try {
-              const statsResult = await fileSystemService.getFileStats(savedState.currentPath, paneType);
-              if (statsResult.success && statsResult.data?.isDirectory) {
-                // Verify the saved path is on the same volume
-                const savedPathVolumeUUID = await getVolumeUUIDForPath(savedState.currentPath);
-                if (savedPathVolumeUUID === resolvedUUID) {
-                  initialPath = savedState.currentPath;
-                  restoredExpanded = savedState.expandedFolders;
-                }
-              }
-            } catch {
-              // Ignore errors restoring saved path
-            }
-          }
-        }
-
-        // Ensure currentRootPath matches rootPath for home directory (no ".." link)
-        setCurrentRootPath(initialPath);
-        currentRootPathRef.current = initialPath;
-        setExpandedFolders(new Set());
-        setFileTree([]);
-
-        await loadDirectory(initialPath, "root");
-
-        if (restoredExpanded && restoredExpanded.length > 0) {
-          setPendingExpandedFolders(restoredExpanded);
-        }
-      } catch (error) {
-        console.error("Failed to switch volume:", error);
-        setPathDoesNotExist(true);
-      } finally {
-        setLoading(false);
-        void refreshAvailableVolumes();
-      }
-    },
-    [
-      autoNavigateToCard,
-      getNavigationState,
-      getVolumeName,
-      getVolumeUUIDForPath,
-      loadDirectory,
-      normalizeVolumePath,
-      refreshAvailableVolumes,
-      rootPath,
-      saveLastRightPaneVolumeUUID,
-      paneType,
-    ],
-  );
 
   // Save navigation state whenever currentRootPath or expandedFolders changes
   useEffect(() => {

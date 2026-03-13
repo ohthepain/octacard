@@ -123,7 +123,7 @@ async function isSampleInCollection(userId: string, sampleId: string): Promise<b
 }
 
 async function canReadSample(userId: string, sampleId: string): Promise<boolean> {
-  if (isSampleInCollection(userId, sampleId)) return true;
+  if (await isSampleInCollection(userId, sampleId)) return true;
   const packSample = await prisma.packSample.findFirst({
     where: { sampleId, OR: [{ ownerId: userId }, { credits: 0 }] },
     select: { packId: true },
@@ -337,7 +337,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       isOwner: p.ownerId === user.id,
       coverImageProxyUrl: p.coverImageS3Key
         ? `/api/library/packs/${encodeURIComponent(p.id)}/cover?v=${encodeURIComponent(p.coverImageS3Key)}`
-        : p.coverImageUrl ?? null,
+        : (p.coverImageUrl ?? null),
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       childPackCount: p._count.children,
@@ -402,7 +402,8 @@ libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
 libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const { name, parentId, coverImageS3Key, coverImageUrl, isPublic, priceTokens, defaultSampleTokens } = c.req.valid("json");
+  const { name, parentId, coverImageS3Key, coverImageUrl, isPublic, priceTokens, defaultSampleTokens } =
+    c.req.valid("json");
 
   await requireOwnedPack(id, user.id);
 
@@ -440,22 +441,18 @@ libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) =
   return c.json(pack);
 });
 
-libraryApp.post(
-  "/packs/:id/cover-upload-url",
-  zValidator("json", packCoverUploadSchema),
-  async (c) => {
-    const user = c.get("user");
-    const id = c.req.param("id");
-    const { contentType } = c.req.valid("json");
+libraryApp.post("/packs/:id/cover-upload-url", zValidator("json", packCoverUploadSchema), async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const { contentType } = c.req.valid("json");
 
-    await requireOwnedPack(id, user.id);
+  await requireOwnedPack(id, user.id);
 
-    const key = `packs/${user.id}/${id}/cover-${Date.now()}.${contentType.includes("png") ? "png" : "jpg"}`;
-    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+  const key = `packs/${user.id}/${id}/cover-${Date.now()}.${contentType.includes("png") ? "png" : "jpg"}`;
+  const uploadUrl = await getPresignedUploadUrl(key, contentType);
 
-    return c.json({ key, uploadUrl, expiresIn: 3600 });
-  }
-);
+  return c.json({ key, uploadUrl, expiresIn: 3600 });
+});
 
 libraryApp.get("/packs/:id/contents", async (c) => {
   const user = c.get("user");
@@ -517,7 +514,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
       isOwner: p.ownerId === user.id,
       coverImageProxyUrl: p.coverImageS3Key
         ? `/api/library/packs/${encodeURIComponent(p.id)}/cover?v=${encodeURIComponent(p.coverImageS3Key)}`
-        : p.coverImageUrl ?? null,
+        : (p.coverImageUrl ?? null),
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       childPackCount: p._count.children,
@@ -546,7 +543,6 @@ libraryApp.get("/packs/:id/contents", async (c) => {
 });
 
 libraryApp.get("/packs/:id/cover", async (c) => {
-  const _user = c.get("user");
   const id = c.req.param("id");
 
   const pack = await prisma.pack.findUnique({
@@ -659,8 +655,7 @@ libraryApp.get("/packs/:id/download-manifest", async (c) => {
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
 
   const downloadable = packSamples.filter(
-    (ps) =>
-      ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId) || pack.ownerId === user.id,
+    (ps) => ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId) || pack.ownerId === user.id,
   );
 
   if (downloadable.length === 0) {
@@ -795,7 +790,7 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
       createdAt: ps.createdAt,
       updatedAt: ps.updatedAt,
     },
-    201
+    201,
   );
 });
 
@@ -885,7 +880,7 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
       createdAt: ps.createdAt,
       updatedAt: ps.updatedAt,
     },
-    201
+    201,
   );
 });
 

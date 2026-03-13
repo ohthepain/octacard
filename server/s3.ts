@@ -91,7 +91,11 @@ export async function getPresignedUploadUrl(
     Key: key,
     ContentType: contentType,
   });
-  return getSignedUrl(s3Client, command, { expiresIn });
+  return getSignedUrl(
+    s3Client as unknown as Parameters<typeof getSignedUrl>[0],
+    command as Parameters<typeof getSignedUrl>[1],
+    { expiresIn }
+  );
 }
 
 export async function getPresignedDownloadUrl(
@@ -99,5 +103,9 @@ export async function getPresignedDownloadUrl(
   expiresIn = 3600
 ): Promise<string> {
   const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-  return getSignedUrl(s3Client, command, { expiresIn });
+  return getSignedUrl(
+    s3Client as unknown as Parameters<typeof getSignedUrl>[0],
+    command as Parameters<typeof getSignedUrl>[1],
+    { expiresIn }
+  );
 }

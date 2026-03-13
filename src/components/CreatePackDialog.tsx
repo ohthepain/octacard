@@ -214,7 +214,6 @@ export function CreatePackDialog({
                 const coverPath = base ? `${base}/${data.coverImage}` : data.coverImage;
                 const coverFile = await fileSystemService.getFile(coverPath, paneType);
                 if (coverFile) {
-                  const blob = await coverFile.blob();
                   const ext = data.coverImage.match(/\.(jpe?g|png|webp|gif)$/i)?.[0]?.slice(1) ?? "jpg";
                   const mime =
                     ext === "png"
@@ -224,9 +223,9 @@ export function CreatePackDialog({
                         : ext === "gif"
                           ? "image/gif"
                           : "image/jpeg";
-                  const coverImgFile = new File([blob], `cover.${ext}`, { type: mime });
+                  const coverImgFile = new File([coverFile], `cover.${ext}`, { type: mime });
                   setImageFile(coverImgFile);
-                  const url = URL.createObjectURL(blob);
+                  const url = URL.createObjectURL(coverFile);
                   setImagePreview((prev) => {
                     if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
                     return url;
@@ -349,7 +348,7 @@ export function CreatePackDialog({
         let squareBlob: Blob | null = null;
         if (unsplashImageUrl) {
           coverImageUrl = unsplashImageUrl;
-          coverImageS3Key = null;
+          coverImageS3Key = undefined;
         } else if (imageFile) {
           setUploadProgress({ current: 0, total: 1, phase: "Uploading cover image…" });
           squareBlob = await cropImageToSquare(imageFile);

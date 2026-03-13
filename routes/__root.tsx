@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const queryClient = new QueryClient()
 
 export const rootRoute = createRootRouteWithContext<{
-  queryClient: ReturnType<typeof import('@tanstack/react-query').QueryClient>
+  queryClient: InstanceType<typeof QueryClient>
 }>()({
   component: () => (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>

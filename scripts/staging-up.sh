@@ -2,12 +2,14 @@
 # Start staging resources after staging-down.sh.
 # Run from project root: ./scripts/staging-up.sh
 #
-# Starts: RDS instance, ECS service (scale to 1).
-# RDS must be available before ECS can connect; we wait for it.
+# Starts: RDS instance, recreates ElastiCache Redis, ECS service (scale to 1).
+# Requires: terraform, AWS CLI. Terraform recreates Redis and updates redis-url secret.
 
 set -e
 REGION="${AWS_REGION:-eu-central-1}"
 ECS_DESIRED_COUNT="${ECS_DESIRED_COUNT:-1}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "=== Starting staging resources (region: $REGION) ==="
 
@@ -20,6 +22,21 @@ aws rds start-db-instance \
 echo "Waiting for RDS to become available (this may take a few minutes)..."
 aws rds wait db-instance-available \
   --db-instance-identifier octacard-staging-db \
+  --region "$REGION"
+
+echo "Recreating ElastiCache Redis cluster (Terraform apply)..."
+(cd "$PROJECT_ROOT/terraform" && \
+  terraform init -backend-config=backend.hcl -input=false -reconfigure && \
+  terraform workspace select staging 2>/dev/null || terraform workspace new staging && \
+  terraform apply \
+    -target=aws_elasticache_cluster.redis \
+    -target=aws_secretsmanager_secret_version.redis_url \
+    -var-file=environments/staging/terraform.tfvars \
+    -auto-approve -input=false)
+
+echo "Waiting for Redis to become available..."
+aws elasticache wait cache-cluster-available \
+  --cache-cluster-id octacard-staging-redis \
   --region "$REGION"
 
 echo "Scaling ECS service to $ECS_DESIRED_COUNT..."
