@@ -185,8 +185,8 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.2.1)
       wavesurfer.js:
-        specifier: ^7.12.1
-        version: 7.12.1(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
+        specifier: ^7.12.2
+        version: 7.12.2(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -6959,8 +6959,8 @@ packages:
     engines: {node: '>=20.0.0'}
     hasBin: true
 
-  wavesurfer.js@7.12.1:
-    resolution: {integrity: sha512-NswPjVHxk0Q1F/VMRemCPUzSojjuHHisQrBqQiRXg7MVbe3f5vQ6r0rTTXA/a/neC/4hnOEC4YpXca4LpH0SUg==}
+  wavesurfer.js@7.12.2:
+    resolution: {integrity: sha512-akVYISAHCw2gNw/7n8Pk/zH1Zz91WJyL/2MaNQCLD1XV3A226gKlWoDHWp9UdWqQ3zXnWttDf9ewZQQ3cxbOmQ==}
 
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
@@ -15007,7 +15007,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  wavesurfer.js@7.12.1(patch_hash=sqsbq5b6btklpv35vnneopl5w4): {}
+  wavesurfer.js@7.12.2(patch_hash=sqsbq5b6btklpv35vnneopl5w4): {}
 
   web-streams-polyfill@3.3.3: {}
 
