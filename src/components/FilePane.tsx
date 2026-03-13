@@ -737,6 +737,20 @@ export const FilePane = ({
     [paneName, sortBy, paneType],
   );
 
+  // Populate packJsonCache from search index (full traversal) so we know which folders are packs without expanding
+  const populatePackCacheFromIndex = useCallback(async () => {
+    const packResult = await fileSystemService.getPackFolderPaths(paneType);
+    if (packResult.success && packResult.data) {
+      setPackJsonCache((prev) => {
+        const next = new Map(prev);
+        for (const path of packResult.data!) {
+          next.set(path, true);
+        }
+        return next;
+      });
+    }
+  }, [paneType]);
+
   // Request root directory on mount if not set
   const requestRootDirectory = useCallback(async () => {
     const result = await fileSystemService.requestRootDirectory();
@@ -745,7 +759,8 @@ export const FilePane = ({
       setCurrentRootPath("/");
       setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
       await refreshAvailableVolumes();
-      void fileSystemService.ensureSearchIndex(paneType);
+      await fileSystemService.ensureSearchIndex(paneType);
+      await populatePackCacheFromIndex();
       await loadDirectory("/", "root");
       if (result.warning) {
         toast.warning("Same Folder Selected", {
@@ -754,7 +769,7 @@ export const FilePane = ({
         });
       }
     }
-  }, [loadDirectory, paneType, refreshAvailableVolumes]);
+  }, [loadDirectory, paneType, refreshAvailableVolumes, populatePackCacheFromIndex]);
 
   // Check if root directory is set on mount
   useEffect(() => {
@@ -766,10 +781,14 @@ export const FilePane = ({
       setCurrentRootPath("/");
       setDisplayTitle(fileSystemService.getRootDirectoryName(paneType));
       void refreshAvailableVolumes();
-      void fileSystemService.ensureSearchIndex(paneType);
-      loadDirectory("/", "root");
+      const init = async () => {
+        await fileSystemService.ensureSearchIndex(paneType);
+        await populatePackCacheFromIndex();
+        loadDirectory("/", "root");
+      };
+      void init();
     }
-  }, [loadDirectory, paneType, refreshAvailableVolumes]);
+  }, [loadDirectory, paneType, refreshAvailableVolumes, populatePackCacheFromIndex]);
 
   // Re-sort current directory when sort option changes
   useEffect(() => {
@@ -1135,6 +1154,7 @@ export const FilePane = ({
     console.log("useEffect: autoNavigateToCard, paneName:", paneName);
 
     // Initialize directory (client-only; file system uses File System Access API in browser)
+    let delegatedToMountEffect = false;
     const initializePane = async () => {
       if (typeof window === "undefined") {
         setLoading(false);
@@ -1275,7 +1295,9 @@ export const FilePane = ({
         console.log(`${paneName} - No card detected or not auto-navigating, falling back to home directory`);
         // When root is already set (e.g. from Browse for folder), let the simple mount effect handle loading.
         // Avoid running setFileTree([]) which would clear the tree populated by the other effect.
+        // Do NOT set loading=false - the mount effect's loadDirectory will do that when done.
         if (fileSystemService.hasRootForPane(paneType)) {
+          delegatedToMountEffect = true;
           const rootName = fileSystemService.getRootDirectoryName(paneType);
           setRootPath("/");
           setCurrentRootPath("/");
@@ -1284,7 +1306,6 @@ export const FilePane = ({
           setCurrentVolumeUUID(null);
           rootPathRef.current = "/";
           currentRootPathRef.current = "/";
-          setLoading(false);
           hasInitializedNavStateRef.current = true;
           // Restore expanded folders from saved state (mount effect will load tree, then restoration effect will expand)
           // Use _default since getVolumeUUIDForPath returns null in web; state is saved under that key
@@ -1360,7 +1381,10 @@ export const FilePane = ({
       } finally {
         if (!cancelled) {
           hasInitializedNavStateRef.current = true;
-          setLoading(false);
+          // When root was already set, mount effect's loadDirectory will set loading=false
+          if (!delegatedToMountEffect) {
+            setLoading(false);
+          }
         }
       }
     };
@@ -1773,6 +1797,9 @@ export const FilePane = ({
     // Store selected paths to restore later
     selectedPathsToRestoreRef.current = selectedPaths.size > 0 ? selectedPaths : null;
 
+    // Repopulate pack cache from search index (in case new packs were added)
+    await populatePackCacheFromIndex();
+
     // Refresh the root directory
     await loadDirectory(currentRootPath, "root");
 
@@ -1816,7 +1843,7 @@ export const FilePane = ({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory, getFlatNodeList]);
+  }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory, getFlatNodeList, populatePackCacheFromIndex]);
 
   useEffect(() => {
     if (typeof refreshToken !== "number") return;

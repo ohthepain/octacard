@@ -458,6 +458,25 @@ class FileSystemService {
     this.searchIndexesByRoot.delete(rootHandle);
   }
 
+  /** Returns all folder paths that contain pack.json, using the search index (full traversal). */
+  async getPackFolderPaths(paneType: PaneType = "source"): Promise<FileSystemResult<Set<string>>> {
+    const ensured = await this.ensureSearchIndex(paneType);
+    if (!ensured.success) {
+      return { success: false, error: ensured.error };
+    }
+    const index = this.getOrCreateSearchIndex(paneType);
+    if (!index) {
+      return { success: false, error: "No root directory selected" };
+    }
+    const packFolders = new Set<string>();
+    for (const entry of index.entriesByPath.values()) {
+      if (!entry.isDirectory && entry.name === "pack.json") {
+        packFolders.add(this.getParentPath(entry.path));
+      }
+    }
+    return { success: true, data: packFolders };
+  }
+
   async reindexSubtree(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
     const ensured = await this.ensureSearchIndex(paneType);
     if (!ensured.success) {
