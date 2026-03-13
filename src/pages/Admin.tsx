@@ -74,7 +74,7 @@ export default function Admin() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container max-w-3xl py-12 px-4">
+      <div className="container max-w-4xl py-12 px-4">
         <div className="mb-8">
           <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
             ← Back to app
@@ -84,7 +84,7 @@ export default function Admin() {
         <p className="text-muted-foreground mb-8">
           Tools for administrators. Available only to admin and superadmin users.
         </p>
-        <div className="mx-auto grid max-w-[536px] grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-4">
           {ADMIN_TOOLS.map((tool) => {
             const Icon = tool.icon;
             const content = (
