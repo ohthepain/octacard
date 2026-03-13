@@ -60,7 +60,7 @@ export default function PrivacyPolicy() {
         <p>
           Your data is stored on secure servers. We use industry-standard security measures to
           protect your information. Passwords are hashed and never stored in plain text. Session
-          data may be stored in Redis for performance.
+          data may be stored in PostgreSQL for performance.
         </p>
 
         <h2>5. Data Sharing</h2>

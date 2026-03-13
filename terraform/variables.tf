@@ -56,12 +56,6 @@ variable "db_ca_cert_identifier" {
   default     = ""
 }
 
-variable "redis_node_type" {
-  description = "ElastiCache node type"
-  type        = string
-  default     = "cache.t3.micro"
-}
-
 variable "better_auth_secret" {
   description = "Better Auth secret (generate with: openssl rand -hex 32)"
   type        = string

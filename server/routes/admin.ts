@@ -1,14 +1,13 @@
 import { Hono } from "hono";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { createBullBoard } from "@bull-board/api";
-import { HonoAdapter } from "@bull-board/hono";
-import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { sampleAnalysisQueue } from "../queues/sample-analysis.js";
+import { boss } from "../pgboss.js";
 import { prisma } from "../db.js";
 import type { AppVariables } from "../types.js";
 import { clearExternalApiTraces, getExternalApiTraces } from "../external-api-trace.js";
+import { ESSENTIA_QUEUE } from "../queues/essentia-analysis.js";
+import { CLAP_QUEUE } from "../queues/clap-analysis.js";
+import { getAllWorkerStatuses } from "../workers/worker-state.js";
 
 const adminApp = new Hono<{ Variables: AppVariables }>();
 const INSTRUMENT_FAMILY = "instrument_family";
@@ -97,20 +96,108 @@ async function getTaxonomyEditorState() {
   };
 }
 
-const serverAdapter = new HonoAdapter(serveStatic);
-serverAdapter.setBasePath("/api/admin/queues");
+const QUEUE_NAMES = [ESSENTIA_QUEUE, CLAP_QUEUE] as const;
 
-createBullBoard({
-  queues: [new BullMQAdapter(sampleAnalysisQueue)],
-  serverAdapter,
-  options: {
-    uiConfig: {
-      boardTitle: "OctaCard Queues",
-    },
-  },
+async function getQueueStatsSafe(name: string) {
+  try {
+    return await boss.getQueueStats(name);
+  } catch {
+    return null;
+  }
+}
+
+adminApp.get("/queues", async (c) => {
+  const queues = await Promise.all(
+    QUEUE_NAMES.map(async (name) => {
+      const stats = await getQueueStatsSafe(name);
+      return {
+        name,
+        ...(stats
+          ? {
+              queuedCount: stats.queuedCount,
+              activeCount: stats.activeCount,
+              completedCount: stats.totalCount - stats.queuedCount - stats.activeCount - (stats.deferredCount ?? 0),
+              failedCount: 0,
+              deferredCount: stats.deferredCount ?? 0,
+            }
+          : { queuedCount: 0, activeCount: 0, completedCount: 0, failedCount: 0, deferredCount: 0 }),
+      };
+    }),
+  );
+  const workers = getAllWorkerStatuses();
+  return c.json({ queues, workers });
 });
 
-adminApp.route("/queues", serverAdapter.registerPlugin());
+const queueJobsQuerySchema = z.object({
+  state: z.enum(["created", "retry", "active", "completed", "failed", "cancelled"]).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+adminApp.get(
+  "/queues/:queueName/jobs",
+  zValidator("param", z.object({ queueName: z.string() })),
+  zValidator("query", queueJobsQuerySchema),
+  async (c) => {
+    const { queueName } = c.req.valid("param");
+    const { state, limit } = c.req.valid("query");
+    if (!QUEUE_NAMES.includes(queueName as (typeof QUEUE_NAMES)[number])) {
+      return c.json({ error: "Unknown queue" }, 400);
+    }
+    try {
+      const jobs = await boss.findJobs(queueName, state ? { queued: state === "created" || state === "retry" } : {});
+      const filtered = state ? jobs.filter((j) => j.state === state) : jobs;
+      const limited = filtered.slice(0, limit);
+      return c.json({ jobs: limited });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  },
+);
+
+adminApp.get(
+  "/queues/:queueName/jobs/:jobId",
+  zValidator("param", z.object({ queueName: z.string(), jobId: z.string() })),
+  async (c) => {
+    const { queueName, jobId } = c.req.valid("param");
+    if (!QUEUE_NAMES.includes(queueName as (typeof QUEUE_NAMES)[number])) {
+      return c.json({ error: "Unknown queue" }, 400);
+    }
+    try {
+      const jobs = await boss.findJobs(queueName, { id: jobId });
+      const job = jobs[0] ?? null;
+      if (!job) return c.json({ error: "Job not found" }, 404);
+      let sample: { analysisStatus: string; analysisError: string | null } | null = null;
+      const data = job.data as { sampleId?: string; s3Key?: string };
+      if (data?.sampleId) {
+        const s = await prisma.sample.findUnique({
+          where: { id: data.sampleId },
+          select: { analysisStatus: true, analysisError: true },
+        });
+        sample = s;
+      }
+      return c.json({ job, sample });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  },
+);
+
+adminApp.post(
+  "/queues/:queueName/jobs/:jobId/retry",
+  zValidator("param", z.object({ queueName: z.string(), jobId: z.string() })),
+  async (c) => {
+    const { queueName, jobId } = c.req.valid("param");
+    if (!QUEUE_NAMES.includes(queueName as (typeof QUEUE_NAMES)[number])) {
+      return c.json({ error: "Unknown queue" }, 400);
+    }
+    try {
+      await boss.retry(queueName, jobId);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  },
+);
 
 adminApp.get("/network/traces", zValidator("query", networkTracesQuerySchema), async (c) => {
   const { limit, errorsOnly } = c.req.valid("query");

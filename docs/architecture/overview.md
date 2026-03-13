@@ -9,7 +9,7 @@ The system consists of
 - hono back end
 - tailwindcss
 - better-auth with Google OAuth
-- bullmq for jobs
+- pg-boss for job queues
 - essentia and CLAP for audio analysis
 
 ## Components

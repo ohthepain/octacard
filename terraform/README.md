@@ -150,9 +150,9 @@ pnpm run terraform:force-unlock:staging
 - `s3_bucket_arn` – For IAM policies
 - `app_url` – App URL (HTTPS when domain configured, else HTTP ALB DNS)
 
-## ECS Fargate + RDS + ElastiCache
+## ECS Fargate + RDS
 
-Standalone VPC with ALB, ECS Fargate, RDS Postgres, ElastiCache Redis.
+Standalone VPC with ALB, ECS Fargate, RDS Postgres. Job queues use pg-boss (PostgreSQL).
 
 **Secrets:** Edit `terraform/environments/staging/terraform.tfvars` and replace `REPLACE_ME` with your `db_password` and `better_auth_secret` (generate with `openssl rand -hex 32`). Prefer AWS-managed RDS CA trust by setting `db_ca_cert_identifier` (for example from `aws rds describe-certificates`) and leaving `database_ca_cert_base64` empty. Only set `database_ca_cert_base64` if you intentionally use a private/self-signed CA chain. For Google sign-in, add `google_client_id` and `google_client_secret` (from Google Cloud Console → APIs & Services → Credentials). The tfvars files are gitignored. If they were previously committed, run `git rm --cached terraform/environments/*/terraform.tfvars` once to stop tracking them.
 
@@ -190,7 +190,6 @@ terraform workspace select staging   # or production
 
 # Import each secret (use octacard-production/... for production)
 terraform import aws_secretsmanager_secret.database_url octacard-staging/database-url
-terraform import aws_secretsmanager_secret.redis_url octacard-staging/redis-url
 terraform import aws_secretsmanager_secret.better_auth_secret octacard-staging/better-auth-secret
 # Optional: only when database_ca_cert_base64 is set in tfvars
 terraform import aws_secretsmanager_secret.database_ca_cert_base64[0] octacard-staging/database-ca-cert-base64
@@ -198,8 +197,6 @@ terraform import aws_secretsmanager_secret.database_ca_cert_base64[0] octacard-s
 # Then apply again
 pnpm run terraform:apply:staging
 ```
-
-For **redis-url** "scheduled for deletion": restore it in AWS Console (Secrets Manager → select secret → Cancel deletion) before importing.
 
 **DuplicateListener:** If a previous apply failed partway, an orphaned HTTP listener may exist. Delete it in AWS Console (EC2 → Load Balancers → your ALB → Listeners → remove the HTTP:80 listener), then run apply again.
 
@@ -239,7 +236,6 @@ pnpm run terraform:state:rm-secrets:staging
 
 # 2. Delete secrets in AWS (immediate, no recovery window)
 pnpm run aws:delete:secret:staging:database-url
-pnpm run aws:delete:secret:staging:redis-url
 pnpm run aws:delete:secret:staging:better-auth-secret
 
 # 3. Destroy the rest
@@ -319,8 +315,8 @@ terraform workspace select staging
 # 1. Destroy RDS first (releases the ENI blocking subnets/SGs)
 terraform destroy -target=aws_db_instance.postgres -var-file=environments/staging/terraform.tfvars -auto-approve
 
-# 2. Destroy Redis, ECS, ALB, etc.
-terraform destroy -target=aws_elasticache_cluster.redis -target=aws_ecs_service.app -var-file=environments/staging/terraform.tfvars -auto-approve
+# 2. Destroy ECS, ALB, etc.
+terraform destroy -target=aws_ecs_service.app -var-file=environments/staging/terraform.tfvars -auto-approve
 
 # 3. Full destroy for the rest
 terraform destroy -var-file=environments/staging/terraform.tfvars -auto-approve

@@ -1,26 +1,34 @@
 # Admin
 
-We have a main admin panel admin.tsx that routes to admin sub-panels
+Main admin panel at `/admin` routes to sub-panels. Admin and superadmin roles only.
 
 ## Taxonomy Editor
 
-Manage sound metadata, such as instrument families and types
+Manage sound metadata: instrument families and types. Add, remove, reorder.
 
 ## Network Monitor
 
-Monitor network requests from the backend
+Monitor outbound requests from the API server to external services (S3, SES, etc.). Filter by errors, clear traces.
 
 ## Queue Dashboard
 
-Monitor pg-boss jobs
+Custom admin panel for pg-boss job queues (replaces BullBoard).
 
-- design mirrors that of bull-board
-- left column is a list of queues
-- main panel has columns for active, waiting, waiting children, completed, failed, delayed, paused jobs
-- tap a queue and a column name to show the jobs in that state ('job cards').
-- job cards are custom components per queue. for example a sample-analysis card shows filename
-- tap a job card to show a custom detail component for that queue. for example the request, response or formatted input and outputs
+### Layout
 
-- Queue list: essentia-analysis, clap-analysis
+- **Left column**: Queue list (`essentia-analysis`, `clap-analysis`) with badge counts (queued, active, completed, failed)
+- **Main panel**: Tabs for job states (created, retry, active, completed, failed)
+- **Job cards**: Per-queue components showing filename (from s3Key), sampleId, state, retry count
+- **Job detail**: Modal with full payload, timestamps, error stack, sample `analysisStatus`, retry button
 
+### Debugging Info
 
+| Data | Source | Purpose |
+|------|--------|---------|
+| Job ID, name, queue | pg-boss | Correlation |
+| Payload (sampleId, s3Key) | pg-boss | Reproduce |
+| State, created/started/completed | pg-boss | Timing |
+| Attempt count, max attempts | pg-boss | Retry behavior |
+| Error message + stack | pg-boss | Root cause |
+| Worker last activity | worker-state | Liveness |
+| Sample analysisStatus, analysisError | DB | Consistency check |

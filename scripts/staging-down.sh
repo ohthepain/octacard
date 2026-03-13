@@ -2,8 +2,7 @@
 # Stop staging resources to save costs.
 # Run from project root: ./scripts/staging-down.sh
 #
-# Stops: ECS service (scale to 0), deletes ElastiCache Redis, stops RDS.
-# Redis is cache-only; we delete and recreate on staging-up.
+# Stops: ECS service (scale to 0), stops RDS.
 
 set -e
 REGION="${AWS_REGION:-eu-central-1}"
@@ -17,19 +16,6 @@ aws ecs update-service \
   --desired-count 0 \
   --region "$REGION" \
   --output text --query 'service.deployments[0].status'
-
-echo "Deleting ElastiCache Redis cluster (cache-only, recreated on staging-up)..."
-if aws elasticache delete-cache-cluster \
-  --cache-cluster-id octacard-staging-redis \
-  --region "$REGION" \
-  --output text --query 'CacheCluster.CacheClusterStatus' 2>/dev/null; then
-  echo "Waiting for Redis deletion to complete..."
-  aws elasticache wait cache-cluster-deleted \
-    --cache-cluster-id octacard-staging-redis \
-    --region "$REGION"
-else
-  echo "(Redis cluster already deleted or not found)"
-fi
 
 echo "Stopping RDS instance..."
 aws rds stop-db-instance \

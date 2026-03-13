@@ -1,9 +1,5 @@
 # Octacard Agent Notes
 
-## Redis Rule
-
-- Use the redis cache agressively to optimize database performance
-
 ## Request Manager Rule
 
 - Route **all client -> server** requests through `src/lib/api-client.ts` (`apiFetch`).

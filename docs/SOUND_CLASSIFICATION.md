@@ -7,7 +7,7 @@ Sample analysis pipeline for faceted search, similarity, and text-to-audio retri
 - **Taxonomy**: Canonical term IDs (instrument_family, instrument_type, style, descriptor, mood). Raw model output is interpreted by a rule layer and mapped to these IDs.
 - **Embeddings**: CLAP (512-dim) for text-to-audio and vibe search. Stored as BYTEA; pgvector migration available for production.
 - **Essentia**: BPM (RhythmExtractor2013), loudness, energy. Stored in `SampleAttribute`.
-- **Worker**: BullMQ + Redis. One job per sample: Essentia features, CLAP embedding, taxonomy assignment.
+- **Workers**: pg-boss (PostgreSQL). Two queues: `essentia-analysis` (decode, Essentia features, Essentia taxonomy) → `clap-analysis` (CLAP embedding, CLAP taxonomy).
 
 ## Data Model
 
@@ -25,10 +25,11 @@ Sample analysis pipeline for faceted search, similarity, and text-to-audio retri
    ```
 
 2. **Worker startup**
-   - Default: worker auto-starts inside the API process (`pnpm run dev`, container startup).
-   - Optional: disable embedded worker with `SAMPLE_ANALYSIS_WORKER_ENABLED=false` and run dedicated worker process(es):
+   - Default: workers auto-start inside the API process (`pnpm run dev`, container startup).
+   - Optional: disable with `SAMPLE_ANALYSIS_WORKER_ENABLED=false` and run dedicated processes:
    ```bash
-   pnpm run worker:sample-analysis
+   pnpm run worker:essentia
+   pnpm run worker:clap
    ```
 
 3. **Upload samples** – analysis is enqueued automatically when samples are created via `/samples/from-content`.

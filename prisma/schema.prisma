@@ -261,6 +261,17 @@ model PackSample {
   @@map("pack_sample")
 }
 
+// Key-value cache for better-auth secondaryStorage (sessions, rate limiting).
+// Replaces Redis when not using ElastiCache.
+model AuthCache {
+  key       String    @id
+  value     String    @db.Text
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("auth_cache")
+}
+
 model SampleCollection {
   id          String   @id @default(cuid())
   userId      String

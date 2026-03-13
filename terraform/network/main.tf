@@ -42,7 +42,7 @@ resource "aws_internet_gateway" "main" {
   tags   = { Name = "octacard-shared-igw" }
 }
 
-# Public subnets (ALB, ECS, RDS, Redis) - 2 AZs
+# Public subnets (ALB, ECS, RDS) - 2 AZs
 resource "aws_subnet" "public" {
   count                   = 2
   vpc_id                  = aws_vpc.shared.id

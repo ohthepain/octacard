@@ -4,39 +4,22 @@ import { useSession } from "@/lib/auth-client";
 import { isAdminOrSuperadmin } from "@/lib/auth-client";
 import { useEffect } from "react";
 
-type AdminTool =
-  | {
-      id: string;
-      label: string;
-      description: string;
-      href: string;
-      external: true;
-      icon: typeof LayoutDashboard;
-    }
-  | {
-      id: string;
-      label: string;
-      description: string;
-      href: "/admin/taxonomy";
-      external: false;
-      icon: typeof LayoutDashboard;
-    }
-  | {
-      id: string;
-      label: string;
-      description: string;
-      href: "/admin/network";
-      external: false;
-      icon: typeof LayoutDashboard;
-    };
+type AdminTool = {
+  id: string;
+  label: string;
+  description: string;
+  href: string;
+  external: boolean;
+  icon: typeof LayoutDashboard;
+};
 
 const ADMIN_TOOLS: readonly AdminTool[] = [
   {
-    id: "bull-board",
+    id: "queue-dashboard",
     label: "Queue Dashboard",
-    description: "BullMQ job queues (sample analysis)",
-    href: "/api/admin/queues",
-    external: true,
+    description: "pg-boss job queues (Essentia and CLAP sample analysis)",
+    href: "/admin/queues",
+    external: false,
     icon: LayoutDashboard,
   },
   {

@@ -137,38 +137,11 @@ resource "aws_security_group" "db" {
   tags = { Name = "${local.name_prefix}-db" }
 }
 
-# Security group: ElastiCache Redis (6379)
-resource "aws_security_group" "redis" {
-  name_prefix = "${local.name_prefix}-redis-"
-  vpc_id      = local.vpc_id
-  description = "Redis for ${local.name_prefix}"
-
-  ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = { Name = "${local.name_prefix}-redis" }
-}
-
 # DB subnet group (RDS, 2+ AZs)
 resource "aws_db_subnet_group" "main" {
   name       = "${local.name_prefix}-db-subnets"
   subnet_ids = local.public_subnet_ids
   tags       = { Name = "${local.name_prefix}-db-subnets" }
-}
-
-# ElastiCache subnet group (Redis)
-resource "aws_elasticache_subnet_group" "main" {
-  name       = "${local.name_prefix}-redis-subnets"
-  subnet_ids = local.public_subnet_ids
 }
 
 # S3 bucket for uploads (required)
@@ -237,33 +210,6 @@ resource "aws_db_instance" "postgres" {
   tags = { Name = "${local.name_prefix}-db" }
 }
 
-# ElastiCache Redis parameter group (noeviction required by BullMQ)
-resource "aws_elasticache_parameter_group" "redis" {
-  name   = "${local.name_prefix}-redis-params"
-  family = "redis7"
-
-  parameter {
-    name  = "maxmemory-policy"
-    value = "noeviction"
-  }
-}
-
-# ElastiCache Redis (session cache + BullMQ queues)
-resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "${local.name_prefix}-redis"
-  engine               = "redis"
-  engine_version       = "7.0"
-  node_type            = var.redis_node_type
-  num_cache_nodes      = 1
-  parameter_group_name = aws_elasticache_parameter_group.redis.name
-  port                 = 6379
-
-  subnet_group_name  = aws_elasticache_subnet_group.main.name
-  security_group_ids = [aws_security_group.redis.id]
-
-  tags = { Name = "${local.name_prefix}-redis" }
-}
-
 # ECR Repository
 resource "aws_ecr_repository" "app" {
   name                 = "${local.name_prefix}-app"
@@ -311,7 +257,6 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
       Resource = concat(
         [
           aws_secretsmanager_secret.database_url.arn,
-          aws_secretsmanager_secret.redis_url.arn,
           aws_secretsmanager_secret.better_auth_secret.arn
         ],
         var.database_ca_cert_base64 != "" ? [
@@ -379,17 +324,6 @@ resource "aws_secretsmanager_secret_version" "database_url" {
   secret_string = "postgresql://${var.db_username}:${urlencode(var.db_password)}@${aws_db_instance.postgres.endpoint}/octacard?sslmode=verify-full"
   depends_on    = [aws_db_instance.postgres]
   lifecycle { ignore_changes = [secret_string] }
-}
-
-resource "aws_secretsmanager_secret" "redis_url" {
-  name = "${local.name_prefix}/redis-url"
-  tags = { Name = "${local.name_prefix}-redis-url" }
-  lifecycle { prevent_destroy = true }
-}
-
-resource "aws_secretsmanager_secret_version" "redis_url" {
-  secret_id     = aws_secretsmanager_secret.redis_url.id
-  secret_string = "redis://${aws_elasticache_cluster.redis.cache_nodes[0].address}:${aws_elasticache_cluster.redis.cache_nodes[0].port}"
 }
 
 resource "aws_secretsmanager_secret" "better_auth_secret" {
@@ -650,7 +584,6 @@ resource "aws_ecs_task_definition" "app" {
     secrets = concat(
       [
         { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url.arn },
-        { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.redis_url.arn },
         { name = "BETTER_AUTH_SECRET", valueFrom = aws_secretsmanager_secret.better_auth_secret.arn }
       ],
       var.database_ca_cert_base64 != "" ? [
@@ -731,11 +664,6 @@ output "database_url" {
 output "database_host" {
   value       = aws_db_instance.postgres.address
   description = "RDS host (for apps that need host/port separately)"
-}
-
-output "redis_url" {
-  value       = "redis://${aws_elasticache_cluster.redis.cache_nodes[0].address}:${aws_elasticache_cluster.redis.cache_nodes[0].port}"
-  description = "Redis connection string (REDIS_URL)"
 }
 
 output "alb_dns_name" {

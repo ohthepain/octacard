@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { AppVariables } from "../types.js";
 import { prisma } from "../db.js";
 import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl } from "../s3.js";
-import { enqueueSampleAnalysis } from "../queues/sample-analysis.js";
+import { enqueueEssentiaAnalysis } from "../queues/essentia-analysis.js";
 import { sampleSearchApp } from "./sample-search.js";
 import { tracedFetch } from "../external-api-trace.js";
 
@@ -748,7 +748,7 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
   // Enqueue analysis only for audio content.
   if (isAudio && (created.analysisStatus === "PENDING" || created.analysisStatus === "FAILED")) {
     try {
-      const jobId = await enqueueSampleAnalysis(created.id, created.s3Key);
+      const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
       console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -840,7 +840,7 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
   });
   if (isAudio) {
     try {
-      const jobId = await enqueueSampleAnalysis(created.id, created.s3Key);
+      const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
       console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1067,7 +1067,7 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
   });
 
   try {
-    const jobId = await enqueueSampleAnalysis(sample.id, sample.s3Key);
+    const jobId = await enqueueEssentiaAnalysis(sample.id, sample.s3Key);
     console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${sample.id}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

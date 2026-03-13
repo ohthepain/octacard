@@ -18,8 +18,15 @@ import { healthApp } from "./routes/health.js";
 import { libraryApp } from "./routes/library.js";
 import { uploadApp } from "./routes/upload.js";
 import type { AppVariables } from "./types.js";
-import { setSampleAnalysisWorkerEnabled } from "./workers/sample-analysis-state.js";
-import { startSampleAnalysisWorker } from "./workers/sample-analysis-worker.js";
+import { startPgBoss } from "./pgboss.js";
+import { setWorkerEnabled } from "./workers/worker-state.js";
+import { startEssentiaWorker } from "./workers/essentia-worker.js";
+import { startClapWorker } from "./workers/clap-worker.js";
+import {
+  ensureEssentiaQueue,
+  ESSENTIA_QUEUE,
+} from "./queues/essentia-analysis.js";
+import { ensureClapQueue, CLAP_QUEUE } from "./queues/clap-analysis.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === "production";
@@ -56,7 +63,14 @@ app.use(
 app.use("*", versionCheck);
 
 // /api/auth/* - Better Auth (no body parsing - auth handles raw body)
-app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+app.on(["GET", "POST"], "/api/auth/*", async (c) => {
+  try {
+    return await auth.handler(c.req.raw);
+  } catch (err) {
+    console.error("[auth] Error on", c.req.path, err);
+    throw err;
+  }
+});
 
 // /api/health - no auth
 app.route("/api", healthApp); // GET /api/health
@@ -105,19 +119,30 @@ if (isProduction) {
 }
 
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
-console.log(`[API] Server running on http://localhost:${port}`);
 
-serve({ fetch: app.fetch, port });
+async function bootstrap() {
+  const workerEnabled = process.env.SAMPLE_ANALYSIS_WORKER_ENABLED !== "false";
+  setWorkerEnabled(ESSENTIA_QUEUE, workerEnabled);
+  setWorkerEnabled(CLAP_QUEUE, workerEnabled);
+  console.log(`[worker] Auto-start enabled: ${workerEnabled}`);
 
-const sampleAnalysisWorkerEnabled =
-  process.env.SAMPLE_ANALYSIS_WORKER_ENABLED !== "false";
-setSampleAnalysisWorkerEnabled(sampleAnalysisWorkerEnabled);
-console.log(`[worker] Auto-start enabled: ${sampleAnalysisWorkerEnabled}`);
-if (sampleAnalysisWorkerEnabled) {
-  startSampleAnalysisWorker();
+  await startPgBoss();
+  await ensureEssentiaQueue();
+  await ensureClapQueue();
+  if (workerEnabled) {
+    startEssentiaWorker();
+    startClapWorker();
+  } else {
+    console.log("[worker] Sample analysis workers disabled (SAMPLE_ANALYSIS_WORKER_ENABLED=false)");
+  }
 }
-if (!sampleAnalysisWorkerEnabled) {
-  console.log(
-    "[worker] Sample analysis worker disabled (SAMPLE_ANALYSIS_WORKER_ENABLED=false)",
-  );
-}
+
+bootstrap()
+  .then(() => {
+    console.log(`[API] Server running on http://localhost:${port}`);
+    serve({ fetch: app.fetch, port });
+  })
+  .catch((err) => {
+    console.error("[bootstrap] Failed:", err);
+    process.exit(1);
+  });

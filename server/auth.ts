@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { customSession, emailOTP, magicLink } from "better-auth/plugins";
 import { RoleName } from "../generated/prisma/client.js";
-import { createRedisStorage } from "./redis.js";
+import { createPostgresStorage } from "./storage/postgres-cache.js";
 import { renderAuthEmailTemplate, sendAuthEmail } from "./auth-email.js";
 import { prisma } from "./db.js";
 
@@ -61,7 +61,14 @@ export const auth = betterAuth({
             clientSecret: googleClientSecret,
           },
         }
-      : undefined,
+      : (() => {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn(
+              "[auth] Google sign-in disabled: set BETTER_AUTH_GOOGLE_CLIENT_ID and BETTER_AUTH_GOOGLE_CLIENT_SECRET"
+            );
+          }
+          return undefined;
+        })(),
   emailVerification: {
     sendOnSignUp: true,
     sendOnSignIn: true,
@@ -80,7 +87,7 @@ export const auth = betterAuth({
       });
     },
   },
-  secondaryStorage: createRedisStorage(),
+  secondaryStorage: createPostgresStorage(),
   user: {
     deleteUser: {
       enabled: true,
