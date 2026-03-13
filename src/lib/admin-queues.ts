@@ -75,3 +75,10 @@ export async function retryAdminQueueJob(queueName: string, jobId: string): Prom
   });
   if (!res.ok) throw new Error(`Failed to retry job (${res.status})`);
 }
+
+export async function clearAdminQueue(queueName: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/queues/${queueName}/clear`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to clear queue (${res.status})`);
+}

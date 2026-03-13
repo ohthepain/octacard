@@ -199,6 +199,23 @@ adminApp.post(
   },
 );
 
+adminApp.post(
+  "/queues/:queueName/clear",
+  zValidator("param", z.object({ queueName: z.string() })),
+  async (c) => {
+    const { queueName } = c.req.valid("param");
+    if (!QUEUE_NAMES.includes(queueName as (typeof QUEUE_NAMES)[number])) {
+      return c.json({ error: "Unknown queue" }, 400);
+    }
+    try {
+      await boss.deleteAllJobs(queueName);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  },
+);
+
 adminApp.get("/network/traces", zValidator("query", networkTracesQuerySchema), async (c) => {
   const { limit, errorsOnly } = c.req.valid("query");
   return c.json({

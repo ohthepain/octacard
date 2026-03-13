@@ -7,12 +7,23 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +38,7 @@ import {
   getAdminQueueJobs,
   getAdminQueueJobDetail,
   retryAdminQueueJob,
+  clearAdminQueue,
   type QueueInfo,
   type WorkerStatus,
   type JobWithMetadata,
@@ -202,6 +214,8 @@ export default function AdminQueues() {
   const [jobs, setJobs] = useState<JobWithMetadata[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
+  const [clearQueueOpen, setClearQueueOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const loadQueues = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -259,6 +273,24 @@ export default function AdminQueues() {
   useEffect(() => {
     if (selectedQueue) void loadJobs();
   }, [selectedQueue, selectedState, loadJobs]);
+
+  const handleClearQueue = async () => {
+    if (!selectedQueue) return;
+    setClearing(true);
+    try {
+      await clearAdminQueue(selectedQueue);
+      toast.success(`Queue "${selectedQueue}" cleared`);
+      setClearQueueOpen(false);
+      void loadQueues(false);
+      void loadJobs();
+    } catch (err) {
+      toast.error("Failed to clear queue", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setClearing(false);
+    }
+  };
 
   if (isPending || !isAdminOrSuperadmin(session)) return null;
 
@@ -347,14 +379,56 @@ export default function AdminQueues() {
 
           <div className="lg:col-span-2">
             {selectedQueue ? (
-              <Tabs value={selectedState} onValueChange={(v) => setSelectedState(v as (typeof JOB_STATES)[number])}>
-                  <TabsList className="mb-4">
-                    {JOB_STATES.map((s) => (
-                      <TabsTrigger key={s} value={s}>
-                        {s}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <Tabs value={selectedState} onValueChange={(v) => setSelectedState(v as (typeof JOB_STATES)[number])}>
+                    <TabsList className="mb-4">
+                      {JOB_STATES.map((s) => (
+                        <TabsTrigger key={s} value={s}>
+                          {s}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                  <AlertDialog open={clearQueueOpen} onOpenChange={setClearQueueOpen}>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setClearQueueOpen(true)}
+                      disabled={clearing}
+                    >
+                      {clearing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Clear queue
+                    </Button>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Clear queue &quot;{selectedQueue}&quot;?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will delete all jobs in this queue (queued, active, completed, failed). Use this when jobs
+                          are stuck due to a bug. This cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={(e) => {
+                            e.preventDefault();
+                            void handleClearQueue();
+                          }}
+                          disabled={clearing}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          {clearing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Clear queue"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+                <Tabs value={selectedState} onValueChange={(v) => setSelectedState(v as (typeof JOB_STATES)[number])}>
                   <TabsContent value={selectedState} className="mt-0">
                     {jobsLoading ? (
                       <div className="flex justify-center py-12">
@@ -377,6 +451,7 @@ export default function AdminQueues() {
                     )}
                   </TabsContent>
                 </Tabs>
+              </div>
             ) : (
               <p className="text-muted-foreground py-12">Select a queue to view jobs.</p>
             )}
