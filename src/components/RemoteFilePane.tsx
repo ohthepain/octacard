@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BarChart3, FileAudio, Folder, FolderOpen, Loader2, Pencil, Search, ShoppingCart } from "lucide-react";
+import { ArrowLeft, BarChart3, FileAudio, Folder, Loader2, Search, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,44 +38,22 @@ function formatCredits(credits: number): string {
 
 function PackRow({
   onOpenPack,
-  onEditPack,
-  onSelect,
   onDragStart,
-  isOwner,
   children,
 }: {
   onOpenPack: () => void;
-  onEditPack?: () => void;
-  onSelect: () => void;
   onDragStart: (e: React.DragEvent) => void;
-  isOwner?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          draggable
-          onDragStart={onDragStart}
-          onClick={onSelect}
-          className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-accent cursor-grab active:cursor-grabbing"
-        >
-          {children}
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={onOpenPack}>
-          <FolderOpen className="w-4 h-4 mr-2" />
-          Open pack
-        </ContextMenuItem>
-        {isOwner && onEditPack && (
-          <ContextMenuItem onSelect={onEditPack}>
-            <Pencil className="w-4 h-4 mr-2" />
-            Edit pack
-          </ContextMenuItem>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onClick={onOpenPack}
+      className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-accent cursor-pointer"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -246,7 +224,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
       getPack(packId).then((details) =>
         setPackDetails({
           name: details.name,
-          coverImageUrl: details.coverImageUrl,
+          coverImageUrl: details.coverImageProxyUrl ?? details.coverImageUrl,
           creatorName: details.ownerName,
           isOwner: details.isOwner,
         })
@@ -361,18 +339,9 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                     <PackRow
                       key={entry.key}
                       onOpenPack={() => setCurrentPackId(pack.id)}
-                      onEditPack={pack.isOwner ? () => handleEditPack(pack.id) : undefined}
-                      onSelect={() =>
-                        onSelectionChange?.({
-                          path: `remote://pack/${pack.id}`,
-                          type: "folder",
-                          name: pack.name,
-                        })
-                      }
                       onDragStart={(e) =>
                         startDrag(e, { kind: "pack", id: pack.id, name: pack.name })
                       }
-                      isOwner={pack.isOwner}
                     >
                       <div className="min-w-0 flex items-center gap-2">
                         <div className="w-10 h-10 rounded shrink-0 flex items-center justify-center bg-muted overflow-hidden">
@@ -504,14 +473,6 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                   <PackRow
                     key={entry.key}
                     onOpenPack={() => setCurrentPackId(pack.id)}
-                    onEditPack={pack.isOwner ? () => handleEditPack(pack.id) : undefined}
-                    onSelect={() =>
-                      onSelectionChange?.({
-                        path: `remote://pack/${pack.id}`,
-                        type: "folder",
-                        name: pack.name,
-                      })
-                    }
                     onDragStart={(e) =>
                       startDrag(e, {
                         kind: "pack",
@@ -519,7 +480,6 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                         name: pack.name,
                       })
                     }
-                    isOwner={pack.isOwner}
                   >
                     <div className="min-w-0 flex items-center gap-2">
                       <div className="w-10 h-10 rounded shrink-0 flex items-center justify-center bg-muted overflow-hidden">

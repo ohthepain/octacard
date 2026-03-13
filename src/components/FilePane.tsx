@@ -326,6 +326,7 @@ export const FilePane = ({
   const [createPackFolderPath, setCreatePackFolderPath] = useState("");
   const [createPackEditId, setCreatePackEditId] = useState<string | null>(null);
   const [folderViewRoot, setFolderViewRoot] = useState<string | null>(null);
+  const [folderViewRefreshTrigger, setFolderViewRefreshTrigger] = useState(0);
   const [folderViewCoverUrl, setFolderViewCoverUrl] = useState<string | null>(null);
   const [folderViewPackName, setFolderViewPackName] = useState<string | null>(null);
   const [folderViewPackId, setFolderViewPackId] = useState<string | null>(null);
@@ -344,8 +345,9 @@ export const FilePane = ({
         try {
           for (const name of ["cover.jpg", "cover.png"]) {
             const result = await fileSystemService.getFileBlob(joinPath(path, name), paneType);
-            if (result.success && typeof result.data === "string") {
-              setPackCoverCache((prev) => new Map(prev).set(path, result.data));
+            const data = result.data;
+            if (result.success && typeof data === "string") {
+              setPackCoverCache((prev) => new Map(prev).set(path, data));
               break;
             }
           }
@@ -2001,16 +2003,20 @@ export const FilePane = ({
       const packJsonPath = joinPath(folderViewRoot, "pack.json");
       const packFile = await fileSystemService.getFile(packJsonPath, paneType);
       if (cancelled) return;
+      let coverImageFromJson: string | null = null;
       if (packFile) {
         try {
           const text = await packFile.text();
-          const data = JSON.parse(text) as { name?: string; packId?: string };
+          const data = JSON.parse(text) as { name?: string; packId?: string; coverImage?: string };
           if (typeof data.name === "string" && data.name.trim()) {
             setFolderViewPackName(data.name.trim());
           } else {
             setFolderViewPackName(null);
           }
           setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
+          if (typeof data.coverImage === "string" && data.coverImage.trim()) {
+            coverImageFromJson = data.coverImage.trim();
+          }
         } catch {
           setFolderViewPackName(null);
           setFolderViewPackId(null);
@@ -2020,8 +2026,11 @@ export const FilePane = ({
         setFolderViewPackId(null);
       }
 
-      // Load cover image
-      for (const name of ["cover.png", "cover.jpg"]) {
+      // Load cover image (prefer pack.json coverImage when present)
+      const coverNames = coverImageFromJson
+        ? [coverImageFromJson, "cover.png", "cover.jpg"]
+        : ["cover.png", "cover.jpg"];
+      for (const name of coverNames) {
         const path = joinPath(folderViewRoot, name);
         const result = await fileSystemService.getFileBlob(path, paneType);
         if (cancelled) return;
@@ -2042,7 +2051,7 @@ export const FilePane = ({
       setFolderViewPackName(null);
       setFolderViewPackId(null);
     };
-  }, [folderViewRoot, paneType]);
+  }, [folderViewRoot, folderViewRefreshTrigger, paneType]);
 
   // Register this pane's clear selection function and handle pane activation
   useEffect(() => {
@@ -3034,7 +3043,7 @@ export const FilePane = ({
 
       if (copiedCount > 0) {
         toast.success("Remote download complete", {
-          description: `${copiedCount} sample${copiedCount === 1 ? "" : "s"} copied`,
+          description: `${copiedCount} file${copiedCount === 1 ? "" : "s"} copied`,
         });
         await loadDirectory(currentRootPath || rootPath, "root");
       }
@@ -4814,8 +4823,16 @@ export const FilePane = ({
         editPackId={createPackEditId}
         onCreated={(_packId) => {
           if (createPackFolderPath) {
+            setPackCoverCache((prev) => {
+              const url = prev.get(createPackFolderPath);
+              if (url) URL.revokeObjectURL(url);
+              const next = new Map(prev);
+              next.delete(createPackFolderPath);
+              return next;
+            });
             refreshFolder(createPackFolderPath).then(() => {
               setFolderViewRoot(createPackFolderPath);
+              setFolderViewRefreshTrigger((t) => t + 1);
               navigateToFolder(createPackFolderPath);
             });
           }

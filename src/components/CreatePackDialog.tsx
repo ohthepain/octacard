@@ -29,7 +29,14 @@ import { toast } from "sonner";
 import { Loader2, ImagePlus, Dices } from "lucide-react";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+function unsplashPhotographerUrl(username: string): string {
+  return `https://unsplash.com/@${username}?utm_source=octatrack&utm_medium=referral`;
+}
 const AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
+const UNKNOWN_FILE_MAX_BYTES = 1024 * 1024;
+const UNKNOWN_FILE_MAX_COUNT = 10;
+const SERVER_EXCLUDED_FILE_PATTERNS = ["*.asd"] as const;
 
 function getContentTypeFromFileName(fileName: string): string {
   const ext = fileName.split(".").pop()?.toLowerCase();
@@ -45,6 +52,17 @@ function getContentTypeFromFileName(fileName: string): string {
     wma: "audio/wma",
   };
   return ext ? map[ext] ?? "application/octet-stream" : "application/octet-stream";
+}
+
+function isExcludedByServerPattern(fileName: string): boolean {
+  const lowerName = fileName.toLowerCase();
+  return SERVER_EXCLUDED_FILE_PATTERNS.some((pattern) => {
+    const lowerPattern = pattern.toLowerCase();
+    if (lowerPattern.startsWith("*.")) {
+      return lowerName.endsWith(lowerPattern.slice(1));
+    }
+    return lowerName === lowerPattern;
+  });
 }
 
 function cropImageToSquare(file: File): Promise<Blob> {
@@ -120,6 +138,11 @@ export function CreatePackDialog({
   const [createAsCopy, setCreateAsCopy] = useState(false);
   const [unsplashLoading, setUnsplashLoading] = useState(false);
   const [imageSearchQuery, setImageSearchQuery] = useState("");
+  const [unsplashAttribution, setUnsplashAttribution] = useState<{
+    photographerName?: string;
+    photographerUsername?: string;
+    downloadLocation?: string;
+  } | null>(null);
 
   const reset = useCallback(() => {
     setName(defaultName);
@@ -133,6 +156,7 @@ export function CreatePackDialog({
     setCreateAsCopy(false);
     setUnsplashLoading(false);
     setImageSearchQuery("");
+    setUnsplashAttribution(null);
   }, [defaultName]);
 
   const handleOpenChange = useCallback(
@@ -151,6 +175,7 @@ export function CreatePackDialog({
     if (!open || !editPackId) return;
     setEditLoadError(null);
     setImageFile(null);
+    setUnsplashAttribution(null);
     setCreateAsCopy(false);
     if (initialCoverImageUrl) {
       setImagePreview(initialCoverImageUrl);
@@ -206,12 +231,13 @@ export function CreatePackDialog({
       });
   }, [open, editPackId, folderPath, paneType, defaultName, initialCoverImageUrl]);
 
-  const handleImage = useCallback((file: File) => {
+  const handleImage = useCallback((file: File, attribution?: { photographerName?: string; photographerUsername?: string; downloadLocation?: string } | null) => {
     if (!IMAGE_TYPES.includes(file.type)) {
       toast.error("Please use a JPEG, PNG, WebP, or GIF image");
       return;
     }
     setImageFile(file);
+    setUnsplashAttribution(attribution ?? null);
     const url = URL.createObjectURL(file);
     setImagePreview((prev) => {
       if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
@@ -252,9 +278,25 @@ export function CreatePackDialog({
     setUnsplashLoading(true);
     try {
       const query = imageSearchQuery.trim() || name.trim() || undefined;
-      const blob = await fetchUnsplashRandomPhoto(query);
-      const file = new File([blob], "unsplash-cover.jpg", { type: "image/jpeg" });
-      handleImage(file);
+      const result = await fetchUnsplashRandomPhoto(query);
+      const file = new File([result.blob], "unsplash-cover.jpg", { type: "image/jpeg" });
+      const attribution = result.photographerUsername || result.photographerName || result.downloadLocation
+        ? {
+            photographerName: result.photographerName,
+            photographerUsername: result.photographerUsername,
+            downloadLocation: result.downloadLocation,
+          }
+        : null;
+      handleImage(file, attribution);
+      if (result.downloadLocation) {
+        const key = import.meta.env.VITE_UNSPLASH_ACCESS_KEY as string | undefined;
+        if (key) {
+          fetch(result.downloadLocation, {
+            method: "GET",
+            headers: { Authorization: `Client-ID ${key}` },
+          }).catch(() => {});
+        }
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fetch random image");
     } finally {
@@ -277,9 +319,10 @@ export function CreatePackDialog({
       if (isEditMode && editPackId && !createAsCopy) {
         packId = editPackId;
         let coverImageS3Key: string | undefined;
+        let squareBlob: Blob | null = null;
         if (imageFile) {
           setUploadProgress({ current: 0, total: 1, phase: "Uploading cover image…" });
-          const squareBlob = await cropImageToSquare(imageFile);
+          squareBlob = await cropImageToSquare(imageFile);
           const { uploadUrl, key } = await getPackCoverUploadUrl(packId, "image/jpeg");
           const res = await fetch(uploadUrl, {
             method: "PUT",
@@ -297,6 +340,49 @@ export function CreatePackDialog({
           ...(coverImageS3Key !== undefined && { coverImageS3Key }),
         });
         setUploadProgress(null);
+
+        if (folderPath && paneType && imageFile && squareBlob) {
+          try {
+            const ownerName = session?.user?.name ?? "Unknown";
+            const joinPath = (base: string, file: string) =>
+              base.replace(/\/$/, "") + (base ? "/" : "") + file;
+            const ext = imageFile.type?.includes("png") ? "png" : "jpg";
+            const coverImage = `cover.${ext}`;
+            await fileSystemService.writeBlobToPath(
+              joinPath(folderPath, coverImage),
+              squareBlob,
+              paneType,
+            );
+            const packJsonPath = joinPath(folderPath, "pack.json");
+            const existingFile = await fileSystemService.getFile(packJsonPath, paneType);
+            let packJson: Record<string, unknown> = {
+              packId,
+              name: trimmed,
+              coverImageS3Key: coverImageS3Key ?? null,
+              ownerName,
+              coverImage,
+            };
+            if (existingFile) {
+              try {
+                const existing = JSON.parse(await existingFile.text()) as Record<string, unknown>;
+                packJson = { ...existing, ...packJson };
+              } catch {
+                // use new packJson
+              }
+            }
+            packJson.name = trimmed;
+            packJson.coverImage = coverImage;
+            if (coverImageS3Key) packJson.coverImageS3Key = coverImageS3Key;
+            await fileSystemService.writeBlobToPath(
+              packJsonPath,
+              new Blob([JSON.stringify(packJson, null, 2)], { type: "application/json" }),
+              paneType,
+            );
+          } catch (err) {
+            console.warn("Failed to write pack cover to folder:", err);
+          }
+        }
+
         toast.success("Pack updated");
         handleOpenChange(false);
         onCreated?.(packId);
@@ -331,20 +417,51 @@ export function CreatePackDialog({
       }
 
       if (folderPath) {
-        const listResult = await fileSystemService.listAudioFilesRecursively(folderPath, paneType);
-        if (!listResult.success || !listResult.data) {
-          throw new Error(listResult.error ?? "Failed to list folder");
+        const allFiles: Array<{ path: string; name: string; size: number }> = [];
+        const collectFilesRecursively = async (path: string) => {
+          const result = await fileSystemService.readDirectory(path, paneType);
+          if (!result.success || !result.data) {
+            throw new Error(result.error ?? `Failed to list ${path}`);
+          }
+          for (const entry of result.data) {
+            if (entry.isDirectory) {
+              await collectFilesRecursively(entry.path);
+              continue;
+            }
+            allFiles.push({ path: entry.path, name: entry.name, size: entry.size });
+          }
+        };
+
+        await collectFilesRecursively(folderPath);
+
+        const includedFiles = allFiles.filter((entry) => !isExcludedByServerPattern(entry.name));
+        const audioEntries = includedFiles.filter((entry) => AUDIO_EXT.test(entry.name));
+        const unknownEntries = includedFiles.filter((entry) => !AUDIO_EXT.test(entry.name));
+
+        const unknownTooLargeEntries = unknownEntries.filter((entry) => entry.size > UNKNOWN_FILE_MAX_BYTES);
+        let acceptedUnknownEntries = unknownEntries.filter((entry) => entry.size <= UNKNOWN_FILE_MAX_BYTES);
+        const unknownIgnoredForCount = unknownEntries.length > UNKNOWN_FILE_MAX_COUNT;
+        if (unknownIgnoredForCount) {
+          acceptedUnknownEntries = [];
         }
-        const audioEntries = listResult.data.filter((e) => !e.isDirectory && AUDIO_EXT.test(e.name));
-        if (audioEntries.length === 0) {
-          toast("No audio files found in folder");
+
+        if (unknownTooLargeEntries.length > 0 || unknownIgnoredForCount) {
+          const reason = unknownIgnoredForCount
+            ? `More than ${UNKNOWN_FILE_MAX_COUNT} files of unknown type were found, so all unknown-type files were ignored.`
+            : `${unknownTooLargeEntries.length} file${unknownTooLargeEntries.length === 1 ? "" : "s"} of unknown type exceeded 1MB and were ignored.`;
+          toast.error("Some files were ignored", { description: reason });
+        }
+
+        const uploadEntries = [...audioEntries, ...acceptedUnknownEntries];
+        if (uploadEntries.length === 0) {
+          toast("No uploadable files found in folder");
         } else {
-          setUploadProgress({ current: 0, total: audioEntries.length, phase: "Computing hashes…" });
+          setUploadProgress({ current: 0, total: uploadEntries.length, phase: "Computing hashes…" });
 
           const filesWithHashes: Array<{ path: string; name: string; contentHash: string; contentType: string; file: File }> = [];
-          for (let i = 0; i < audioEntries.length; i++) {
-            setUploadProgress({ current: i, total: audioEntries.length, phase: "Computing hashes…" });
-            const entry = audioEntries[i];
+          for (let i = 0; i < uploadEntries.length; i++) {
+            setUploadProgress({ current: i, total: uploadEntries.length, phase: "Computing hashes…" });
+            const entry = uploadEntries[i];
             const file = await fileSystemService.getFile(entry.path, paneType);
             if (!file) continue;
             const contentHash = await computeAudioContentHash(file);
@@ -384,7 +501,7 @@ export function CreatePackDialog({
             if (!res.ok) throw new Error(`Failed to upload ${item.name}`);
           }
 
-          setUploadProgress({ current: filesWithHashes.length, total: filesWithHashes.length, phase: "Creating sample records…" });
+          setUploadProgress({ current: filesWithHashes.length, total: filesWithHashes.length, phase: "Creating file records…" });
           for (let i = 0; i < filesWithHashes.length; i++) {
             const item = filesWithHashes[i];
             await createSampleFromContent({
@@ -478,7 +595,7 @@ export function CreatePackDialog({
               : isEditMode
               ? "Update pack metadata and cover image."
               : folderPath
-                ? "Create a pack from this folder. Samples are deduplicated by content hash."
+                ? "Create a pack from this folder. Files are deduplicated by content hash."
                 : "Create a pack. Add a cover image (optional) — it will be cropped to square."}
           </DialogDescription>
         </DialogHeader>
@@ -564,12 +681,29 @@ export function CreatePackDialog({
               >
                 {imagePreview ? (
                   <>
-                    <img
-                      src={imagePreview}
-                      alt="Cover preview"
-                      className="h-full w-full object-cover rounded-md"
-                      referrerPolicy="no-referrer"
-                    />
+                    {unsplashAttribution?.photographerUsername ? (
+                      <a
+                        href={unsplashPhotographerUrl(unsplashAttribution.photographerUsername)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block h-full w-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded-md"
+                        title={unsplashPhotographerUrl(unsplashAttribution.photographerUsername)}
+                      >
+                        <img
+                          src={imagePreview}
+                          alt="Cover preview"
+                          className="h-full w-full object-cover rounded-md"
+                          referrerPolicy="no-referrer"
+                        />
+                      </a>
+                    ) : (
+                      <img
+                        src={imagePreview}
+                        alt="Cover preview"
+                        className="h-full w-full object-cover rounded-md"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
                     <Button
                       type="button"
                       size="sm"
@@ -577,6 +711,7 @@ export function CreatePackDialog({
                       className="absolute right-2 top-2"
                       onClick={() => {
                         setImageFile(null);
+                        setUnsplashAttribution(null);
                         setImagePreview((p) => {
                           if (p?.startsWith("blob:")) URL.revokeObjectURL(p);
                           return null;
@@ -600,6 +735,22 @@ export function CreatePackDialog({
                 )}
               </div>
             </div>
+            {unsplashAttribution && (unsplashAttribution.photographerName || unsplashAttribution.photographerUsername) && (
+              <p className="text-xs text-muted-foreground">
+                {unsplashAttribution.photographerUsername ? (
+                  <a
+                    href={unsplashPhotographerUrl(unsplashAttribution.photographerUsername)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-foreground"
+                  >
+                    Photo by {unsplashAttribution.photographerName || unsplashAttribution.photographerUsername} / Unsplash
+                  </a>
+                ) : (
+                  <span>Photo by {unsplashAttribution.photographerName} / Unsplash</span>
+                )}
+              </p>
+            )}
           </div>
 
           {uploadProgress && (

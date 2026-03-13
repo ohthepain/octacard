@@ -236,7 +236,14 @@ export async function createPack(params: {
   return res.json();
 }
 
-export async function fetchUnsplashRandomPhoto(query?: string): Promise<Blob> {
+export interface UnsplashPhotoResult {
+  blob: Blob;
+  photographerName?: string;
+  photographerUsername?: string;
+  downloadLocation?: string;
+}
+
+export async function fetchUnsplashRandomPhoto(query?: string): Promise<UnsplashPhotoResult> {
   const params = new URLSearchParams();
   if (query?.trim()) params.set("query", query.trim());
   params.set("_", String(Date.now())); // cache-bust so each roll gets a fresh image
@@ -246,7 +253,13 @@ export async function fetchUnsplashRandomPhoto(query?: string): Promise<Blob> {
     const msg = await res.text();
     throw new Error(msg || `Failed to fetch Unsplash image (${res.status})`);
   }
-  return res.blob();
+  const blob = await res.blob();
+  return {
+    blob,
+    photographerName: res.headers.get("X-Unsplash-Photographer-Name") ?? undefined,
+    photographerUsername: res.headers.get("X-Unsplash-Photographer-Username") ?? undefined,
+    downloadLocation: res.headers.get("X-Unsplash-Download-Location") ?? undefined,
+  };
 }
 
 export async function getPackCoverUploadUrl(

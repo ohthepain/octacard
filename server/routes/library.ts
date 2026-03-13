@@ -86,6 +86,10 @@ function sanitizePathSegment(value: string): string {
   return safe.length ? safe : "item";
 }
 
+function isAudioContentType(contentType: string): boolean {
+  return contentType.trim().toLowerCase().startsWith("audio/");
+}
+
 async function requireOwnedPack(packId: string, userId: string) {
   const pack = await prisma.pack.findUnique({
     where: { id: packId },
@@ -184,64 +188,49 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
     Authorization: `Client-ID ${accessKey}`,
   };
 
-  type UnsplashPhoto = { urls?: { regular?: string } };
+  type UnsplashPhoto = {
+    urls?: { regular?: string };
+    user?: { username?: string; name?: string };
+    links?: { download_location?: string };
+  };
   let imageUrl: string | undefined;
+  let photo: UnsplashPhoto | undefined;
 
-  // Try /photos/random first (can return 404 when query has no matches)
-  const randomParams = new URLSearchParams({
+  // Use /search/photos for queried requests - /photos/random often returns 404 for specific queries
+  const searchParams = new URLSearchParams({
     query: searchTerm,
+    per_page: "15",
     orientation: "squarish",
   });
-  const randomRes = await tracedFetch(
-    `https://api.unsplash.com/photos/random?${randomParams}`,
+  const searchRes = await tracedFetch(
+    `https://api.unsplash.com/search/photos?${searchParams}`,
     { headers },
-    { service: "unsplash", operation: "photos/random" },
+    { service: "unsplash", operation: "search/photos" },
   );
-
-  if (randomRes.ok) {
-    const data = (await randomRes.json()) as UnsplashPhoto;
-    imageUrl = data.urls?.regular;
-  }
-
-  // Fallback: use /search/photos when random returns 404 or no results
-  if (!imageUrl) {
-    const searchParams = new URLSearchParams({
-      query: searchTerm,
-      per_page: "15",
-      orientation: "squarish",
-    });
-    const searchRes = await tracedFetch(
-      `https://api.unsplash.com/search/photos?${searchParams}`,
-      { headers },
-      { service: "unsplash", operation: "search/photos" },
-    );
-    if (!searchRes.ok) {
-      const text = await searchRes.text();
-      throw new HTTPException(502, {
-        message: `Unsplash API error: ${searchRes.status} ${text.slice(0, 200)}`,
-      });
-    }
+  if (searchRes.ok) {
     const searchData = (await searchRes.json()) as { results?: UnsplashPhoto[] };
     const results = searchData.results ?? [];
-    if (results.length === 0) {
-      // Last resort: random photo with broad query
-      const fallbackRes = await tracedFetch(
-        "https://api.unsplash.com/photos/random?orientation=squarish",
-        { headers },
-        { service: "unsplash", operation: "photos/random-fallback" },
-      );
-      if (!fallbackRes.ok) {
-        const text = await fallbackRes.text();
-        throw new HTTPException(502, {
-          message: `Unsplash API error: ${fallbackRes.status} ${text.slice(0, 200)}`,
-        });
-      }
-      const fallbackData = (await fallbackRes.json()) as UnsplashPhoto;
-      imageUrl = fallbackData.urls?.regular;
-    } else {
-      const pick = results[Math.floor(Math.random() * results.length)];
-      imageUrl = pick.urls?.regular;
+    if (results.length > 0) {
+      photo = results[Math.floor(Math.random() * results.length)];
+      imageUrl = photo.urls?.regular;
     }
+  }
+
+  // Fallback: /photos/random (no query) when search returns no results
+  if (!imageUrl) {
+    const fallbackRes = await tracedFetch(
+      "https://api.unsplash.com/photos/random?orientation=squarish",
+      { headers },
+      { service: "unsplash", operation: "photos/random-fallback" },
+    );
+    if (!fallbackRes.ok) {
+      const text = await fallbackRes.text();
+      throw new HTTPException(502, {
+        message: `Unsplash API error: ${fallbackRes.status} ${text.slice(0, 200)}`,
+      });
+    }
+    photo = (await fallbackRes.json()) as UnsplashPhoto;
+    imageUrl = photo.urls?.regular;
   }
 
   if (!imageUrl) {
@@ -257,10 +246,22 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
     throw new HTTPException(502, { message: "Failed to fetch image from Unsplash" });
   }
   const buf = await imgRes.arrayBuffer();
-  return c.body(buf, 200, {
+
+  const resHeaders: Record<string, string> = {
     "Content-Type": "image/jpeg",
     "Cache-Control": "no-store", // each dice roll should fetch fresh
-  });
+  };
+  if (photo?.user?.username) {
+    resHeaders["X-Unsplash-Photographer-Username"] = photo.user.username;
+  }
+  if (photo?.user?.name) {
+    resHeaders["X-Unsplash-Photographer-Name"] = photo.user.name;
+  }
+  if (photo?.links?.download_location) {
+    resHeaders["X-Unsplash-Download-Location"] = photo.links.download_location;
+  }
+
+  return c.body(buf, 200, resHeaders);
 });
 
 libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
@@ -351,7 +352,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       ownerId: pack.ownerId,
       isOwner: pack.ownerId === user.id,
       coverImageProxyUrl: pack.coverImageS3Key
-        ? `/api/library/packs/${encodeURIComponent(pack.id)}/cover`
+        ? `/api/library/packs/${encodeURIComponent(pack.id)}/cover?v=${encodeURIComponent(pack.coverImageS3Key)}`
         : null,
       createdAt: pack.createdAt,
       updatedAt: pack.updatedAt,
@@ -527,7 +528,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
       ownerId: p.ownerId,
       isOwner: p.ownerId === user.id,
       coverImageProxyUrl: p.coverImageS3Key
-        ? `/api/library/packs/${encodeURIComponent(p.id)}/cover`
+        ? `/api/library/packs/${encodeURIComponent(p.id)}/cover?v=${encodeURIComponent(p.coverImageS3Key)}`
         : null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
@@ -607,7 +608,8 @@ libraryApp.get("/packs/:id", async (c) => {
   let coverImageProxyUrl: string | null = null;
   if (pack.coverImageS3Key) {
     coverImageUrl = await getPresignedDownloadUrl(pack.coverImageS3Key, 3600);
-    coverImageProxyUrl = `/api/library/packs/${encodeURIComponent(id)}/cover`;
+    // Include coverImageS3Key as cache-buster so URL changes when cover updates; browser otherwise serves cached old image
+    coverImageProxyUrl = `/api/library/packs/${encodeURIComponent(id)}/cover?v=${encodeURIComponent(pack.coverImageS3Key)}`;
   }
 
   return c.json({
@@ -741,6 +743,7 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
   const user = c.get("user");
   const { packId, name, contentHash, contentType, sizeBytes, credits } = c.req.valid("json");
   const pack = await requireOwnedPack(packId, user.id);
+  const isAudio = isAudioContentType(contentType);
 
   const ext = contentTypeToExt(contentType);
   const s3Key = `samples/${contentHash}.${ext}`;
@@ -752,15 +755,13 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
       s3Key,
       contentType,
       sizeBytes: sizeBytes ?? null,
+      analysisStatus: isAudio ? "PENDING" : "READY",
     },
     update: {},
   });
 
-  // Enqueue analysis for new samples (or re-analyze if PENDING/FAILED)
-  if (
-    created.analysisStatus === "PENDING" ||
-    created.analysisStatus === "FAILED"
-  ) {
+  // Enqueue analysis only for audio content.
+  if (isAudio && (created.analysisStatus === "PENDING" || created.analysisStatus === "FAILED")) {
     try {
       const jobId = await enqueueSampleAnalysis(created.id, created.s3Key);
       console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
@@ -835,6 +836,7 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
   const user = c.get("user");
   const { packId, name, s3Key, contentType, sizeBytes, credits } = c.req.valid("json");
   const pack = await requireOwnedPack(packId, user.id);
+  const isAudio = isAudioContentType(contentType);
 
   const keyPrefix = `samples/${user.id}/${pack.id}/`;
   if (!s3Key.startsWith(keyPrefix)) {
@@ -848,21 +850,24 @@ libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) =>
       s3Key,
       contentType,
       sizeBytes: sizeBytes ?? null,
+      analysisStatus: isAudio ? "PENDING" : "READY",
     },
   });
-  try {
-    const jobId = await enqueueSampleAnalysis(created.id, created.s3Key);
-    console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("[library] Failed to enqueue sample analysis:", err);
-    await prisma.sample.update({
-      where: { id: created.id },
-      data: {
-        analysisStatus: "FAILED",
-        analysisError: `Failed to queue analysis: ${message}`,
-      },
-    });
+  if (isAudio) {
+    try {
+      const jobId = await enqueueSampleAnalysis(created.id, created.s3Key);
+      console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[library] Failed to enqueue sample analysis:", err);
+      await prisma.sample.update({
+        where: { id: created.id },
+        data: {
+          analysisStatus: "FAILED",
+          analysisError: `Failed to queue analysis: ${message}`,
+        },
+      });
+    }
   }
 
   const ps = await prisma.packSample.create({
