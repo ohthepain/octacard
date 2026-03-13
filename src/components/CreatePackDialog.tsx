@@ -114,10 +114,24 @@ export function CreatePackDialog({
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; phase: string } | null>(null);
   const [editLoadError, setEditLoadError] = useState<string | null>(null);
+  const [createAsCopy, setCreateAsCopy] = useState(false);
   const [unsplashLoading, setUnsplashLoading] = useState(false);
   const [imageSearchQuery, setImageSearchQuery] = useState("");
 
   const reset = useCallback(() => {
+    // #region agent log
+    fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
+      body:JSON.stringify({
+        sessionId:"a5d0f6",
+        location:"CreatePackDialog.tsx:reset",
+        message:"reset called",
+        data:{hypothesisId:"H2"},
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
     setName(defaultName);
     setIsPublic(true);
     setPriceTokens(0);
@@ -126,6 +140,7 @@ export function CreatePackDialog({
     setImagePreview(null);
     setUploadProgress(null);
     setEditLoadError(null);
+    setCreateAsCopy(false);
     setUnsplashLoading(false);
     setImageSearchQuery("");
   }, [defaultName]);
@@ -146,27 +161,108 @@ export function CreatePackDialog({
     if (!open || !editPackId) return;
     setEditLoadError(null);
     setImageFile(null);
+    setCreateAsCopy(false);
     const loadingId = editPackId;
     getPack(editPackId)
       .then((pack) => {
         if (loadingId !== editPackId) return;
+        // #region agent log
+        fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
+          body:JSON.stringify({
+            sessionId:"a5d0f6",
+            location:"CreatePackDialog.tsx:getPack.then",
+            message:"getPack resolved",
+            data:{
+              packId:editPackId,
+              coverImageProxyUrl:pack.coverImageProxyUrl,
+              coverImageUrlPresent:!!pack.coverImageUrl,
+              coverImageS3Key:pack.coverImageS3Key,
+              hypothesisId:"H1"
+            },
+            timestamp:Date.now()
+          })
+        }).catch(()=>{});
+        // #endregion
         setName(pack.name);
         setIsPublic(pack.isPublic);
         setPriceTokens(pack.priceTokens);
         setDefaultSampleTokens(pack.defaultSampleTokens);
+        let previewUrl: string | null = null;
         if (pack.coverImageProxyUrl) {
-          setImagePreview(pack.coverImageProxyUrl);
+          previewUrl = pack.coverImageProxyUrl;
         } else if (pack.coverImageUrl) {
-          setImagePreview(pack.coverImageUrl);
-        } else {
-          setImagePreview(null);
+          previewUrl = pack.coverImageUrl;
         }
+        setImagePreview(previewUrl);
+        // #region agent log
+        fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
+          body:JSON.stringify({
+            sessionId:"a5d0f6",
+            location:"CreatePackDialog.tsx:setImagePreview",
+            message:"setImagePreview called",
+            data:{previewUrl,hasValue:!!previewUrl,hypothesisId:"H2"},
+            timestamp:Date.now()
+          })
+        }).catch(()=>{});
+        // #endregion
       })
-      .catch((err) => {
+      .catch(async (err) => {
         if (loadingId !== editPackId) return;
+        if (folderPath && paneType) {
+          setName(defaultName);
+          try {
+            const base = folderPath.replace(/\/$/, "");
+            const packJsonPath = base ? `${base}/pack.json` : "pack.json";
+            const file = await fileSystemService.getFile(packJsonPath, paneType);
+            if (file) {
+              const data = JSON.parse(await file.text()) as { name?: string; coverImage?: string };
+              if (data.name?.trim()) setName(data.name.trim());
+              if (data.coverImage) {
+                const coverPath = base ? `${base}/${data.coverImage}` : data.coverImage;
+                const coverFile = await fileSystemService.getFile(coverPath, paneType);
+                if (coverFile) {
+                  const blob = await coverFile.blob();
+                  const ext = data.coverImage.match(/\.(jpe?g|png|webp|gif)$/i)?.[0]?.slice(1) ?? "jpg";
+                  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "gif" ? "image/gif" : "image/jpeg";
+                  const coverImgFile = new File([blob], `cover.${ext}`, { type: mime });
+                  setImageFile(coverImgFile);
+                  const url = URL.createObjectURL(blob);
+                  setImagePreview((prev) => {
+                    if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+                    return url;
+                  });
+                }
+              }
+            }
+          } catch {
+            // Use defaultName, continue to create-as-copy
+          }
+          setCreateAsCopy(true);
+          return;
+        }
         setEditLoadError(err instanceof Error ? err.message : "Failed to load pack");
       });
-  }, [open, editPackId]);
+  }, [open, editPackId, folderPath, paneType, defaultName]);
+
+  useEffect(() => {
+    if (open && editPackId) {
+      fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
+        body:JSON.stringify({
+          sessionId:"a5d0f6",
+          location:"CreatePackDialog.tsx:imagePreview-effect",
+          message:"imagePreview state",
+          data:{imagePreview,hasValue:!!imagePreview,hypothesisId:"H2"},
+          timestamp:Date.now()
+        })
+      }).catch(()=>{});
+    }
+  }, [open, editPackId, imagePreview]);
 
   const handleImage = useCallback((file: File) => {
     if (!IMAGE_TYPES.includes(file.type)) {
@@ -236,7 +332,7 @@ export function CreatePackDialog({
     try {
       let packId: string;
 
-      if (isEditMode && editPackId) {
+      if (isEditMode && editPackId && !createAsCopy) {
         packId = editPackId;
         let coverImageS3Key: string | undefined;
         if (imageFile) {
@@ -424,7 +520,9 @@ export function CreatePackDialog({
     handleOpenChange, 
     onCreated, 
     isEditMode, 
-    editPackId, session?.user?.name
+    editPackId, 
+    createAsCopy, 
+    session?.user?.name
   ]);
 
   return (
@@ -433,7 +531,9 @@ export function CreatePackDialog({
         <DialogHeader>
           <DialogTitle>{isEditMode ? "Edit pack" : "Create pack"}</DialogTitle>
           <DialogDescription>
-            {isEditMode
+            {createAsCopy
+              ? "Pack not found in this environment. Saving will create a copy with the samples from this folder. Analysis will run on the samples."
+              : isEditMode
               ? "Update pack metadata and cover image."
               : folderPath
                 ? "Create a pack from this folder. Samples are deduplicated by content hash."
@@ -527,6 +627,19 @@ export function CreatePackDialog({
                       alt="Cover preview"
                       className="h-full w-full object-cover rounded-md"
                       referrerPolicy="no-referrer"
+                      onError={() => {
+                        fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
+                          method:"POST",
+                          headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
+                          body:JSON.stringify({
+                            sessionId:"a5d0f6",
+                            location:"CreatePackDialog.tsx:img.onError",
+                            message:"img failed to load",
+                            data:{imagePreview,hypothesisId:"H3"},
+                            timestamp:Date.now()
+                          })
+                        }).catch(()=>{});
+                      }}
                     />
                     <Button
                       type="button"
@@ -580,10 +693,10 @@ export function CreatePackDialog({
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {isEditMode ? "Saving…" : "Creating…"}
+                {createAsCopy ? "Creating…" : isEditMode ? "Saving…" : "Creating…"}
               </>
             ) : (
-              isEditMode ? "Save" : "Create pack"
+              createAsCopy ? "Create copy" : isEditMode ? "Save" : "Create pack"
             )}
           </Button>
         </DialogFooter>

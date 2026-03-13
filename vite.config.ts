@@ -126,7 +126,9 @@ export default defineConfig(({ command }) => {
         // API - Hono server runs on 3001 in dev
         "/api": {
           target: "http://127.0.0.1:3001",
-          changeOrigin: true,
+          // Preserve Host header so auth cookies are set for the actual origin (e.g. ngrok).
+          // changeOrigin: true would set Host to 127.0.0.1, causing OAuth state cookie to use wrong domain.
+          changeOrigin: false,
           configure: (proxy) => {
             proxy.on("error", (_err, req, res) => {
               if (canWriteProxyResponse(res)) {

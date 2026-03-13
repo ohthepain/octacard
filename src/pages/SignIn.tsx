@@ -34,6 +34,15 @@ export default function SignIn() {
     setCurrentPackState(getCurrentPack());
   }, []);
 
+  // When ?continue=google: auto-trigger Google sign-in (used after redirect from localhost to ngrok)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("continue") === "google") {
+      window.history.replaceState({}, "", window.location.pathname);
+      handleGoogleSignIn();
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -173,6 +182,17 @@ export default function SignIn() {
   };
 
   const handleGoogleSignIn = async () => {
+    const publicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL as string | undefined;
+    const isLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    if (isLocalhost && publicAppUrl) {
+      const target = new URL(publicAppUrl);
+      if (target.origin !== window.location.origin) {
+        window.location.href = `${target.origin}/sign-in?continue=google`;
+        return;
+      }
+    }
     setLoading(true);
     try {
       const result = await signIn.social({
@@ -182,6 +202,8 @@ export default function SignIn() {
       if (result.error) {
         toast.error(result.error.message ?? "Google sign in failed");
       }
+    } catch (err) {
+      toast.error((err as Error)?.message ?? "Google sign in failed");
     } finally {
       setLoading(false);
     }

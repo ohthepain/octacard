@@ -46,7 +46,7 @@ export function UserMenu() {
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-56 z-[110]">
         {user ? (
           <>
             <DropdownMenuLabel className="font-normal">

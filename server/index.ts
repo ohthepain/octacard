@@ -32,17 +32,22 @@ app.onError(errorHandler);
 
 // Global middleware (order matters)
 app.use("*", requestLogger);
+const corsOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://*.elb.amazonaws.com", // ALB
+  "https://*.octacard.live",
+];
+const authUrl = process.env.BETTER_AUTH_URL;
+if (authUrl && !authUrl.includes("localhost") && !authUrl.includes("127.0.0.1")) {
+  corsOrigins.push(authUrl.replace(/\/$/, ""));
+}
 app.use(
   "*",
   cors({
-    origin: [
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "https://*.elb.amazonaws.com", // ALB
-      "https://*.octacard.live",
-    ],
+    origin: corsOrigins,
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "X-Client-Version"],
