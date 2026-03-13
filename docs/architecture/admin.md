@@ -21,4 +21,6 @@ Monitor pg-boss jobs
 - job cards are custom components per queue. for example a sample-analysis card shows filename
 - tap a job card to show a custom detail component for that queue. for example the request, response or formatted input and outputs
 
+- Queue list: essentia-analysis, clap-analysis
+
 
