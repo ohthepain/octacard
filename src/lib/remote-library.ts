@@ -8,6 +8,7 @@ export interface RemotePackSummary {
   name: string;
   ownerId: string;
   isOwner: boolean;
+  coverImageProxyUrl?: string | null;
   createdAt: string;
   updatedAt: string;
   childPackCount: number;

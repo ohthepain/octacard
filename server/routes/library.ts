@@ -304,6 +304,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
             id: true,
             name: true,
             ownerId: true,
+            coverImageS3Key: true,
             createdAt: true,
             updatedAt: true,
             _count: {
@@ -349,6 +350,9 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       name: pack.name,
       ownerId: pack.ownerId,
       isOwner: pack.ownerId === user.id,
+      coverImageProxyUrl: pack.coverImageS3Key
+        ? `/api/library/packs/${encodeURIComponent(pack.id)}/cover`
+        : null,
       createdAt: pack.createdAt,
       updatedAt: pack.updatedAt,
       childPackCount: pack._count.children,
@@ -485,6 +489,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
         id: true,
         name: true,
         ownerId: true,
+        coverImageS3Key: true,
         createdAt: true,
         updatedAt: true,
         _count: { select: { children: true, packSamples: true } },
@@ -521,6 +526,9 @@ libraryApp.get("/packs/:id/contents", async (c) => {
       name: p.name,
       ownerId: p.ownerId,
       isOwner: p.ownerId === user.id,
+      coverImageProxyUrl: p.coverImageS3Key
+        ? `/api/library/packs/${encodeURIComponent(p.id)}/cover`
+        : null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       childPackCount: p._count.children,

@@ -91,6 +91,8 @@ interface CreatePackDialogProps {
   onCreated?: (packId: string) => void;
   /** When set, dialog opens in edit mode for this pack */
   editPackId?: string | null;
+  /** Pre-loaded cover URL when editing (e.g. from pack view) - avoids async fetch delay */
+  initialCoverImageUrl?: string | null;
 }
 
 export function CreatePackDialog({
@@ -101,6 +103,7 @@ export function CreatePackDialog({
   paneType = "source",
   onCreated,
   editPackId,
+  initialCoverImageUrl,
 }: CreatePackDialogProps) {
   const { data: session } = useSession();
   const isEditMode = Boolean(editPackId);
@@ -119,19 +122,6 @@ export function CreatePackDialog({
   const [imageSearchQuery, setImageSearchQuery] = useState("");
 
   const reset = useCallback(() => {
-    // #region agent log
-    fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
-      body:JSON.stringify({
-        sessionId:"a5d0f6",
-        location:"CreatePackDialog.tsx:reset",
-        message:"reset called",
-        data:{hypothesisId:"H2"},
-        timestamp:Date.now()
-      })
-    }).catch(()=>{});
-    // #endregion
     setName(defaultName);
     setIsPublic(true);
     setPriceTokens(0);
@@ -162,53 +152,21 @@ export function CreatePackDialog({
     setEditLoadError(null);
     setImageFile(null);
     setCreateAsCopy(false);
+    if (initialCoverImageUrl) {
+      setImagePreview(initialCoverImageUrl);
+    }
     const loadingId = editPackId;
     getPack(editPackId)
       .then((pack) => {
         if (loadingId !== editPackId) return;
-        // #region agent log
-        fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
-          method:"POST",
-          headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
-          body:JSON.stringify({
-            sessionId:"a5d0f6",
-            location:"CreatePackDialog.tsx:getPack.then",
-            message:"getPack resolved",
-            data:{
-              packId:editPackId,
-              coverImageProxyUrl:pack.coverImageProxyUrl,
-              coverImageUrlPresent:!!pack.coverImageUrl,
-              coverImageS3Key:pack.coverImageS3Key,
-              hypothesisId:"H1"
-            },
-            timestamp:Date.now()
-          })
-        }).catch(()=>{});
-        // #endregion
         setName(pack.name);
         setIsPublic(pack.isPublic);
         setPriceTokens(pack.priceTokens);
         setDefaultSampleTokens(pack.defaultSampleTokens);
-        let previewUrl: string | null = null;
-        if (pack.coverImageProxyUrl) {
-          previewUrl = pack.coverImageProxyUrl;
-        } else if (pack.coverImageUrl) {
-          previewUrl = pack.coverImageUrl;
+        if (!initialCoverImageUrl) {
+          const previewUrl = pack.coverImageProxyUrl ?? pack.coverImageUrl ?? null;
+          setImagePreview(previewUrl);
         }
-        setImagePreview(previewUrl);
-        // #region agent log
-        fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
-          method:"POST",
-          headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
-          body:JSON.stringify({
-            sessionId:"a5d0f6",
-            location:"CreatePackDialog.tsx:setImagePreview",
-            message:"setImagePreview called",
-            data:{previewUrl,hasValue:!!previewUrl,hypothesisId:"H2"},
-            timestamp:Date.now()
-          })
-        }).catch(()=>{});
-        // #endregion
       })
       .catch(async (err) => {
         if (loadingId !== editPackId) return;
@@ -246,23 +204,7 @@ export function CreatePackDialog({
         }
         setEditLoadError(err instanceof Error ? err.message : "Failed to load pack");
       });
-  }, [open, editPackId, folderPath, paneType, defaultName]);
-
-  useEffect(() => {
-    if (open && editPackId) {
-      fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
-        body:JSON.stringify({
-          sessionId:"a5d0f6",
-          location:"CreatePackDialog.tsx:imagePreview-effect",
-          message:"imagePreview state",
-          data:{imagePreview,hasValue:!!imagePreview,hypothesisId:"H2"},
-          timestamp:Date.now()
-        })
-      }).catch(()=>{});
-    }
-  }, [open, editPackId, imagePreview]);
+  }, [open, editPackId, folderPath, paneType, defaultName, initialCoverImageUrl]);
 
   const handleImage = useCallback((file: File) => {
     if (!IMAGE_TYPES.includes(file.type)) {
@@ -627,19 +569,6 @@ export function CreatePackDialog({
                       alt="Cover preview"
                       className="h-full w-full object-cover rounded-md"
                       referrerPolicy="no-referrer"
-                      onError={() => {
-                        fetch("http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b",{
-                          method:"POST",
-                          headers:{"Content-Type":"application/json","X-Debug-Session-Id":"a5d0f6"},
-                          body:JSON.stringify({
-                            sessionId:"a5d0f6",
-                            location:"CreatePackDialog.tsx:img.onError",
-                            message:"img failed to load",
-                            data:{imagePreview,hypothesisId:"H3"},
-                            timestamp:Date.now()
-                          })
-                        }).catch(()=>{});
-                      }}
                     />
                     <Button
                       type="button"
