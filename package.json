@@ -149,7 +149,7 @@
     "@biomejs/biome": "^2.4.6",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.1",
-    "@types/node": "^25.3.5",
+    "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/wavesurfer.js": "^6.0.12",
