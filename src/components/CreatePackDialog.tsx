@@ -51,7 +51,7 @@ function getContentTypeFromFileName(fileName: string): string {
     aac: "audio/aac",
     wma: "audio/wma",
   };
-  return ext ? map[ext] ?? "application/octet-stream" : "application/octet-stream";
+  return ext ? (map[ext] ?? "application/octet-stream") : "application/octet-stream";
 }
 
 function isExcludedByServerPattern(fileName: string): boolean {
@@ -89,7 +89,7 @@ function cropImageToSquare(file: File): Promise<Blob> {
           else reject(new Error("Failed to create blob"));
         },
         "image/jpeg",
-        0.9
+        0.9,
       );
     };
     img.onerror = () => {
@@ -166,7 +166,7 @@ export function CreatePackDialog({
       if (!next) reset();
       onOpenChange(next);
     },
-    [onOpenChange, reset]
+    [onOpenChange, reset],
   );
 
   useEffect(() => {
@@ -194,7 +194,7 @@ export function CreatePackDialog({
         if (!initialCoverImageUrl) {
           const previewUrl = pack.coverImageProxyUrl ?? pack.coverImageUrl ?? null;
           setImagePreview(previewUrl);
-          if (pack.coverImageUrl && pack.coverImageUrl.startsWith("https://images.unsplash.com")) {
+          if (pack.coverImageUrl?.startsWith("https://images.unsplash.com")) {
             setUnsplashImageUrl(pack.coverImageUrl);
           }
         }
@@ -216,7 +216,14 @@ export function CreatePackDialog({
                 if (coverFile) {
                   const blob = await coverFile.blob();
                   const ext = data.coverImage.match(/\.(jpe?g|png|webp|gif)$/i)?.[0]?.slice(1) ?? "jpg";
-                  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "gif" ? "image/gif" : "image/jpeg";
+                  const mime =
+                    ext === "png"
+                      ? "image/png"
+                      : ext === "webp"
+                        ? "image/webp"
+                        : ext === "gif"
+                          ? "image/gif"
+                          : "image/jpeg";
                   const coverImgFile = new File([blob], `cover.${ext}`, { type: mime });
                   setImageFile(coverImgFile);
                   const url = URL.createObjectURL(blob);
@@ -237,20 +244,26 @@ export function CreatePackDialog({
       });
   }, [open, editPackId, folderPath, paneType, defaultName, initialCoverImageUrl]);
 
-  const handleImage = useCallback((file: File, attribution?: { photographerName?: string; photographerUsername?: string; downloadLocation?: string } | null) => {
-    if (!IMAGE_TYPES.includes(file.type)) {
-      toast.error("Please use a JPEG, PNG, WebP, or GIF image");
-      return;
-    }
-    setImageFile(file);
-    setUnsplashImageUrl(null);
-    setUnsplashAttribution(attribution ?? null);
-    const url = URL.createObjectURL(file);
-    setImagePreview((prev) => {
-      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
-      return url;
-    });
-  }, []);
+  const handleImage = useCallback(
+    (
+      file: File,
+      attribution?: { photographerName?: string; photographerUsername?: string; downloadLocation?: string } | null,
+    ) => {
+      if (!IMAGE_TYPES.includes(file.type)) {
+        toast.error("Please use a JPEG, PNG, WebP, or GIF image");
+        return;
+      }
+      setImageFile(file);
+      setUnsplashImageUrl(null);
+      setUnsplashAttribution(attribution ?? null);
+      const url = URL.createObjectURL(file);
+      setImagePreview((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return url;
+      });
+    },
+    [],
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -259,7 +272,7 @@ export function CreatePackDialog({
       const file = e.dataTransfer.files[0];
       if (file) handleImage(file);
     },
-    [handleImage]
+    [handleImage],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -278,7 +291,7 @@ export function CreatePackDialog({
       if (file) handleImage(file);
       e.target.value = "";
     },
-    [handleImage]
+    [handleImage],
   );
 
   const handleUnsplashRandom = useCallback(async () => {
@@ -295,7 +308,7 @@ export function CreatePackDialog({
               photographerUsername: result.photographerUsername,
               downloadLocation: result.downloadLocation,
             }
-          : null
+          : null,
       );
       setImagePreview((prev) => {
         if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
@@ -363,8 +376,7 @@ export function CreatePackDialog({
         if (folderPath && paneType && (imageFile || unsplashImageUrl)) {
           try {
             const ownerName = session?.user?.name ?? "Unknown";
-            const joinPath = (base: string, file: string) =>
-              base.replace(/\/$/, "") + (base ? "/" : "") + file;
+            const joinPath = (base: string, file: string) => base.replace(/\/$/, "") + (base ? "/" : "") + file;
             const packJsonPath = joinPath(folderPath, "pack.json");
             const existingFile = await fileSystemService.getFile(packJsonPath, paneType);
             let packJson: Record<string, unknown> = {
@@ -391,11 +403,7 @@ export function CreatePackDialog({
               const ext = imageFile.type?.includes("png") ? "png" : "jpg";
               const coverImage = `cover.${ext}`;
               packJson.coverImage = coverImage;
-              await fileSystemService.writeBlobToPath(
-                joinPath(folderPath, coverImage),
-                squareBlob,
-                paneType,
-              );
+              await fileSystemService.writeBlobToPath(joinPath(folderPath, coverImage), squareBlob, paneType);
             }
             await fileSystemService.writeBlobToPath(
               packJsonPath,
@@ -483,7 +491,13 @@ export function CreatePackDialog({
         } else {
           setUploadProgress({ current: 0, total: uploadEntries.length, phase: "Computing hashes…" });
 
-          const filesWithHashes: Array<{ path: string; name: string; contentHash: string; contentType: string; file: File }> = [];
+          const filesWithHashes: Array<{
+            path: string;
+            name: string;
+            contentHash: string;
+            contentType: string;
+            file: File;
+          }> = [];
           for (let i = 0; i < uploadEntries.length; i++) {
             setUploadProgress({ current: i, total: uploadEntries.length, phase: "Computing hashes…" });
             const entry = uploadEntries[i];
@@ -526,7 +540,11 @@ export function CreatePackDialog({
             if (!res.ok) throw new Error(`Failed to upload ${item.name}`);
           }
 
-          setUploadProgress({ current: filesWithHashes.length, total: filesWithHashes.length, phase: "Creating file records…" });
+          setUploadProgress({
+            current: filesWithHashes.length,
+            total: filesWithHashes.length,
+            phase: "Creating file records…",
+          });
           for (let i = 0; i < filesWithHashes.length; i++) {
             const item = filesWithHashes[i];
             await createSampleFromContent({
@@ -549,8 +567,7 @@ export function CreatePackDialog({
           const ownerName = session?.user?.name ?? "Unknown";
           let coverImage: string | null = null;
 
-          const joinPath = (base: string, file: string) =>
-            base.replace(/\/$/, "") + (base ? "/" : "") + file;
+          const joinPath = (base: string, file: string) => base.replace(/\/$/, "") + (base ? "/" : "") + file;
 
           if (unsplashImageUrl) {
             // Hotlink: store URL in pack.json only
@@ -577,11 +594,7 @@ export function CreatePackDialog({
           const packJsonBlob = new Blob([JSON.stringify(packJson, null, 2)], {
             type: "application/json",
           });
-          await fileSystemService.writeBlobToPath(
-            joinPath(folderPath, "pack.json"),
-            packJsonBlob,
-            paneType,
-          );
+          await fileSystemService.writeBlobToPath(joinPath(folderPath, "pack.json"), packJsonBlob, paneType);
         } catch (err) {
           console.warn("Failed to write pack.json to folder:", err);
         }
@@ -622,15 +635,13 @@ export function CreatePackDialog({
             {createAsCopy
               ? "Pack not found in this environment. Saving will create a copy with the samples from this folder. Analysis will run on the samples."
               : isEditMode
-              ? "Update pack metadata and cover image."
-              : folderPath
-                ? "Create a pack from this folder. Files are deduplicated by content hash."
-                : "Create a pack. Add a cover image (optional) — it will be cropped to square."}
+                ? "Update pack metadata and cover image."
+                : folderPath
+                  ? "Create a pack from this folder. Files are deduplicated by content hash."
+                  : "Create a pack. Add a cover image (optional) — it will be cropped to square."}
           </DialogDescription>
         </DialogHeader>
-        {editLoadError && (
-          <p className="text-sm text-destructive">{editLoadError}</p>
-        )}
+        {editLoadError && <p className="text-sm text-destructive">{editLoadError}</p>}
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
             <Label htmlFor="pack-name">Name</Label>
@@ -692,11 +703,7 @@ export function CreatePackDialog({
                 title="Get random image from Unsplash"
                 aria-label="Get random image from Unsplash"
               >
-                {unsplashLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Dices className="h-4 w-4" />
-                )}
+                {unsplashLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Dices className="h-4 w-4" />}
               </Button>
             </div>
             <div className="flex items-start gap-2">
@@ -755,41 +762,36 @@ export function CreatePackDialog({
                   <label className="flex cursor-pointer flex-col items-center gap-2 p-4 text-center text-sm text-muted-foreground">
                     <ImagePlus className="h-8 w-8" />
                     <span>Drag an image here or click to browse</span>
-                    <input
-                      type="file"
-                      accept={IMAGE_TYPES.join(",")}
-                      className="sr-only"
-                      onChange={handleFileInput}
-                    />
+                    <input type="file" accept={IMAGE_TYPES.join(",")} className="sr-only" onChange={handleFileInput} />
                   </label>
                 )}
               </div>
             </div>
-            {unsplashAttribution && (unsplashAttribution.photographerName || unsplashAttribution.photographerUsername) && (
-              <p className="text-xs text-muted-foreground">
-                {unsplashAttribution.photographerUsername ? (
-                  <a
-                    href={unsplashPhotographerUrl(unsplashAttribution.photographerUsername)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-foreground"
-                  >
-                    Photo by {unsplashAttribution.photographerName || unsplashAttribution.photographerUsername} / Unsplash
-                  </a>
-                ) : (
-                  <span>Photo by {unsplashAttribution.photographerName} / Unsplash</span>
-                )}
-              </p>
-            )}
+            {unsplashAttribution &&
+              (unsplashAttribution.photographerName || unsplashAttribution.photographerUsername) && (
+                <p className="text-xs text-muted-foreground">
+                  {unsplashAttribution.photographerUsername ? (
+                    <a
+                      href={unsplashPhotographerUrl(unsplashAttribution.photographerUsername)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-foreground"
+                    >
+                      Photo by {unsplashAttribution.photographerName || unsplashAttribution.photographerUsername} /
+                      Unsplash
+                    </a>
+                  ) : (
+                    <span>Photo by {unsplashAttribution.photographerName} / Unsplash</span>
+                  )}
+                </p>
+              )}
           </div>
 
           {uploadProgress && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">{uploadProgress.phase}</p>
               <Progress
-                value={
-                  uploadProgress.total > 0 ? (uploadProgress.current / uploadProgress.total) * 100 : 0
-                }
+                value={uploadProgress.total > 0 ? (uploadProgress.current / uploadProgress.total) * 100 : 0}
                 className="h-2"
               />
             </div>
@@ -805,8 +807,12 @@ export function CreatePackDialog({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {createAsCopy ? "Creating…" : isEditMode ? "Saving…" : "Creating…"}
               </>
+            ) : createAsCopy ? (
+              "Create copy"
+            ) : isEditMode ? (
+              "Save"
             ) : (
-              createAsCopy ? "Create copy" : isEditMode ? "Save" : "Create pack"
+              "Create pack"
             )}
           </Button>
         </DialogFooter>

@@ -143,7 +143,9 @@ export const AudioPreview = ({
   const [exportSaveAsOpen, setExportSaveAsOpen] = useState(false);
   const [exportSaveAsFilename, setExportSaveAsFilename] = useState("");
   const [exportSaveAsDirHandle, setExportSaveAsDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const exportSaveAsResolverRef = useRef<((result: { dirHandle: FileSystemDirectoryHandle; filename: string } | null) => void) | null>(null);
+  const exportSaveAsResolverRef = useRef<
+    ((result: { dirHandle: FileSystemDirectoryHandle; filename: string } | null) => void) | null
+  >(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
   const [exportMarkerOptions, setExportMarkerOptions] = useState<ExportMarkerOptions>(() => ({
@@ -205,7 +207,16 @@ export const AudioPreview = ({
     const safeTime = Math.min(t, duration * 0.9999);
     ws.seekTo(safeTime / duration);
     setCurrentTime(safeTime);
-  }, [playerMode, multiSampleId, playingSamplePosition, isPlaying, playerCurrentTime, duration, singleFile?.path, filePath]);
+  }, [
+    playerMode,
+    multiSampleId,
+    playingSamplePosition,
+    isPlaying,
+    playerCurrentTime,
+    duration,
+    singleFile?.path,
+    filePath,
+  ]);
 
   const heightDragStartRef = useRef<{ y: number; h: number } | null>(null);
   const _playStartTimeRef = useRef<number>(0);
@@ -297,10 +308,7 @@ export const AudioPreview = ({
     [secondsPerBeat],
   );
 
-  const clampToDuration = useCallback(
-    (seconds: number) => Math.max(0, Math.min(duration, seconds)),
-    [duration],
-  );
+  const clampToDuration = useCallback((seconds: number) => Math.max(0, Math.min(duration, seconds)), [duration]);
 
   const formatTime = useCallback((seconds: number): string => {
     if (Number.isNaN(seconds)) return "0:00";
@@ -600,9 +608,7 @@ export const AudioPreview = ({
     const prevLoopEnd = existing.loopEnd;
     // Only restart when loop params actually changed from a previously persisted state (avoid restart on initial load)
     const loopParamsChanged =
-      prevLoopStart != null &&
-      prevLoopEnd != null &&
-      (prevLoopStart !== loopStart || prevLoopEnd !== loopEnd);
+      prevLoopStart != null && prevLoopEnd != null && (prevLoopStart !== loopStart || prevLoopEnd !== loopEnd);
     setEdits(filePath, {
       ...existing,
       loopStart,
@@ -619,7 +625,22 @@ export const AudioPreview = ({
         requestRestartWithNewLoop({ path: filePath, newLoopStart: loopStart, newLoopEnd: loopEnd });
       }
     }
-  }, [filePath, isEmptyState, duration, loopStart, loopEnd, playStart, loopEnabled, setEdits, getEdits, playerIsPlaying, playerMode, singleFile, stack, requestRestartWithNewLoop]);
+  }, [
+    filePath,
+    isEmptyState,
+    duration,
+    loopStart,
+    loopEnd,
+    playStart,
+    loopEnabled,
+    setEdits,
+    getEdits,
+    playerIsPlaying,
+    playerMode,
+    singleFile,
+    stack,
+    requestRestartWithNewLoop,
+  ]);
 
   // When opened from multi-sample, sync tempo with the sample's BPM so loop length in bars matches
   const slots = useMultiSampleStore((s) => s.slots);
@@ -781,8 +802,7 @@ export const AudioPreview = ({
       const isMultiMode = playerState.mode === "multi";
       const weState = useWaveformEditorStore.getState();
       const storeFilePath = weState.filePath;
-      const isSwitchingToNewFile =
-        !isMultiMode && storeFilePath && storeFilePath !== filePath;
+      const isSwitchingToNewFile = !isMultiMode && storeFilePath && storeFilePath !== filePath;
       const isEditorClosingOrEmpty = !weState.isOpen || weState.isEmptyState;
       if (!multiSampleId && !isMultiMode && !isSwitchingToNewFile && isEditorClosingOrEmpty) {
         stopPlayer();
@@ -853,12 +873,7 @@ export const AudioPreview = ({
 
       setIsLoading(true);
       const playerState = usePlayerStore.getState();
-      if (
-        playerState.isPlaying &&
-        playerState.mode === "single" &&
-        filePath &&
-        paneType
-      ) {
+      if (playerState.isPlaying && playerState.mode === "single" && filePath && paneType) {
         requestSwitchAtNextBar(filePath, paneType);
       }
       // Never stop player during WaveSurfer init; this can race against sample switching.
@@ -1003,12 +1018,9 @@ export const AudioPreview = ({
 
       // Add Timeline plugin - use ref for format so BPM parse doesn't trigger WaveSurfer re-init
       const tf = timelineFormatRef.current;
-      const timelineTimeInterval =
-        tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat / 4 : 0.2;
-      const timelinePrimaryInterval =
-        tf.timeDisplayMode === "bars" && tf.secondsPerBar > 0 ? tf.secondsPerBar : 5;
-      const timelineSecondaryInterval =
-        tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat : 1;
+      const timelineTimeInterval = tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat / 4 : 0.2;
+      const timelinePrimaryInterval = tf.timeDisplayMode === "bars" && tf.secondsPerBar > 0 ? tf.secondsPerBar : 5;
+      const timelineSecondaryInterval = tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat : 1;
       const timeline = TimelinePlugin.create({
         height: 20,
         insertPosition: "beforebegin",
@@ -1233,8 +1245,7 @@ export const AudioPreview = ({
       const isMultiMode = playerState.mode === "multi";
       const weState = useWaveformEditorStore.getState();
       const storeFilePath = weState.filePath;
-      const isSwitchingToNewFile =
-        !isMultiMode && storeFilePath && storeFilePath !== filePath;
+      const isSwitchingToNewFile = !isMultiMode && storeFilePath && storeFilePath !== filePath;
       const isEditorClosingOrEmpty = !weState.isOpen || weState.isEmptyState;
       if (!isMultiMode && !isSwitchingToNewFile && isEditorClosingOrEmpty) {
         stopPlayer();
@@ -1251,6 +1262,7 @@ export const AudioPreview = ({
     requestSwitchAtNextBar,
     paneType,
     zoom,
+    stableMinimapHandler,
   ]);
 
   // Effect to find and attach handler to minimap element after it's created
@@ -1543,15 +1555,18 @@ export const AudioPreview = ({
     [isLoading, isAnalyzing, numSlices, sliceMarkers.length],
   );
 
-  const removeSlice = useCallback((originalTime: number, isUserAdded: boolean) => {
-    const key = sliceKey(originalTime);
-    if (isUserAdded) {
-      setUserAddedSlices((prev) => prev.filter((s) => Math.abs(s.time - originalTime) > 0.001));
-    } else {
-      setSliceConfidenceOverrides((prev) => new Map(prev).set(key, 0));
-    }
-    setNumSlices((prev) => Math.max(1, prev - 1));
-  }, [sliceKey]);
+  const removeSlice = useCallback(
+    (originalTime: number, isUserAdded: boolean) => {
+      const key = sliceKey(originalTime);
+      if (isUserAdded) {
+        setUserAddedSlices((prev) => prev.filter((s) => Math.abs(s.time - originalTime) > 0.001));
+      } else {
+        setSliceConfidenceOverrides((prev) => new Map(prev).set(key, 0));
+      }
+      setNumSlices((prev) => Math.max(1, prev - 1));
+    },
+    [sliceKey],
+  );
 
   const addSliceAtTime = useCallback(
     (clickTime: number) => {
@@ -1582,10 +1597,13 @@ export const AudioPreview = ({
     [combinedSliceMarkers, numSlices, sliceMarkers, userAddedSlices, sliceKey],
   );
 
-  const updateSlicePosition = useCallback((originalTime: number, newTime: number) => {
-    const key = sliceKey(originalTime);
-    setSlicePositionOverrides((prev) => new Map(prev).set(key, newTime));
-  }, [sliceKey]);
+  const updateSlicePosition = useCallback(
+    (originalTime: number, newTime: number) => {
+      const key = sliceKey(originalTime);
+      setSlicePositionOverrides((prev) => new Map(prev).set(key, newTime));
+    },
+    [sliceKey],
+  );
 
   const playSlice = useCallback(
     (sliceIndex: number) => {
@@ -1881,7 +1899,7 @@ export const AudioPreview = ({
           const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>(
             (resolve) => {
               exportSaveAsResolverRef.current = resolve;
-            }
+            },
           );
           setExportSaveAsOpen(false);
           setExportSaveAsDirHandle(null);
@@ -1920,11 +1938,7 @@ export const AudioPreview = ({
         const mainName = `${mainFileName.replace(/\.wav$/i, "")}.wav`;
 
         if (saveAsTarget) {
-          const result = await fileSystemService.writeBlobToDirectoryHandle(
-            saveAsTarget.dirHandle,
-            mainName,
-            mainBlob
-          );
+          const result = await fileSystemService.writeBlobToDirectoryHandle(saveAsTarget.dirHandle, mainName, mainBlob);
           if (!result.success) {
             toast.error(result.error || "Export failed");
             return;
@@ -1940,7 +1954,7 @@ export const AudioPreview = ({
               const sliceResult = await fileSystemService.writeBlobToDirectoryHandle(
                 sliceFolderHandle,
                 `${baseName}_${num}.wav`,
-                sliceBlobs[i]
+                sliceBlobs[i],
               );
               if (!sliceResult.success) {
                 toast.error(sliceResult.error || `Failed to export slice ${i + 1}`);
@@ -1970,11 +1984,7 @@ export const AudioPreview = ({
             for (let i = 0; i < sliceBlobs.length; i++) {
               const num = String(i + 1).padStart(padWidth, "0");
               const slicePath = `${sliceFolderPath}/${baseName}_${num}.wav`;
-              const sliceResult = await fileSystemService.writeBlobToPath(
-                slicePath,
-                sliceBlobs[i],
-                paneType
-              );
+              const sliceResult = await fileSystemService.writeBlobToPath(slicePath, sliceBlobs[i], paneType);
               if (!sliceResult.success) {
                 toast.error(sliceResult.error || `Failed to export slice ${i + 1}`);
                 return;
@@ -2005,7 +2015,7 @@ export const AudioPreview = ({
       tempoBpm,
       timeSignature,
       tuningCents,
-    ]
+    ],
   );
 
   const handleExport = async () => {
@@ -2047,9 +2057,7 @@ export const AudioPreview = ({
     const loopEndClamped = Math.max(loopStartClamped + 0.001, Math.min(duration, loopEnd || duration));
     // Show region option when: RegionsPlugin region exists, OR loop start/end differ from full (user's start/end points)
     const hasRegion =
-      !!(region && (regionStart > 0 || regionEnd < duration)) ||
-      loopStartClamped > 0 ||
-      loopEndClamped < duration;
+      !!(region && (regionStart > 0 || regionEnd < duration)) || loopStartClamped > 0 || loopEndClamped < duration;
 
     if (hasSlices || hasRegion) {
       setExportOptionsOpen(true);
@@ -2277,10 +2285,7 @@ export const AudioPreview = ({
           {!isEmptyState && duration > 0 && (
             <>
               {devMode && sampleRate > 0 && (
-                <div
-                  className="text-[10px] font-mono text-muted-foreground"
-                  title="Loop length in samples"
-                >
+                <div className="text-[10px] font-mono text-muted-foreground" title="Loop length in samples">
                   {Math.round(Math.max(0, (loopEnd || duration) - loopStart) * sampleRate).toLocaleString()}
                 </div>
               )}
@@ -2568,14 +2573,20 @@ export const AudioPreview = ({
           </div>
         )}
         {!isEmptyState && duration > 0 && (
-          <div className="absolute top-0 left-0 right-0 z-[6] pointer-events-none" style={{ height: debouncedWaveformHeight }}>
+          <div
+            className="absolute top-0 left-0 right-0 z-[6] pointer-events-none"
+            style={{ height: debouncedWaveformHeight }}
+          >
             <div
               className="absolute top-0 left-0 h-full"
               style={{ width: `${(Math.max(0, loopStart) / duration) * 100}%`, backgroundColor: "rgba(0,0,0,0.28)" }}
             />
             <div
               className="absolute top-0 right-0 h-full"
-              style={{ width: `${((duration - Math.min(duration, loopEnd || duration)) / duration) * 100}%`, backgroundColor: "rgba(0,0,0,0.28)" }}
+              style={{
+                width: `${((duration - Math.min(duration, loopEnd || duration)) / duration) * 100}%`,
+                backgroundColor: "rgba(0,0,0,0.28)",
+              }}
             />
           </div>
         )}
@@ -2795,11 +2806,7 @@ export const AudioPreview = ({
             className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded"
             aria-label={muted ? "Unmute" : "Mute"}
           >
-            {muted ? (
-              <VolumeX className="w-4 h-4" />
-            ) : (
-              <Volume2 className="w-4 h-4" />
-            )}
+            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
           <Slider
             value={[volume]}
@@ -3097,9 +3104,7 @@ export const AudioPreview = ({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Sample Info</DialogTitle>
-            <DialogDescription>
-              {fileName ?? "Audio file"} — technical details
-            </DialogDescription>
+            <DialogDescription>{fileName ?? "Audio file"} — technical details</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2 font-mono text-sm">
             {audioFileInfo ? (
@@ -3110,7 +3115,13 @@ export const AudioPreview = ({
                 </div>
                 <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span className="text-muted-foreground">Channels</span>
-                  <span>{audioFileInfo.numChannels === 1 ? "Mono" : audioFileInfo.numChannels === 2 ? "Stereo" : `${audioFileInfo.numChannels} ch`}</span>
+                  <span>
+                    {audioFileInfo.numChannels === 1
+                      ? "Mono"
+                      : audioFileInfo.numChannels === 2
+                        ? "Stereo"
+                        : `${audioFileInfo.numChannels} ch`}
+                  </span>
                 </div>
                 <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span className="text-muted-foreground">Bit depth</span>

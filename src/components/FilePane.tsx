@@ -326,7 +326,6 @@ export const FilePane = ({
   const [createPackFolderPath, setCreatePackFolderPath] = useState("");
   const [createPackEditId, setCreatePackEditId] = useState<string | null>(null);
   const [folderViewRoot, setFolderViewRoot] = useState<string | null>(null);
-  const [folderViewRefreshTrigger, setFolderViewRefreshTrigger] = useState(0);
   const [folderViewCoverUrl, setFolderViewCoverUrl] = useState<string | null>(null);
   const [folderViewPackName, setFolderViewPackName] = useState<string | null>(null);
   const [folderViewPackId, setFolderViewPackId] = useState<string | null>(null);
@@ -1591,14 +1590,7 @@ export const FilePane = ({
 
       saveNavigationState(currentVolumeUUID ?? NAV_STATE_FALLBACK_VOLUME, currentRootPath, newExpanded);
     },
-    [
-      expandedFolders,
-      loadDirectory,
-      loadSearchFolderContents,
-      saveNavigationState,
-      currentVolumeUUID,
-      currentRootPath,
-    ],
+    [expandedFolders, loadDirectory, loadSearchFolderContents, saveNavigationState, currentVolumeUUID, currentRootPath],
   );
 
   const navigateToFolder = useCallback(
@@ -2075,7 +2067,7 @@ export const FilePane = ({
       setFolderViewPackName(null);
       setFolderViewPackId(null);
     };
-  }, [folderViewRoot, folderViewRefreshTrigger, paneType]);
+  }, [folderViewRoot, paneType]);
 
   // Register this pane's clear selection function and handle pane activation
   useEffect(() => {
@@ -4856,8 +4848,6 @@ export const FilePane = ({
             });
             refreshFolder(createPackFolderPath).then(() => {
               setFolderViewRoot(createPackFolderPath);
-              setFolderViewRefreshTrigger((t) => t + 1);
-              navigateToFolder(createPackFolderPath);
             });
           }
         }}

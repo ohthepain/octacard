@@ -30,6 +30,34 @@ export default function SignIn() {
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
 
+  const handleGoogleSignIn = async () => {
+    const publicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL as string | undefined;
+    const isLocalhost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    if (isLocalhost && publicAppUrl) {
+      const target = new URL(publicAppUrl);
+      if (target.origin !== window.location.origin) {
+        window.location.href = `${target.origin}/sign-in?continue=google`;
+        return;
+      }
+    }
+    setLoading(true);
+    try {
+      const result = await signIn.social({
+        provider: "google",
+        callbackURL: "/",
+      });
+      if (result.error) {
+        toast.error(result.error.message ?? "Google sign in failed");
+      }
+    } catch (err) {
+      toast.error((err as Error)?.message ?? "Google sign in failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     setCurrentPackState(getCurrentPack());
   }, []);
@@ -178,34 +206,6 @@ export default function SignIn() {
       toast.success("Check your email for the reset link");
     } finally {
       setForgotPasswordLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    const publicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL as string | undefined;
-    const isLocalhost =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    if (isLocalhost && publicAppUrl) {
-      const target = new URL(publicAppUrl);
-      if (target.origin !== window.location.origin) {
-        window.location.href = `${target.origin}/sign-in?continue=google`;
-        return;
-      }
-    }
-    setLoading(true);
-    try {
-      const result = await signIn.social({
-        provider: "google",
-        callbackURL: "/",
-      });
-      if (result.error) {
-        toast.error(result.error.message ?? "Google sign in failed");
-      }
-    } catch (err) {
-      toast.error((err as Error)?.message ?? "Google sign in failed");
-    } finally {
-      setLoading(false);
     }
   };
 
