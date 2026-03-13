@@ -95,6 +95,7 @@ model Pack {
   ownerId             String
   parentId            String?
   coverImageS3Key     String?
+  coverImageUrl       String?      // Unsplash hotlink URL (when not self-hosting)
   isPublic            Boolean      @default(true)
   priceTokens         Int          @default(0)
   defaultSampleTokens Int          @default(0)

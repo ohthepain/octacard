@@ -138,6 +138,7 @@ export function CreatePackDialog({
   const [createAsCopy, setCreateAsCopy] = useState(false);
   const [unsplashLoading, setUnsplashLoading] = useState(false);
   const [imageSearchQuery, setImageSearchQuery] = useState("");
+  const [unsplashImageUrl, setUnsplashImageUrl] = useState<string | null>(null);
   const [unsplashAttribution, setUnsplashAttribution] = useState<{
     photographerName?: string;
     photographerUsername?: string;
@@ -151,6 +152,7 @@ export function CreatePackDialog({
     setDefaultSampleTokens(0);
     setImageFile(null);
     setImagePreview(null);
+    setUnsplashImageUrl(null);
     setUploadProgress(null);
     setEditLoadError(null);
     setCreateAsCopy(false);
@@ -175,6 +177,7 @@ export function CreatePackDialog({
     if (!open || !editPackId) return;
     setEditLoadError(null);
     setImageFile(null);
+    setUnsplashImageUrl(null);
     setUnsplashAttribution(null);
     setCreateAsCopy(false);
     if (initialCoverImageUrl) {
@@ -191,6 +194,9 @@ export function CreatePackDialog({
         if (!initialCoverImageUrl) {
           const previewUrl = pack.coverImageProxyUrl ?? pack.coverImageUrl ?? null;
           setImagePreview(previewUrl);
+          if (pack.coverImageUrl && pack.coverImageUrl.startsWith("https://images.unsplash.com")) {
+            setUnsplashImageUrl(pack.coverImageUrl);
+          }
         }
       })
       .catch(async (err) => {
@@ -237,6 +243,7 @@ export function CreatePackDialog({
       return;
     }
     setImageFile(file);
+    setUnsplashImageUrl(null);
     setUnsplashAttribution(attribution ?? null);
     const url = URL.createObjectURL(file);
     setImagePreview((prev) => {
@@ -279,15 +286,21 @@ export function CreatePackDialog({
     try {
       const query = imageSearchQuery.trim() || name.trim() || undefined;
       const result = await fetchUnsplashRandomPhoto(query);
-      const file = new File([result.blob], "unsplash-cover.jpg", { type: "image/jpeg" });
-      const attribution = result.photographerUsername || result.photographerName || result.downloadLocation
-        ? {
-            photographerName: result.photographerName,
-            photographerUsername: result.photographerUsername,
-            downloadLocation: result.downloadLocation,
-          }
-        : null;
-      handleImage(file, attribution);
+      setImageFile(null);
+      setUnsplashImageUrl(result.url);
+      setUnsplashAttribution(
+        result.photographerUsername || result.photographerName || result.downloadLocation
+          ? {
+              photographerName: result.photographerName,
+              photographerUsername: result.photographerUsername,
+              downloadLocation: result.downloadLocation,
+            }
+          : null
+      );
+      setImagePreview((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return result.url;
+      });
       if (result.downloadLocation) {
         const key = import.meta.env.VITE_UNSPLASH_ACCESS_KEY as string | undefined;
         if (key) {
@@ -302,7 +315,7 @@ export function CreatePackDialog({
     } finally {
       setUnsplashLoading(false);
     }
-  }, [imageSearchQuery, name, handleImage]);
+  }, [imageSearchQuery, name]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = name.trim();
@@ -319,8 +332,12 @@ export function CreatePackDialog({
       if (isEditMode && editPackId && !createAsCopy) {
         packId = editPackId;
         let coverImageS3Key: string | undefined;
+        let coverImageUrl: string | null | undefined;
         let squareBlob: Blob | null = null;
-        if (imageFile) {
+        if (unsplashImageUrl) {
+          coverImageUrl = unsplashImageUrl;
+          coverImageS3Key = null;
+        } else if (imageFile) {
           setUploadProgress({ current: 0, total: 1, phase: "Uploading cover image…" });
           squareBlob = await cropImageToSquare(imageFile);
           const { uploadUrl, key } = await getPackCoverUploadUrl(packId, "image/jpeg");
@@ -331,6 +348,7 @@ export function CreatePackDialog({
           });
           if (!res.ok) throw new Error("Failed to upload cover image");
           coverImageS3Key = key;
+          coverImageUrl = null;
         }
         await updatePack(packId, {
           name: trimmed,
@@ -338,21 +356,15 @@ export function CreatePackDialog({
           priceTokens,
           defaultSampleTokens,
           ...(coverImageS3Key !== undefined && { coverImageS3Key }),
+          ...(coverImageUrl !== undefined && { coverImageUrl }),
         });
         setUploadProgress(null);
 
-        if (folderPath && paneType && imageFile && squareBlob) {
+        if (folderPath && paneType && (imageFile || unsplashImageUrl)) {
           try {
             const ownerName = session?.user?.name ?? "Unknown";
             const joinPath = (base: string, file: string) =>
               base.replace(/\/$/, "") + (base ? "/" : "") + file;
-            const ext = imageFile.type?.includes("png") ? "png" : "jpg";
-            const coverImage = `cover.${ext}`;
-            await fileSystemService.writeBlobToPath(
-              joinPath(folderPath, coverImage),
-              squareBlob,
-              paneType,
-            );
             const packJsonPath = joinPath(folderPath, "pack.json");
             const existingFile = await fileSystemService.getFile(packJsonPath, paneType);
             let packJson: Record<string, unknown> = {
@@ -360,7 +372,7 @@ export function CreatePackDialog({
               name: trimmed,
               coverImageS3Key: coverImageS3Key ?? null,
               ownerName,
-              coverImage,
+              ...(unsplashImageUrl && { coverImageUrl: unsplashImageUrl }),
             };
             if (existingFile) {
               try {
@@ -371,15 +383,27 @@ export function CreatePackDialog({
               }
             }
             packJson.name = trimmed;
-            packJson.coverImage = coverImage;
             if (coverImageS3Key) packJson.coverImageS3Key = coverImageS3Key;
+            if (unsplashImageUrl) {
+              packJson.coverImageUrl = unsplashImageUrl;
+              delete packJson.coverImage;
+            } else if (imageFile && squareBlob) {
+              const ext = imageFile.type?.includes("png") ? "png" : "jpg";
+              const coverImage = `cover.${ext}`;
+              packJson.coverImage = coverImage;
+              await fileSystemService.writeBlobToPath(
+                joinPath(folderPath, coverImage),
+                squareBlob,
+                paneType,
+              );
+            }
             await fileSystemService.writeBlobToPath(
               packJsonPath,
               new Blob([JSON.stringify(packJson, null, 2)], { type: "application/json" }),
               paneType,
             );
           } catch (err) {
-            console.warn("Failed to write pack cover to folder:", err);
+            console.warn("Failed to write pack to folder:", err);
           }
         }
 
@@ -394,6 +418,7 @@ export function CreatePackDialog({
         isPublic,
         priceTokens,
         defaultSampleTokens,
+        ...(unsplashImageUrl && { coverImageUrl: unsplashImageUrl }),
       });
       packId = pack.id;
 
@@ -412,7 +437,7 @@ export function CreatePackDialog({
           headers: { "Content-Type": "image/jpeg" },
         });
         if (!res.ok) throw new Error("Failed to upload cover image");
-        await updatePack(pack.id, { coverImageS3Key: key });
+        await updatePack(pack.id, { coverImageS3Key: key, coverImageUrl: null });
         _phaseIndex++;
       }
 
@@ -527,7 +552,9 @@ export function CreatePackDialog({
           const joinPath = (base: string, file: string) =>
             base.replace(/\/$/, "") + (base ? "/" : "") + file;
 
-          if (imageFile) {
+          if (unsplashImageUrl) {
+            // Hotlink: store URL in pack.json only
+          } else if (imageFile) {
             const ext = imageFile.type?.includes("png") ? "png" : "jpg";
             coverImage = `cover.${ext}`;
             const coverBlob = await cropImageToSquare(imageFile);
@@ -542,9 +569,10 @@ export function CreatePackDialog({
           const packJson = {
             packId: pack.id,
             name: pack.name,
-            coverImageS3Key: pack.coverImageS3Key,
+            coverImageS3Key: pack.coverImageS3Key ?? null,
             ownerName,
             ...(coverImage && { coverImage }),
+            ...(unsplashImageUrl && { coverImageUrl: unsplashImageUrl }),
           };
           const packJsonBlob = new Blob([JSON.stringify(packJson, null, 2)], {
             type: "application/json",
@@ -569,19 +597,20 @@ export function CreatePackDialog({
       setLoading(false);
     }
   }, [
-    name, 
-    isPublic, 
-    priceTokens, 
-    defaultSampleTokens, 
-    imageFile, 
-    folderPath, 
-    paneType, 
-    handleOpenChange, 
-    onCreated, 
-    isEditMode, 
-    editPackId, 
-    createAsCopy, 
-    session?.user?.name
+    name,
+    isPublic,
+    priceTokens,
+    defaultSampleTokens,
+    imageFile,
+    unsplashImageUrl,
+    folderPath,
+    paneType,
+    handleOpenChange,
+    onCreated,
+    isEditMode,
+    editPackId,
+    createAsCopy,
+    session?.user?.name,
   ]);
 
   return (
@@ -711,6 +740,7 @@ export function CreatePackDialog({
                       className="absolute right-2 top-2"
                       onClick={() => {
                         setImageFile(null);
+                        setUnsplashImageUrl(null);
                         setUnsplashAttribution(null);
                         setImagePreview((p) => {
                           if (p?.startsWith("blob:")) URL.revokeObjectURL(p);

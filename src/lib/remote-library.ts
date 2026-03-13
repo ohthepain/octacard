@@ -213,6 +213,7 @@ export async function createPack(params: {
   isPublic?: boolean;
   priceTokens?: number;
   defaultSampleTokens?: number;
+  coverImageUrl?: string;
 }): Promise<{
   id: string;
   name: string;
@@ -237,7 +238,7 @@ export async function createPack(params: {
 }
 
 export interface UnsplashPhotoResult {
-  blob: Blob;
+  url: string;
   photographerName?: string;
   photographerUsername?: string;
   downloadLocation?: string;
@@ -247,19 +248,14 @@ export async function fetchUnsplashRandomPhoto(query?: string): Promise<Unsplash
   const params = new URLSearchParams();
   if (query?.trim()) params.set("query", query.trim());
   params.set("_", String(Date.now())); // cache-bust so each roll gets a fresh image
-  const url = `/api/library/unsplash/random-photo?${params}`;
-  const res = await apiFetch(url);
+  const apiUrl = `/api/library/unsplash/random-photo?${params}`;
+  const res = await apiFetch(apiUrl);
   if (!res.ok) {
     const msg = await res.text();
     throw new Error(msg || `Failed to fetch Unsplash image (${res.status})`);
   }
-  const blob = await res.blob();
-  return {
-    blob,
-    photographerName: res.headers.get("X-Unsplash-Photographer-Name") ?? undefined,
-    photographerUsername: res.headers.get("X-Unsplash-Photographer-Username") ?? undefined,
-    downloadLocation: res.headers.get("X-Unsplash-Download-Location") ?? undefined,
-  };
+  const data = (await res.json()) as UnsplashPhotoResult;
+  return data;
 }
 
 export async function getPackCoverUploadUrl(
@@ -283,6 +279,7 @@ export async function updatePack(
     name?: string;
     parentId?: string | null;
     coverImageS3Key?: string | null;
+    coverImageUrl?: string | null;
     isPublic?: boolean;
     priceTokens?: number;
     defaultSampleTokens?: number;

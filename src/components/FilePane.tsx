@@ -343,6 +343,18 @@ export const FilePane = ({
         if (!hasPack || packCoverCache.has(path) || loadingCoversRef.current.has(path)) continue;
         loadingCoversRef.current.add(path);
         try {
+          const packFile = await fileSystemService.getFile(joinPath(path, "pack.json"), paneType);
+          if (packFile) {
+            try {
+              const data = JSON.parse(await packFile.text()) as { coverImageUrl?: string };
+              if (typeof data.coverImageUrl === "string" && data.coverImageUrl.trim()) {
+                setPackCoverCache((prev) => new Map(prev).set(path, data.coverImageUrl!.trim()));
+                continue;
+              }
+            } catch {
+              // fall through to file-based cover
+            }
+          }
           for (const name of ["cover.jpg", "cover.png"]) {
             const result = await fileSystemService.getFileBlob(joinPath(path, name), paneType);
             const data = result.data;
@@ -512,7 +524,7 @@ export const FilePane = ({
     packManifestCacheRef.current.clear();
     setPackCoverCache((prev) => {
       prev.forEach((url) => {
-        URL.revokeObjectURL(url);
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
       });
       return new Map();
     });
@@ -2004,10 +2016,16 @@ export const FilePane = ({
       const packFile = await fileSystemService.getFile(packJsonPath, paneType);
       if (cancelled) return;
       let coverImageFromJson: string | null = null;
+      let coverImageUrlFromJson: string | null = null;
       if (packFile) {
         try {
           const text = await packFile.text();
-          const data = JSON.parse(text) as { name?: string; packId?: string; coverImage?: string };
+          const data = JSON.parse(text) as {
+            name?: string;
+            packId?: string;
+            coverImage?: string;
+            coverImageUrl?: string;
+          };
           if (typeof data.name === "string" && data.name.trim()) {
             setFolderViewPackName(data.name.trim());
           } else {
@@ -2016,6 +2034,9 @@ export const FilePane = ({
           setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
           if (typeof data.coverImage === "string" && data.coverImage.trim()) {
             coverImageFromJson = data.coverImage.trim();
+          }
+          if (typeof data.coverImageUrl === "string" && data.coverImageUrl.trim()) {
+            coverImageUrlFromJson = data.coverImageUrl.trim();
           }
         } catch {
           setFolderViewPackName(null);
@@ -2026,7 +2047,10 @@ export const FilePane = ({
         setFolderViewPackId(null);
       }
 
-      // Load cover image (prefer pack.json coverImage when present)
+      if (coverImageUrlFromJson) {
+        setFolderViewCoverUrl(coverImageUrlFromJson);
+        return;
+      }
       const coverNames = coverImageFromJson
         ? [coverImageFromJson, "cover.png", "cover.jpg"]
         : ["cover.png", "cover.jpg"];
@@ -2045,7 +2069,7 @@ export const FilePane = ({
     return () => {
       cancelled = true;
       setFolderViewCoverUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
         return null;
       });
       setFolderViewPackName(null);
@@ -4825,7 +4849,7 @@ export const FilePane = ({
           if (createPackFolderPath) {
             setPackCoverCache((prev) => {
               const url = prev.get(createPackFolderPath);
-              if (url) URL.revokeObjectURL(url);
+              if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
               const next = new Map(prev);
               next.delete(createPackFolderPath);
               return next;

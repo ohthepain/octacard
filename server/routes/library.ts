@@ -24,12 +24,14 @@ const createPackSchema = z.object({
   isPublic: z.boolean().default(true),
   priceTokens: z.number().int().min(0).default(0),
   defaultSampleTokens: z.number().int().min(0).default(0),
+  coverImageUrl: z.string().url().optional(),
 });
 
 const updatePackSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   parentId: z.string().trim().min(1).nullable().optional(),
   coverImageS3Key: z.string().trim().min(1).nullable().optional(),
+  coverImageUrl: z.string().url().nullable().optional(),
   isPublic: z.boolean().optional(),
   priceTokens: z.number().int().min(0).optional(),
   defaultSampleTokens: z.number().int().min(0).optional(),
@@ -237,31 +239,12 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
     throw new HTTPException(502, { message: "Invalid Unsplash response" });
   }
 
-  const imgRes = await tracedFetch(
-    imageUrl,
-    undefined,
-    { service: "unsplash", operation: "image-download" },
-  );
-  if (!imgRes.ok) {
-    throw new HTTPException(502, { message: "Failed to fetch image from Unsplash" });
-  }
-  const buf = await imgRes.arrayBuffer();
-
-  const resHeaders: Record<string, string> = {
-    "Content-Type": "image/jpeg",
-    "Cache-Control": "no-store", // each dice roll should fetch fresh
-  };
-  if (photo?.user?.username) {
-    resHeaders["X-Unsplash-Photographer-Username"] = photo.user.username;
-  }
-  if (photo?.user?.name) {
-    resHeaders["X-Unsplash-Photographer-Name"] = photo.user.name;
-  }
-  if (photo?.links?.download_location) {
-    resHeaders["X-Unsplash-Download-Location"] = photo.links.download_location;
-  }
-
-  return c.body(buf, 200, resHeaders);
+  return c.json({
+    url: imageUrl,
+    photographerName: photo?.user?.name ?? undefined,
+    photographerUsername: photo?.user?.username ?? undefined,
+    downloadLocation: photo?.links?.download_location ?? undefined,
+  });
 });
 
 libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
@@ -306,6 +289,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
             name: true,
             ownerId: true,
             coverImageS3Key: true,
+            coverImageUrl: true,
             createdAt: true,
             updatedAt: true,
             _count: {
@@ -346,18 +330,18 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
 
   return c.json({
-    packs: packs.map((pack) => ({
-      id: pack.id,
-      name: pack.name,
-      ownerId: pack.ownerId,
-      isOwner: pack.ownerId === user.id,
-      coverImageProxyUrl: pack.coverImageS3Key
-        ? `/api/library/packs/${encodeURIComponent(pack.id)}/cover?v=${encodeURIComponent(pack.coverImageS3Key)}`
-        : null,
-      createdAt: pack.createdAt,
-      updatedAt: pack.updatedAt,
-      childPackCount: pack._count.children,
-      sampleCount: pack._count.packSamples,
+    packs: packs.map((p) => ({
+      id: p.id,
+      name: p.name,
+      ownerId: p.ownerId,
+      isOwner: p.ownerId === user.id,
+      coverImageProxyUrl: p.coverImageS3Key
+        ? `/api/library/packs/${encodeURIComponent(p.id)}/cover?v=${encodeURIComponent(p.coverImageS3Key)}`
+        : p.coverImageUrl ?? null,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      childPackCount: p._count.children,
+      sampleCount: p._count.packSamples,
     })),
     samples: samples.map((ps) => {
       const content = ps.sample;
@@ -383,7 +367,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
 
 libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
   const user = c.get("user");
-  const { name, parentId, isPublic, priceTokens, defaultSampleTokens } = c.req.valid("json");
+  const { name, parentId, isPublic, priceTokens, defaultSampleTokens, coverImageUrl } = c.req.valid("json");
 
   if (parentId) {
     await requireOwnedPack(parentId, user.id);
@@ -397,6 +381,7 @@ libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
       isPublic,
       priceTokens,
       defaultSampleTokens,
+      ...(coverImageUrl && { coverImageUrl }),
     },
     select: {
       id: true,
@@ -417,7 +402,7 @@ libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
 libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const { name, parentId, coverImageS3Key, isPublic, priceTokens, defaultSampleTokens } = c.req.valid("json");
+  const { name, parentId, coverImageS3Key, coverImageUrl, isPublic, priceTokens, defaultSampleTokens } = c.req.valid("json");
 
   await requireOwnedPack(id, user.id);
 
@@ -435,6 +420,7 @@ libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) =
       ...(name ? { name: normalizeName(name) } : {}),
       ...(parentId !== undefined ? { parentId } : {}),
       ...(coverImageS3Key !== undefined ? { coverImageS3Key } : {}),
+      ...(coverImageUrl !== undefined ? { coverImageUrl } : {}),
       ...(isPublic !== undefined ? { isPublic } : {}),
       ...(priceTokens !== undefined ? { priceTokens } : {}),
       ...(defaultSampleTokens !== undefined ? { defaultSampleTokens } : {}),
@@ -445,6 +431,7 @@ libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) =
       ownerId: true,
       parentId: true,
       coverImageS3Key: true,
+      coverImageUrl: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -491,6 +478,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
         name: true,
         ownerId: true,
         coverImageS3Key: true,
+        coverImageUrl: true,
         createdAt: true,
         updatedAt: true,
         _count: { select: { children: true, packSamples: true } },
@@ -529,7 +517,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
       isOwner: p.ownerId === user.id,
       coverImageProxyUrl: p.coverImageS3Key
         ? `/api/library/packs/${encodeURIComponent(p.id)}/cover?v=${encodeURIComponent(p.coverImageS3Key)}`
-        : null,
+        : p.coverImageUrl ?? null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       childPackCount: p._count.children,
@@ -593,6 +581,7 @@ libraryApp.get("/packs/:id", async (c) => {
       name: true,
       ownerId: true,
       coverImageS3Key: true,
+      coverImageUrl: true,
       isPublic: true,
       priceTokens: true,
       defaultSampleTokens: true,
@@ -604,12 +593,13 @@ libraryApp.get("/packs/:id", async (c) => {
     throw new HTTPException(404, { message: "Pack not found" });
   }
 
-  let coverImageUrl: string | null = null;
+  let coverImageUrl: string | null = pack.coverImageUrl;
   let coverImageProxyUrl: string | null = null;
   if (pack.coverImageS3Key) {
     coverImageUrl = await getPresignedDownloadUrl(pack.coverImageS3Key, 3600);
-    // Include coverImageS3Key as cache-buster so URL changes when cover updates; browser otherwise serves cached old image
     coverImageProxyUrl = `/api/library/packs/${encodeURIComponent(id)}/cover?v=${encodeURIComponent(pack.coverImageS3Key)}`;
+  } else if (pack.coverImageUrl) {
+    coverImageProxyUrl = pack.coverImageUrl;
   }
 
   return c.json({
