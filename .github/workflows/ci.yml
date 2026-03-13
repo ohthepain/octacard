@@ -41,6 +41,8 @@ jobs:
 
       - name: Generate Prisma client
         run: pnpm db:generate
+        env:
+          DATABASE_URL: postgresql://localhost:5432/dummy
 
       - name: TypeScript check
         run: pnpm exec tsc --noEmit
