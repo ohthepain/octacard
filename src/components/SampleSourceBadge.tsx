@@ -45,10 +45,11 @@ export function SampleSourceBadge({
   const requestNavigate = useNavigateRequestStore((s) => s.requestNavigate);
 
   const isRemote = source.type === "remote";
+  const sampleId = isRemote ? source.sampleId : null;
   const { data: sampleData, isLoading } = useQuery({
-    queryKey: ["sample", source.type === "remote" ? source.sampleId : null],
-    queryFn: () => getSample(source.sampleId),
-    enabled: isRemote,
+    queryKey: ["sample", sampleId],
+    queryFn: () => getSample(sampleId!),
+    enabled: !!sampleId,
   });
 
   const handleClick = useCallback(
@@ -123,7 +124,7 @@ export function SampleSourceBadge({
     : "Sample source";
 
   if (useLink && isRemote && (packId ?? sampleData?.packId)) {
-    const targetPackId = packId ?? sampleData?.packId!;
+    const targetPackId = (packId ?? sampleData?.packId) as string;
     return (
       <Link
         to="/"

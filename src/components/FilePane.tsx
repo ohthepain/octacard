@@ -1058,7 +1058,7 @@ export const FilePane = ({
 
     return () => {
       cancelled = true;
-      timeouts.forEach((timeout) => clearTimeout(timeout));
+      timeouts.forEach((timeout) => { clearTimeout(timeout); });
     };
   }, [expandAllInPack, folderViewRoot, currentRootPath, fileTree, loadDirectory, isRestoringExpanded, isSearchingFolders]);
 
