@@ -1,4 +1,4 @@
-import { User, LogIn, LogOut, Scale, ToggleLeft, Shield, Database } from "lucide-react";
+import { LogIn, LogOut, Scale, ToggleLeft, Shield, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,28 +20,28 @@ export function UserMenu() {
   const setDevMode = useAppOptionsStore((s) => s.setDevMode);
   const openCacheDebug = useCacheDebugStore((s) => s.open);
 
-  if (isPending) {
-    return (
-      <Button variant="ghost" size="icon" className="rounded-full" disabled>
-        <User className="h-5 w-5" />
-      </Button>
-    );
-  }
-
   const user = session?.user;
-  const initials = user?.name
-    ? user.name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : user?.email?.[0]?.toUpperCase() ?? "?";
+  const initials = isPending
+    ? "…"
+    : user?.name
+      ? user.name
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase()
+          .slice(0, 2)
+      : user?.email?.[0]?.toUpperCase() ?? "?";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label="User menu" data-testid="user-menu">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-full"
+          aria-label="User menu"
+          data-testid="user-menu"
+        >
           <Avatar className="h-8 w-8">
             <AvatarImage src={user?.image ?? undefined} alt={user?.name ?? ""} />
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>

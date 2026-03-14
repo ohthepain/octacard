@@ -259,10 +259,12 @@ function JobDetailPanel({
   const [data, setData] = useState<JobDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [showAudioPlayer, setShowAudioPlayer] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
     setLoading(true);
+    setShowAudioPlayer(false);
     getAdminQueueJobDetail(queueName, jobId)
       .then(setData)
       .catch((err) => {
@@ -304,12 +306,31 @@ function JobDetailPanel({
           </div>
         ) : data ? (
           <>
-            {data.job.data && typeof data.job.data === "object" && "sampleId" in data.job.data && "s3Key" in data.job.data && (
-              <JobDetailAudioPlayer
-                sampleId={(data.job.data as { sampleId: string }).sampleId}
-                filename={filenameFromS3Key((data.job.data as { s3Key: string }).s3Key)}
-              />
-            )}
+            {data.job.data &&
+              typeof data.job.data === "object" &&
+              "sampleId" in data.job.data &&
+              "s3Key" in data.job.data &&
+              (showAudioPlayer ? (
+                <JobDetailAudioPlayer
+                  sampleId={(data.job.data as { sampleId: string }).sampleId}
+                  filename={filenameFromS3Key((data.job.data as { s3Key: string }).s3Key)}
+                />
+              ) : (
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAudioPlayer(true)}
+                    className="w-full"
+                  >
+                    <Play className="h-4 w-4 mr-2" />
+                    Load audio preview
+                  </Button>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Waveform and playback load on demand to keep the dashboard responsive.
+                  </p>
+                </div>
+              ))}
             <div>
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                 Job arguments (input)

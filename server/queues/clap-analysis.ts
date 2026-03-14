@@ -10,6 +10,7 @@ const QUEUE_OPTIONS = {
   retryLimit: 2,
   retryDelay: 5,
   retryBackoff: true,
+  expireInSeconds: 300,
 } as const;
 
 export async function ensureClapQueue(): Promise<void> {
@@ -29,5 +30,5 @@ export async function enqueueClapAnalysis(
   s3Key: string,
 ): Promise<string | null> {
   await ensureClapQueue();
-  return boss.send(CLAP_QUEUE, { sampleId, s3Key });
+  return boss.send(CLAP_QUEUE, { sampleId, s3Key }, { expireInSeconds: 300 });
 }

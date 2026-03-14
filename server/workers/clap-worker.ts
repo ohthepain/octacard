@@ -26,6 +26,7 @@ import {
 } from "./worker-state.js";
 
 const CLAP_QUEUE = "clap-analysis";
+const CONCURRENCY = Number(process.env.CLAP_WORKER_CONCURRENCY ?? 1);
 const MIN_TAXONOMY_CONFIDENCE = Number(
   process.env.ANALYSIS_MIN_TAXONOMY_CONFIDENCE ?? 0.2,
 );
@@ -111,57 +112,60 @@ async function runClapAnalysis(sampleId: string, s3Key: string): Promise<void> {
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.sampleEmbedding.upsert({
-        where: { sampleId_model: { sampleId, model: "clap" } },
-        create: {
-          sampleId,
-          model: "clap",
-          modelVersion: "v1",
-          dimensions: 512,
-          vector: embeddingBuffer,
-        },
-        update: {
-          vector: embeddingBuffer,
-          modelVersion: "v1",
-        },
-      });
-
-      await tx.sampleAnnotation.deleteMany({
-        where: { sampleId, source: "clap" },
-      });
-
-      for (const ann of annotations) {
-        await tx.sampleAnnotation.upsert({
-          where: {
-            sampleId_taxonomyValueId: {
-              sampleId,
-              taxonomyValueId: ann.taxonomyValueId,
-            },
-          },
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.sampleEmbedding.upsert({
+          where: { sampleId_model: { sampleId, model: "clap" } },
           create: {
             sampleId,
-            taxonomyValueId: ann.taxonomyValueId,
-            confidence: ann.confidence,
-            source: ann.source,
-            rank: ann.rank,
+            model: "clap",
+            modelVersion: "v1",
+            dimensions: 512,
+            vector: embeddingBuffer,
           },
           update: {
-            confidence: ann.confidence,
-            source: ann.source,
-            rank: ann.rank,
+            vector: embeddingBuffer,
+            modelVersion: "v1",
           },
         });
-      }
 
-      await tx.sample.update({
-        where: { id: sampleId },
-        data: {
-          analysisStatus: "READY",
-          analysisError: null,
-        },
-      });
-    });
+        await tx.sampleAnnotation.deleteMany({
+          where: { sampleId, source: "clap" },
+        });
+
+        for (const ann of annotations) {
+          await tx.sampleAnnotation.upsert({
+            where: {
+              sampleId_taxonomyValueId: {
+                sampleId,
+                taxonomyValueId: ann.taxonomyValueId,
+              },
+            },
+            create: {
+              sampleId,
+              taxonomyValueId: ann.taxonomyValueId,
+              confidence: ann.confidence,
+              source: ann.source,
+              rank: ann.rank,
+            },
+            update: {
+              confidence: ann.confidence,
+              source: ann.source,
+              rank: ann.rank,
+            },
+          });
+        }
+
+        await tx.sample.update({
+          where: { id: sampleId },
+          data: {
+            analysisStatus: "READY",
+            analysisError: null,
+          },
+        });
+      },
+      { timeout: 60_000 },
+    );
   } finally {
     try {
       fs.unlinkSync(tmpFile);
@@ -179,7 +183,7 @@ export function startClapWorker(): string {
   boss
     .work<{ sampleId: string; s3Key: string }>(
       CLAP_QUEUE,
-      { localConcurrency: 1 },
+      { localConcurrency: CONCURRENCY },
       async (jobs) => {
         for (const job of jobs) {
           const { sampleId, s3Key } = job.data;

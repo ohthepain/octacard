@@ -78,6 +78,19 @@ const createSampleFromContentSchema = z.object({
   credits: z.number().int().min(0).default(0),
 });
 
+const createSampleFromContentItemSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  contentHash: z.string().trim().length(64),
+  contentType: z.string().trim().min(1),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  credits: z.number().int().min(0).default(0),
+});
+
+const createSampleFromContentBatchSchema = z.object({
+  packId: z.string().trim().min(1),
+  samples: z.array(createSampleFromContentItemSchema).min(1).max(100),
+});
+
 function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -913,6 +926,92 @@ libraryApp.post("/samples/from-content", zValidator("json", createSampleFromCont
     201,
   );
 });
+
+libraryApp.post(
+  "/samples/from-content-batch",
+  zValidator("json", createSampleFromContentBatchSchema),
+  async (c) => {
+    const user = c.get("user");
+    const { packId, samples } = c.req.valid("json");
+    const pack = await requireOwnedPack(packId, user.id);
+
+    const results: Array<{
+      id: string;
+      name: string;
+      packId: string;
+      ownerId: string;
+      credits: number;
+      sizeBytes: number | null;
+      contentType: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }> = [];
+
+    for (const { name, contentHash, contentType, sizeBytes, credits } of samples) {
+      const isAudio = isAudioContentType(contentType);
+      const ext = contentTypeToExt(contentType);
+      const s3Key = `samples/${contentHash}.${ext}`;
+
+      const created = await prisma.sample.upsert({
+        where: { id: contentHash },
+        create: {
+          id: contentHash,
+          s3Key,
+          contentType,
+          sizeBytes: sizeBytes ?? null,
+          analysisStatus: isAudio ? "PENDING" : "READY",
+        },
+        update: {},
+      });
+
+      if (isAudio && (created.analysisStatus === "PENDING" || created.analysisStatus === "FAILED")) {
+        try {
+          const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
+          console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error("[library] Failed to enqueue sample analysis:", err);
+          await prisma.sample.update({
+            where: { id: created.id },
+            data: {
+              analysisStatus: "FAILED",
+              analysisError: `Failed to queue analysis: ${message}`,
+            },
+          });
+        }
+      }
+
+      const ps = await prisma.packSample.upsert({
+        where: { packId_sampleId: { packId: pack.id, sampleId: contentHash } },
+        create: {
+          packId: pack.id,
+          sampleId: contentHash,
+          name: normalizeName(name),
+          ownerId: user.id,
+          credits,
+        },
+        update: {},
+        include: {
+          sample: { select: { sizeBytes: true, contentType: true } },
+        },
+      });
+
+      results.push({
+        id: ps.sampleId,
+        name: ps.name,
+        packId: ps.packId,
+        ownerId: ps.ownerId,
+        credits: ps.credits,
+        sizeBytes: ps.sample?.sizeBytes ?? null,
+        contentType: ps.sample?.contentType ?? "application/octet-stream",
+        createdAt: ps.createdAt,
+        updatedAt: ps.updatedAt,
+      });
+    }
+
+    return c.json({ created: results.length, samples: results }, 201);
+  },
+);
 
 libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), async (c) => {
   const user = c.get("user");

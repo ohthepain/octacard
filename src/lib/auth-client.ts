@@ -10,6 +10,10 @@ export const authClient = createAuthClient({
     credentials: "include",
     headers: {
       "X-Client-Version": appVersion,
+      // Bypass ngrok free-tier interstitial so OAuth and API requests reach the server
+      ...(typeof window !== "undefined" && window.location.hostname.includes("ngrok")
+        ? { "ngrok-skip-browser-warning": "1" }
+        : {}),
     },
   },
 });

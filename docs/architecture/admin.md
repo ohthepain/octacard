@@ -32,3 +32,10 @@ Custom admin panel for pg-boss job queues (replaces BullBoard).
 | Error message + stack | pg-boss | Root cause |
 | Worker last activity | worker-state | Liveness |
 | Sample analysisStatus, analysisError | DB | Consistency check |
+
+### Worker Concurrency
+
+Each API process runs Essentia and CLAP workers. If you see many active jobs (e.g. 6 CLAP, 4 Essentia), multiple processes are likely running workers (e.g. `pnpm run dev` plus `pnpm run worker:essentia` in another terminal).
+
+- **Single process**: Use `pnpm run dev` only. Concurrency: Essentia 1 (dev) / 2 (prod), CLAP 1.
+- **Separate workers**: Use `pnpm run dev:no-workers` for the API, then run `pnpm run worker:essentia` and `pnpm run worker:clap` in separate terminals. Override with `ESSENTIA_WORKER_CONCURRENCY=1` and `CLAP_WORKER_CONCURRENCY=1` if needed.

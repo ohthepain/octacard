@@ -20,7 +20,7 @@ import {
   deletePack,
   checkSamplesExist,
   getSampleUploadUrlByContent,
-  createSampleFromContent,
+  createSamplesFromContentBatch,
   fetchUnsplashRandomPhoto,
 } from "@/lib/remote-library";
 import { computeAudioContentHash } from "@/lib/content-hash";
@@ -579,17 +579,16 @@ export function CreatePackDialog({
             total: filesWithHashes.length,
             phase: "Creating file records…",
           });
-          for (let i = 0; i < filesWithHashes.length; i++) {
-            const item = filesWithHashes[i];
-            await createSampleFromContent({
-              packId: pack.id,
+          await createSamplesFromContentBatch({
+            packId: pack.id,
+            samples: filesWithHashes.map((item) => ({
               name: item.name,
               contentHash: item.contentHash,
               contentType: item.contentType,
               sizeBytes: item.file.size,
               credits: defaultSampleTokens,
-            });
-          }
+            })),
+          });
         }
       }
 
