@@ -277,6 +277,18 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
     });
   };
 
+  const handlePackDeleted = (packId: string) => {
+    setEditDialogOpen(false);
+    setEditPackId(null);
+    if (currentPackId === packId) {
+      handleClosePack();
+    }
+    searchRemoteLibrary({ q: query, scope, types: mode, limit: 100 }).then((result) => {
+      setPacks(result.packs);
+      setSamples(result.samples);
+    });
+  };
+
   const isPackView = currentPackId !== null;
 
   return (
@@ -649,6 +661,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
           editPackId === currentPackId && packDetails?.coverImageUrl ? packDetails.coverImageUrl : undefined
         }
         onCreated={handlePackEdited}
+        onDeleted={handlePackDeleted}
       />
       <SampleAnalysisDialog
         open={analysisDialogOpen}

@@ -4,7 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../types.js";
 import { prisma } from "../db.js";
-import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl } from "../s3.js";
+import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl, deleteFromS3 } from "../s3.js";
 import { enqueueEssentiaAnalysis } from "../queues/essentia-analysis.js";
 import { sampleSearchApp } from "./sample-search.js";
 import { tracedFetch } from "../external-api-trace.js";
@@ -439,6 +439,109 @@ libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) =
   });
 
   return c.json(pack);
+});
+
+libraryApp.delete("/packs/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      ownerId: true,
+      isPublic: true,
+      coverImageS3Key: true,
+    },
+  });
+
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
+
+  if (pack.ownerId !== user.id) {
+    throw new HTTPException(403, { message: "Only the owner can delete this pack" });
+  }
+
+  if (pack.isPublic) {
+    throw new HTTPException(400, {
+      message:
+        "This pack must be private before it can be deleted. Make it private first, then try again.",
+    });
+  }
+
+  const tree = await loadPackTree(pack.id);
+  const packIds = Array.from(tree.keys());
+  const packSamplesInTree = await prisma.packSample.findMany({
+    where: { packId: { in: packIds } },
+    select: { sampleId: true },
+  });
+  const sampleIdsInTree = [...new Set(packSamplesInTree.map((ps) => ps.sampleId))];
+
+  if (sampleIdsInTree.length > 0) {
+    const otherPurchasers = await prisma.sampleCollection.findFirst({
+      where: {
+        sampleId: { in: sampleIdsInTree },
+        userId: { not: pack.ownerId },
+      },
+      select: { userId: true },
+    });
+    if (otherPurchasers) {
+      throw new HTTPException(400, {
+        message:
+          "This pack cannot be deleted because other users have purchased samples from it.",
+      });
+    }
+  }
+
+  const packsWithCovers = await prisma.pack.findMany({
+    where: { id: { in: packIds }, coverImageS3Key: { not: null } },
+    select: { coverImageS3Key: true },
+  });
+
+  for (const p of packsWithCovers) {
+    if (p.coverImageS3Key) {
+      try {
+        await deleteFromS3(p.coverImageS3Key);
+      } catch (err) {
+        console.warn("[library] Failed to delete pack cover from S3:", p.coverImageS3Key, err);
+      }
+    }
+  }
+
+  const samplesOnlyInTree = await Promise.all(
+    sampleIdsInTree.map(async (sampleId) => {
+      const inOtherPacks = await prisma.packSample.findFirst({
+        where: {
+          sampleId,
+          packId: { notIn: packIds },
+        },
+        select: { sampleId: true },
+      });
+      return inOtherPacks ? null : sampleId;
+    }),
+  );
+  const orphanSampleIds = samplesOnlyInTree.filter((id): id is string => id !== null);
+
+  await prisma.pack.delete({ where: { id } });
+
+  for (const sampleId of orphanSampleIds) {
+
+    const sample = await prisma.sample.findUnique({
+      where: { id: sampleId },
+      select: { s3Key: true },
+    });
+    if (sample) {
+      try {
+        await deleteFromS3(sample.s3Key);
+      } catch (err) {
+        console.warn("[library] Failed to delete sample from S3:", sample.s3Key, err);
+      }
+      await prisma.sample.delete({ where: { id: sampleId } });
+    }
+  }
+
+  return c.json({ ok: true }, 200);
 });
 
 libraryApp.post("/packs/:id/cover-upload-url", zValidator("json", packCoverUploadSchema), async (c) => {

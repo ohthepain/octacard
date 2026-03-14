@@ -364,6 +364,7 @@ export const FilePane = ({
   const [createPackFolderPath, setCreatePackFolderPath] = useState("");
   const [createPackEditId, setCreatePackEditId] = useState<string | null>(null);
   const [folderViewRoot, setFolderViewRoot] = useState<string | null>(null);
+  const [expandAllInPack, setExpandAllInPack] = useState(false);
   const [folderViewCoverUrl, setFolderViewCoverUrl] = useState<string | null>(null);
   const [folderViewPackName, setFolderViewPackName] = useState<string | null>(null);
   const [folderViewPackId, setFolderViewPackId] = useState<string | null>(null);
@@ -558,6 +559,7 @@ export const FilePane = ({
   // Clear folder view and pack cover cache when root path changes (e.g. volume switch)
   useEffect(() => {
     setFolderViewRoot(null);
+    setExpandAllInPack(false);
     setFolderViewSampleStats(null);
     packManifestCacheRef.current.clear();
     setPackCoverCache((prev) => {
@@ -971,6 +973,94 @@ export const FilePane = ({
       });
     };
   }, [pendingExpandedFolders, loadDirectory, isRestoringExpanded, isSearchingFolders]); // Include fileTree so restoration can run once async directory load completes
+
+  // When opening a pack, expand all folders so samples are visible for quick auditioning
+  useEffect(() => {
+    if (
+      !expandAllInPack ||
+      !folderViewRoot ||
+      currentRootPath !== folderViewRoot ||
+      fileTreeRef.current.length === 0 ||
+      isRestoringExpanded ||
+      isSearchingRef.current ||
+      isSearchingFolders
+    )
+      return;
+
+    let cancelled = false;
+    const timeouts: NodeJS.Timeout[] = [];
+
+    const expandAllFolders = async () => {
+      setIsRestoringExpanded(true);
+      const processNodes = async (nodesToProcess: FileNode[], parentLoaded: boolean = true): Promise<void> => {
+        if (cancelled) return;
+
+        if (!parentLoaded) {
+          await new Promise<void>((resolve) => {
+            const timeout = setTimeout(resolve, 100);
+            timeouts.push(timeout);
+          });
+        }
+
+        if (cancelled) return;
+
+        for (const node of nodesToProcess) {
+          if (cancelled) return;
+
+          if (node.type === "folder") {
+            setExpandedFolders((prev) => {
+              const newSet = new Set(prev);
+              newSet.add(node.id);
+              return newSet;
+            });
+
+            if (!node.loaded) {
+              await loadDirectory(node.path, node.id);
+              if (cancelled) return;
+
+              await new Promise<void>((resolve) => {
+                const timeout = setTimeout(resolve, 100);
+                timeouts.push(timeout);
+              });
+            }
+
+            if (cancelled) return;
+
+            const updatedTree = fileTreeRef.current;
+            const findNode = (treeNodes: FileNode[], targetId: string): FileNode | null => {
+              for (const n of treeNodes) {
+                if (n.id === targetId) return n;
+                if (n.children) {
+                  const found = findNode(n.children, targetId);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+            const updatedNode = findNode(updatedTree, node.id);
+
+            if (updatedNode?.children && updatedNode.children.length > 0) {
+              await processNodes(updatedNode.children, true);
+            }
+          }
+        }
+      };
+
+      await processNodes(fileTreeRef.current, true);
+
+      if (!cancelled) {
+        setExpandAllInPack(false);
+        setIsRestoringExpanded(false);
+      }
+    };
+
+    expandAllFolders();
+
+    return () => {
+      cancelled = true;
+      timeouts.forEach((timeout) => clearTimeout(timeout));
+    };
+  }, [expandAllInPack, folderViewRoot, currentRootPath, fileTree, loadDirectory, isRestoringExpanded, isSearchingFolders]);
 
   // Helper to get flat list of nodes for shift-click range selection
   const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
@@ -3982,7 +4072,10 @@ export const FilePane = ({
                   <>
                     <ContextMenuItem
                       onSelect={() => {
+                        const hasPackJson =
+                          node.children?.some((c) => c.name === "pack.json") || packJsonCache.get(node.path) === true;
                         setFolderViewRoot(node.path);
+                        setExpandAllInPack(!!hasPackJson);
                         navigateToFolder(node.path);
                       }}
                     >
@@ -4491,6 +4584,7 @@ export const FilePane = ({
                   onClose={() => {
                     const parent = dirname(folderViewRoot) || "/";
                     setFolderViewRoot(null);
+                    setExpandAllInPack(false);
                     navigateToFolder(parent);
                   }}
                   isOwner={!!folderViewPackId}

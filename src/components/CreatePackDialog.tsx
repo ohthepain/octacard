@@ -17,6 +17,7 @@ import {
   getPack,
   getPackCoverUploadUrl,
   updatePack,
+  deletePack,
   checkSamplesExist,
   getSampleUploadUrlByContent,
   createSampleFromContent,
@@ -26,7 +27,17 @@ import { computeAudioContentHash } from "@/lib/content-hash";
 import { fileSystemService } from "@/lib/fileSystem";
 import { useSession } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { Loader2, ImagePlus, Dices } from "lucide-react";
+import { Loader2, ImagePlus, Dices, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
@@ -111,6 +122,8 @@ interface CreatePackDialogProps {
   editPackId?: string | null;
   /** Pre-loaded cover URL when editing (e.g. from pack view) - avoids async fetch delay */
   initialCoverImageUrl?: string | null;
+  /** Called when pack is successfully deleted (only in edit mode) */
+  onDeleted?: (packId: string) => void;
 }
 
 export function CreatePackDialog({
@@ -122,6 +135,7 @@ export function CreatePackDialog({
   onCreated,
   editPackId,
   initialCoverImageUrl,
+  onDeleted,
 }: CreatePackDialogProps) {
   const { data: session } = useSession();
   const isEditMode = Boolean(editPackId);
@@ -144,6 +158,8 @@ export function CreatePackDialog({
     photographerUsername?: string;
     downloadLocation?: string;
   } | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const reset = useCallback(() => {
     setName(defaultName);
@@ -163,11 +179,30 @@ export function CreatePackDialog({
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      if (!next) reset();
+      if (!next) {
+        reset();
+        setDeleteConfirmOpen(false);
+      }
       onOpenChange(next);
     },
     [onOpenChange, reset],
   );
+
+  const handleDelete = useCallback(async () => {
+    if (!editPackId || createAsCopy) return;
+    setDeleting(true);
+    try {
+      await deletePack(editPackId);
+      toast.success("Pack deleted");
+      handleOpenChange(false);
+      onDeleted?.(editPackId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete pack");
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
+  }, [editPackId, createAsCopy, handleOpenChange, onDeleted]);
 
   useEffect(() => {
     if (open) setName(defaultName);
@@ -796,7 +831,19 @@ export function CreatePackDialog({
             </div>
           )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-wrap gap-2 sm:gap-2">
+          {isEditMode && !createAsCopy && editPackId && (
+            <Button
+              type="button"
+              variant="destructive"
+              className="mr-auto"
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={loading}
+              aria-label="Delete pack"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
@@ -816,6 +863,37 @@ export function CreatePackDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete pack?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the pack and all its files from the server. Only private packs with no
+              purchasers can be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

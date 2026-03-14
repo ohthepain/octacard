@@ -307,6 +307,27 @@ export async function updatePack(
   }
 }
 
+/**
+ * Delete a pack from the server. Only private packs with no other purchasers can be deleted.
+ * @throws Error with message describing why deletion failed (e.g. pack must be private, other users have purchased)
+ */
+export async function deletePack(packId: string): Promise<void> {
+  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let message: string | null = null;
+    try {
+      const json = JSON.parse(text) as { message?: string };
+      if (json.message?.trim()) message = json.message.trim();
+    } catch {
+      if (text.trim()) message = text.trim();
+    }
+    throw new Error(message ?? `Failed to delete pack (${res.status})`);
+  }
+}
+
 export async function getPack(packId: string): Promise<RemotePackDetails> {
   const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}`);
   if (!res.ok) {
