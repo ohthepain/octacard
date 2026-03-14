@@ -60,13 +60,45 @@ export async function getAdminQueueJobs(
   return res.json() as Promise<{ jobs: JobWithMetadata[] }>;
 }
 
+export interface JobDetailSample {
+  analysisStatus: string;
+  analysisError: string | null;
+  durationMs: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+}
+
+export interface JobDetailAnalysisResults {
+  attributes: Array<{ key: string; value: number }>;
+  annotations: Array<{
+    taxonomyValueId: string;
+    attributeKey: string;
+    valueKey: string;
+    confidence: number;
+    source: string;
+    rank: number | null;
+  }>;
+  embeddings: Array<{
+    model: string;
+    modelVersion: string;
+    dimensions: number;
+    vector: number[];
+  }>;
+}
+
+export interface JobDetailResponse {
+  job: JobWithMetadata;
+  sample: JobDetailSample | null;
+  analysisResults: JobDetailAnalysisResults | null;
+}
+
 export async function getAdminQueueJobDetail(
   queueName: string,
   jobId: string,
-): Promise<{ job: JobWithMetadata; sample: { analysisStatus: string; analysisError: string | null } | null }> {
+): Promise<JobDetailResponse> {
   const res = await apiFetch(`/api/admin/queues/${queueName}/jobs/${jobId}`);
   if (!res.ok) throw new Error(`Failed to load job (${res.status})`);
-  return res.json() as Promise<{ job: JobWithMetadata; sample: { analysisStatus: string; analysisError: string | null } | null }>;
+  return res.json() as Promise<JobDetailResponse>;
 }
 
 export async function retryAdminQueueJob(queueName: string, jobId: string): Promise<void> {

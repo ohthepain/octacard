@@ -275,13 +275,14 @@ const Index = () => {
   }, [search?.openPack, navigate]);
 
   // Handle navigation requests from SampleSourceBadge (Cache, Stack)
+  // Pack: OK to switch to global (user can always see server)
+  // Folder: only navigate when already in local (don't switch to local - user may not have folder access)
   useEffect(() => {
     if (!pendingRequest) return;
     if (pendingRequest.type === "pack") {
       setLibraryMode("global");
       setOpenPackId(pendingRequest.packId);
-    } else if (pendingRequest.type === "folder") {
-      setLibraryMode("local");
+    } else if (pendingRequest.type === "folder" && libraryMode === "local") {
       if (pendingRequest.paneType === "source") {
         setRequestedSourcePath(pendingRequest.path);
       } else {
@@ -289,7 +290,7 @@ const Index = () => {
       }
     }
     clearRequest();
-  }, [pendingRequest, clearRequest]);
+  }, [pendingRequest, clearRequest, libraryMode]);
 
   const tourActive = useReleaseTourStore((s) => s.isActive);
   const requestedDemoPaths = useReleaseTourStore((s) => s.requestedDemoPaths);

@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Loader2,
   RefreshCw,
-  ChevronRight,
   AlertCircle,
   CheckCircle2,
   Clock,
+  Play,
+  Square,
   Trash2,
   XCircle,
 } from "lucide-react";
+import WaveSurfer from "wavesurfer.js";
+import { getOrFetchRemoteSample } from "@/lib/audition-cache";
+import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { SampleSourceBadge } from "@/components/SampleSourceBadge";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,12 +29,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSession, isAdminOrSuperadmin } from "@/lib/auth-client";
@@ -43,6 +41,7 @@ import {
   type QueueInfo,
   type WorkerStatus,
   type JobWithMetadata,
+  type JobDetailResponse,
 } from "@/lib/admin-queues";
 
 const POLL_INTERVAL_MS = 5000;
@@ -51,6 +50,135 @@ const JOB_STATES = ["created", "retry", "active", "completed", "failed"] as cons
 function filenameFromS3Key(s3Key: string): string {
   const parts = s3Key.split("/");
   return parts[parts.length - 1] ?? s3Key;
+}
+
+const REMOTE_PREFIX = "remote://sample/";
+
+function JobDetailAudioPlayer({ sampleId, filename }: { sampleId: string; filename: string }) {
+  const waveformRef = useRef<HTMLDivElement>(null);
+  const wavesurferRef = useRef<WaveSurfer | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const path = `${REMOTE_PREFIX}${sampleId}`;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const { objectUrl } = await getOrFetchRemoteSample(sampleId, filename);
+        if (cancelled) return;
+
+        const decodableUrl = await ensureAudioDecodable(objectUrl, path);
+        if (cancelled || !waveformRef.current) return;
+
+        const ws = WaveSurfer.create({
+          container: waveformRef.current,
+          waveColor: "#94a3b8",
+          progressColor: "#64748b",
+          cursorColor: "#64748b",
+          barWidth: 2,
+          barRadius: 2,
+          barGap: 1,
+          height: 56,
+          backend: "MediaElement",
+          mediaControls: false,
+          interact: true,
+        });
+
+        wavesurferRef.current = ws;
+
+        ws.on("ready", () => {
+          if (cancelled) return;
+          const width = waveformRef.current?.clientWidth ?? 300;
+          const dur = ws.getDuration();
+          if (dur > 0) ws.zoom(Math.max(1, width / dur));
+          setIsLoading(false);
+        });
+
+        ws.on("play", () => {
+          if (!cancelled) setIsPlaying(true);
+        });
+        ws.on("pause", () => {
+          if (!cancelled) setIsPlaying(false);
+        });
+        ws.on("finish", () => {
+          if (!cancelled) setIsPlaying(false);
+        });
+
+        ws.on("error", (err) => {
+          if (cancelled) return;
+          setError(err.message || "Failed to load");
+          setIsLoading(false);
+        });
+
+        await ws.load(decodableUrl);
+      } catch (err) {
+        if (!cancelled) {
+          setError(String(err));
+          setIsLoading(false);
+        }
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+      if (wavesurferRef.current) {
+        try {
+          wavesurferRef.current.pause();
+          wavesurferRef.current.destroy();
+        } catch {
+          /* ignore */
+        }
+        wavesurferRef.current = null;
+      }
+    };
+  }, [sampleId, filename, path]);
+
+  const handlePlayPause = useCallback(() => {
+    const ws = wavesurferRef.current;
+    if (!ws) return;
+    if (isPlaying) {
+      ws.pause();
+    } else {
+      ws.play();
+    }
+  }, [isPlaying]);
+
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handlePlayPause}
+          disabled={isLoading || !!error}
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            <Square className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+        </Button>
+        <span className="text-xs text-muted-foreground truncate flex-1">{filename}</span>
+      </div>
+      <div
+        ref={waveformRef}
+        className="h-14 min-h-[56px] rounded bg-background/50"
+      />
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+      {isLoading && !error && (
+        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Loading waveform…
+        </div>
+      )}
+    </div>
+  );
 }
 
 function JobCard({
@@ -79,7 +207,7 @@ function JobCard({
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => e.key === "Enter" && onSelect()}
-      className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+      className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
     >
       {stateIcon}
       <div className="min-w-0 flex-1">
@@ -90,7 +218,7 @@ function JobCard({
               filename={filename}
               size="md"
               showFilename={true}
-              useLink={true}
+              useLink={false}
               className="min-w-0"
             />
           ) : (
@@ -109,31 +237,31 @@ function JobCard({
           )}
         </div>
       </div>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
     </div>
   );
 }
 
-function JobDetailDialog({
+const ESSENTIA_GOAL = `Decode audio from S3, extract Essentia features (BPM, loudness, energy, pitch, spectral centroid, zero-crossing rate), infer instrument family/type from metrics, store attributes and annotations. On success, enqueue clap-analysis.`;
+
+const CLAP_GOAL = `Load audio from S3, run CLAP model to produce a 512-dim embedding, run zero-shot classification for style/descriptor/mood taxonomy categories, store embedding and annotations. On success, set analysisStatus READY.`;
+
+function JobDetailPanel({
   queueName,
   jobId,
-  open,
-  onOpenChange,
+  onClose,
+  onRetrySuccess,
 }: {
   queueName: string;
   jobId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onClose: () => void;
+  onRetrySuccess: () => void;
 }) {
-  const [data, setData] = useState<{
-    job: JobWithMetadata;
-    sample: { analysisStatus: string; analysisError: string | null } | null;
-  } | null>(null);
+  const [data, setData] = useState<JobDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
-    if (!open || !jobId) return;
+    if (!jobId) return;
     setLoading(true);
     getAdminQueueJobDetail(queueName, jobId)
       .then(setData)
@@ -143,14 +271,14 @@ function JobDetailDialog({
         });
       })
       .finally(() => setLoading(false));
-  }, [open, queueName, jobId]);
+  }, [queueName, jobId]);
 
   const handleRetry = async () => {
     setRetrying(true);
     try {
       await retryAdminQueueJob(queueName, jobId);
       toast.success("Job retry requested");
-      onOpenChange(false);
+      onRetrySuccess();
     } catch (err) {
       toast.error("Failed to retry", {
         description: err instanceof Error ? err.message : "Unknown error",
@@ -161,66 +289,169 @@ function JobDetailDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Job {jobId}</DialogTitle>
-        </DialogHeader>
+    <div className="flex flex-col h-full min-h-0 border-l bg-muted/30 overflow-hidden">
+      <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b">
+        <h3 className="font-medium text-sm">Job detail</h3>
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close panel">
+          <XCircle className="h-4 w-4" />
+        </Button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-4 space-y-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : data ? (
-          <ScrollArea className="flex-1 pr-4">
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground">Payload</h4>
-                <pre className="mt-1 rounded bg-muted p-3 text-xs overflow-x-auto">
-                  {JSON.stringify(data.job.data, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground">State</h4>
-                <p className="mt-1 text-sm">
-                  {data.job.state} · attempt {data.job.retryCount + 1}/{data.job.retryLimit + 1}
+          <>
+            {data.job.data && typeof data.job.data === "object" && "sampleId" in data.job.data && "s3Key" in data.job.data && (
+              <JobDetailAudioPlayer
+                sampleId={(data.job.data as { sampleId: string }).sampleId}
+                filename={filenameFromS3Key((data.job.data as { s3Key: string }).s3Key)}
+              />
+            )}
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                Job arguments (input)
+              </h4>
+              <pre className="mt-1 rounded bg-muted p-3 text-xs overflow-x-auto">
+                {JSON.stringify(data.job.data, null, 2)}
+              </pre>
+              {data.job.data && typeof data.job.data === "object" && "s3Key" in data.job.data && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  File: {filenameFromS3Key((data.job.data as { s3Key: string }).s3Key)}
                 </p>
-              </div>
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground">Timestamps</h4>
-                <p className="mt-1 text-sm">
-                  created: {data.job.createdOn}
-                  {data.job.startedOn && ` · started: ${data.job.startedOn}`}
-                  {data.job.completedOn && ` · completed: ${data.job.completedOn}`}
-                </p>
-              </div>
-              {data.job.error && (
-                <div>
-                  <h4 className="text-sm font-medium text-destructive">Error</h4>
-                  <pre className="mt-1 rounded bg-destructive/10 p-3 text-xs overflow-x-auto text-destructive">
-                    {data.job.error}
-                  </pre>
-                </div>
-              )}
-              {data.sample && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground">Sample status</h4>
-                  <p className="mt-1 text-sm">
-                    analysisStatus: {data.sample.analysisStatus}
-                    {data.sample.analysisError && ` · error: ${data.sample.analysisError}`}
-                  </p>
-                </div>
-              )}
-              {data.job.state === "failed" && (
-                <Button onClick={handleRetry} disabled={retrying}>
-                  {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  Retry job
-                </Button>
               )}
             </div>
-          </ScrollArea>
+            {(queueName === "essentia-analysis" || queueName === "clap-analysis") && (
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  Job goal
+                </h4>
+                <p className="text-sm">{queueName === "essentia-analysis" ? ESSENTIA_GOAL : CLAP_GOAL}</p>
+              </div>
+            )}
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                State &amp; timestamps
+              </h4>
+              <p className="text-sm">
+                {data.job.state} · attempt {data.job.retryCount + 1}/{data.job.retryLimit + 1}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                created: {data.job.createdOn}
+                {data.job.startedOn && ` · started: ${data.job.startedOn}`}
+                {data.job.completedOn && ` · completed: ${data.job.completedOn}`}
+              </p>
+            </div>
+            {data.sample && (
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  Sample status
+                </h4>
+                <p className="text-sm">
+                  analysisStatus: {data.sample.analysisStatus}
+                  {"durationMs" in data.sample && data.sample.durationMs != null && ` · ${data.sample.durationMs}ms`}
+                  {"sampleRate" in data.sample && data.sample.sampleRate != null && ` · ${data.sample.sampleRate}Hz`}
+                  {"channels" in data.sample && data.sample.channels != null && ` · ${data.sample.channels}ch`}
+                </p>
+                {data.sample.analysisError && (
+                  <p className="mt-1 text-xs text-destructive">{data.sample.analysisError}</p>
+                )}
+              </div>
+            )}
+            {data.analysisResults && (
+              <>
+                {data.analysisResults.attributes.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Essentia attributes (results)
+                    </h4>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Extracted features: BPM, loudness, energy, pitch, spectral centroid, etc.
+                    </p>
+                    <div className="rounded bg-muted p-2 space-y-1">
+                      {data.analysisResults.attributes.map((a) => (
+                        <div key={a.key} className="flex justify-between gap-4 text-xs font-mono">
+                          <span>{a.key}</span>
+                          <span>{typeof a.value === "number" ? a.value.toFixed(4) : String(a.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {data.analysisResults.annotations.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Taxonomy annotations (results)
+                    </h4>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Instrument family/type (essentia) or style/descriptor/mood (clap)
+                    </p>
+                    <div className="rounded bg-muted p-2 space-y-1">
+                      {data.analysisResults.annotations.map((a, i) => (
+                        <div key={`${a.taxonomyValueId}-${i}`} className="flex justify-between gap-4 text-xs">
+                          <span>
+                            {a.attributeKey}: {a.valueKey}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {a.source} · {(a.confidence * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {data.analysisResults.embeddings.length > 0 &&
+                  data.analysisResults.embeddings.map((emb) => (
+                    <div key={emb.model}>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                        {emb.model} embedding (results)
+                      </h4>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        {emb.dimensions} dimensions · model {emb.modelVersion}
+                      </p>
+                      <div className="rounded bg-muted p-2">
+                        <p className="text-xs font-mono text-muted-foreground mb-1">
+                          [{emb.vector.slice(0, 8).map((v) => v.toFixed(4)).join(", ")}
+                          {emb.vector.length > 8 ? ", …" : ""}]
+                        </p>
+                        <details className="mt-1">
+                          <summary className="text-xs cursor-pointer text-muted-foreground hover:text-foreground">
+                            Show all {emb.dimensions} dimensions
+                          </summary>
+                          <pre className="mt-2 text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
+                            {JSON.stringify(
+                              emb.vector.map((v) => Number(v.toFixed(6))),
+                              null,
+                              0,
+                            ).replace(/^\[|\]$/g, "")}
+                          </pre>
+                        </details>
+                      </div>
+                    </div>
+                  ))}
+              </>
+            )}
+            {data.job.error && (
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-destructive mb-1">Error</h4>
+                <pre className="rounded bg-destructive/10 p-3 text-xs overflow-x-auto text-destructive">
+                  {data.job.error}
+                </pre>
+              </div>
+            )}
+            {data.job.state === "failed" && (
+              <Button onClick={handleRetry} disabled={retrying} size="sm">
+                {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Retry job
+              </Button>
+            )}
+          </>
         ) : null}
-      </DialogContent>
-    </Dialog>
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 
@@ -319,7 +550,7 @@ export default function AdminQueues() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container max-w-6xl py-8 px-4">
+      <div className="w-full max-w-[1920px] mx-auto py-8 px-4 lg:px-6">
         <div className="mb-6">
           <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground">
             ← Back to admin
@@ -349,8 +580,8 @@ export default function AdminQueues() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-6 w-full">
+          <div className="space-y-4 lg:col-span-1">
             <h2 className="text-sm font-medium text-muted-foreground">Queues</h2>
             {queues.map((q) => (
               <Card
@@ -369,10 +600,58 @@ export default function AdminQueues() {
                     <CardTitle className="text-base">{q.name}</CardTitle>
                   </CardHeader>
                   <CardContent className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">queued: {q.queuedCount}</Badge>
-                    <Badge variant="default">active: {q.activeCount}</Badge>
-                    <Badge variant="outline">completed: {q.completedCount}</Badge>
-                    <Badge variant="destructive">failed: {q.failedCount}</Badge>
+                    <button
+                      type="button"
+                      className="inline-flex"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedQueue(q.name);
+                        setSelectedState("created");
+                      }}
+                    >
+                      <Badge variant="secondary" className="cursor-pointer hover:opacity-90 transition-opacity">
+                        queued: {q.queuedCount}
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedQueue(q.name);
+                        setSelectedState("active");
+                      }}
+                    >
+                      <Badge variant="default" className="cursor-pointer hover:opacity-90 transition-opacity">
+                        active: {q.activeCount}
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedQueue(q.name);
+                        setSelectedState("completed");
+                      }}
+                    >
+                      <Badge variant="outline" className="cursor-pointer hover:opacity-90 transition-opacity">
+                        completed: {q.completedCount}
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedQueue(q.name);
+                        setSelectedState("failed");
+                      }}
+                    >
+                      <Badge variant="destructive" className="cursor-pointer hover:opacity-90 transition-opacity">
+                        failed: {q.failedCount}
+                      </Badge>
+                    </button>
                   </CardContent>
                 </button>
               </Card>
@@ -400,7 +679,7 @@ export default function AdminQueues() {
             ))}
           </div>
 
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 min-w-0">
             {selectedQueue ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -479,16 +758,28 @@ export default function AdminQueues() {
               <p className="text-muted-foreground py-12">Select a queue to view jobs.</p>
             )}
           </div>
-        </div>
 
-        {selectedQueue && detailJobId && (
-          <JobDetailDialog
-            queueName={selectedQueue}
-            jobId={detailJobId}
-            open={!!detailJobId}
-            onOpenChange={(open) => !open && setDetailJobId(null)}
-          />
-        )}
+          <div className="lg:col-span-3 min-w-0 min-h-[400px] flex flex-col overflow-hidden">
+            {selectedQueue && detailJobId ? (
+              <JobDetailPanel
+                queueName={selectedQueue}
+                jobId={detailJobId}
+                onClose={() => setDetailJobId(null)}
+                onRetrySuccess={() => {
+                  setDetailJobId(null);
+                  void loadJobs();
+                  void loadQueues(true);
+                }}
+              />
+            ) : (
+              <div className="hidden lg:flex h-full rounded-lg border border-dashed bg-muted/20 items-center justify-center p-6">
+                <p className="text-sm text-muted-foreground text-center">
+                  Select a job from the list to view details
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -166,16 +166,92 @@ adminApp.get(
       const jobs = await boss.findJobs(queueName, { id: jobId });
       const job = jobs[0] ?? null;
       if (!job) return c.json({ error: "Job not found" }, 404);
-      let sample: { analysisStatus: string; analysisError: string | null } | null = null;
+      let sample: {
+        analysisStatus: string;
+        analysisError: string | null;
+        durationMs: number | null;
+        sampleRate: number | null;
+        channels: number | null;
+      } | null = null;
+      let analysisResults: {
+        attributes: Array<{ key: string; value: number }>;
+        annotations: Array<{
+          taxonomyValueId: string;
+          attributeKey: string;
+          valueKey: string;
+          confidence: number;
+          source: string;
+          rank: number | null;
+        }>;
+        embeddings: Array<{
+          model: string;
+          modelVersion: string;
+          dimensions: number;
+          vector: number[];
+        }>;
+      } | null = null;
       const data = job.data as { sampleId?: string; s3Key?: string };
       if (data?.sampleId) {
         const s = await prisma.sample.findUnique({
           where: { id: data.sampleId },
-          select: { analysisStatus: true, analysisError: true },
+          select: {
+            analysisStatus: true,
+            analysisError: true,
+            durationMs: true,
+            sampleRate: true,
+            channels: true,
+          },
         });
         sample = s;
+
+        const [attributes, annotationsWithTaxonomy, embeddings] = await Promise.all([
+          prisma.sampleAttribute.findMany({
+            where: { sampleId: data.sampleId },
+            select: { key: true, value: true },
+            orderBy: { key: "asc" },
+          }),
+          prisma.sampleAnnotation.findMany({
+            where: { sampleId: data.sampleId },
+            include: {
+              taxonomyValue: { include: { attribute: true } },
+            },
+            orderBy: { rank: "asc" },
+          }),
+          prisma.sampleEmbedding.findMany({
+            where: { sampleId: data.sampleId },
+            select: { model: true, modelVersion: true, dimensions: true, vector: true },
+          }),
+        ]);
+
+        const vectorToArray = (buf: Buffer | Uint8Array | null): number[] => {
+          if (!buf) return [];
+          const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+          const arr = new Float32Array(b.length / 4);
+          for (let i = 0; i < arr.length; i++) {
+            arr[i] = b.readFloatLE(i * 4);
+          }
+          return Array.from(arr);
+        };
+
+        analysisResults = {
+          attributes: attributes.map((a) => ({ key: a.key, value: a.value })),
+          annotations: annotationsWithTaxonomy.map((a) => ({
+            taxonomyValueId: a.taxonomyValueId,
+            attributeKey: a.taxonomyValue.attribute.key,
+            valueKey: a.taxonomyValue.key,
+            confidence: a.confidence,
+            source: a.source,
+            rank: a.rank,
+          })),
+          embeddings: embeddings.map((e) => ({
+            model: e.model,
+            modelVersion: e.modelVersion,
+            dimensions: e.dimensions,
+            vector: vectorToArray(e.vector),
+          })),
+        };
       }
-      return c.json({ job, sample });
+      return c.json({ job, sample, analysisResults });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
