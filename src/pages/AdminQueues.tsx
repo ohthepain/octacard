@@ -10,6 +10,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import { SampleSourceBadge } from "@/components/SampleSourceBadge";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,21 +74,43 @@ function JobCard({
     );
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onKeyDown={(e) => e.key === "Enter" && onSelect()}
+      className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
     >
       {stateIcon}
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">{filename}</div>
-        <div className="text-xs text-muted-foreground">
-          {data?.sampleId ?? job.id} · {job.state} · retry {job.retryCount}/{job.retryLimit}
+        <div className="flex items-center gap-2 min-w-0">
+          {data?.sampleId ? (
+            <SampleSourceBadge
+              source={{ type: "remote", sampleId: data.sampleId }}
+              filename={filename}
+              size="md"
+              showFilename={true}
+              useLink={true}
+              className="min-w-0"
+            />
+          ) : (
+            <span className="truncate font-medium">{filename}</span>
+          )}
+        </div>
+        <div className="text-xs text-muted-foreground mt-0.5">
+          {data?.sampleId ? (
+            <>
+              {job.state} · retry {job.retryCount}/{job.retryLimit}
+            </>
+          ) : (
+            <>
+              {job.id} · {job.state} · retry {job.retryCount}/{job.retryLimit}
+            </>
+          )}
         </div>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-    </button>
+    </div>
   );
 }
 

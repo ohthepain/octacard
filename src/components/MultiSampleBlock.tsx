@@ -12,6 +12,7 @@ import { useMultiSampleStore } from "@/stores/multi-sample-store";
 import { usePlayerStore } from "@/stores/player-store";
 import type { StackSample, PaneType } from "@/stores/multi-sample-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
+import { SampleSourceBadge, sampleSourceFromPath } from "@/components/SampleSourceBadge";
 import { cn } from "@/lib/utils";
 
 const AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
@@ -251,13 +252,14 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
       onDrop={handleDrop}
       onClick={handleBlockClick}
     >
-      <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0">
-        <span
-          className="text-xs font-medium text-muted-foreground truncate flex-1 min-w-0"
-          title={sample.name}
-        >
-          {sample.name}
-        </span>
+      <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0 gap-1">
+        <SampleSourceBadge
+          source={sampleSourceFromPath(sample.path, sample.paneType)}
+          filename={sample.name}
+          size="sm"
+          showFilename={true}
+          className="flex-1 min-w-0"
+        />
         <Button
           size="sm"
           variant="ghost"

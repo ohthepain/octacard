@@ -4,7 +4,7 @@ import { RemoteFilePane } from "@/components/RemoteFilePane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch, useNavigate } from "@tanstack/react-router";
 import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -46,6 +46,7 @@ import { useReleaseTourStore } from "@/stores/release-tour-store";
 import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
 import { usePlayerStore } from "@/stores/player-store";
 import { setCurrentPack } from "@/lib/current-pack";
+import { useNavigateRequestStore } from "@/stores/navigate-request-store";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -167,8 +168,13 @@ async function yieldToUi(): Promise<void> {
 
 const Index = () => {
   useUnifiedPlayer();
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as { openPack?: string };
+  const pendingRequest = useNavigateRequestStore((s) => s.pendingRequest);
+  const clearRequest = useNavigateRequestStore((s) => s.clearRequest);
 
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [openPackId, setOpenPackId] = useState<string | null>(null);
   const previewMode = useMultiSampleStore((s) => s.previewMode);
   const setPreviewMode = useMultiSampleStore((s) => s.setPreviewMode);
   const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
@@ -257,6 +263,33 @@ const Index = () => {
       useReleaseTourStore.getState().loadAndStart();
     }
   }, []);
+
+  // Handle openPack from URL (e.g. from Admin Queue dashboard)
+  useEffect(() => {
+    const packId = search?.openPack;
+    if (packId) {
+      setLibraryMode("global");
+      setOpenPackId(packId);
+      navigate({ to: "/", search: {} });
+    }
+  }, [search?.openPack, navigate]);
+
+  // Handle navigation requests from SampleSourceBadge (Cache, Stack)
+  useEffect(() => {
+    if (!pendingRequest) return;
+    if (pendingRequest.type === "pack") {
+      setLibraryMode("global");
+      setOpenPackId(pendingRequest.packId);
+    } else if (pendingRequest.type === "folder") {
+      setLibraryMode("local");
+      if (pendingRequest.paneType === "source") {
+        setRequestedSourcePath(pendingRequest.path);
+      } else {
+        setRequestedDestPath(pendingRequest.path);
+      }
+    }
+    clearRequest();
+  }, [pendingRequest, clearRequest]);
 
   const tourActive = useReleaseTourStore((s) => s.isActive);
   const requestedDemoPaths = useReleaseTourStore((s) => s.requestedDemoPaths);
@@ -993,6 +1026,8 @@ const Index = () => {
                   title="Global Library"
                   scope={globalScope}
                   onSelectionChange={setSelectedSourceItem}
+                  openPackId={openPackId}
+                  onOpenPackIdConsumed={() => setOpenPackId(null)}
                 />
               ) : (
                 <FilePane

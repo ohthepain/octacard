@@ -1216,11 +1216,44 @@ libraryApp.get("/samples/:id", async (c) => {
 
   const packSample = await prisma.packSample.findFirst({
     where: { sampleId },
-    select: { name: true },
+    select: {
+      name: true,
+      pack: {
+        select: {
+          id: true,
+          name: true,
+          coverImageS3Key: true,
+          coverImageUrl: true,
+        },
+      },
+    },
   });
   const name = packSample?.name ?? "sample";
 
-  return c.json({ id: sampleId, name });
+  let packId: string | undefined;
+  let packName: string | undefined;
+  let coverImageProxyUrl: string | null | undefined;
+
+  if (packSample?.pack) {
+    const pack = packSample.pack;
+    packId = pack.id;
+    packName = pack.name;
+    if (pack.coverImageS3Key) {
+      coverImageProxyUrl = `/api/library/packs/${encodeURIComponent(pack.id)}/cover?v=${encodeURIComponent(pack.coverImageS3Key)}`;
+    } else if (pack.coverImageUrl) {
+      coverImageProxyUrl = pack.coverImageUrl;
+    } else {
+      coverImageProxyUrl = null;
+    }
+  }
+
+  return c.json({
+    id: sampleId,
+    name,
+    ...(packId && { packId }),
+    ...(packName && { packName }),
+    ...(coverImageProxyUrl !== undefined && { coverImageProxyUrl }),
+  });
 });
 
 libraryApp.get("/samples/:id/download", async (c) => {

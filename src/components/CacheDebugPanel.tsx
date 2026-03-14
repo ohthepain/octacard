@@ -31,6 +31,7 @@ import {
 import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { getSample } from "@/lib/remote-library";
 import { usePlayerStore } from "@/stores/player-store";
+import { SampleSourceBadge } from "@/components/SampleSourceBadge";
 
 const REMOTE_PREFIX = "remote://sample/";
 
@@ -200,10 +201,14 @@ function CacheCard({ entry, onRefresh }: CacheCardProps) {
       draggable
       onDragStart={handleDragStart}
     >
-      <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0">
-        <span className="text-xs font-medium text-muted-foreground truncate flex-1 min-w-0" title={name}>
-          {name}
-        </span>
+      <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0 gap-2">
+        <SampleSourceBadge
+          source={{ type: "remote", sampleId: entry.sampleId }}
+          filename={name}
+          size="md"
+          showFilename={true}
+          className="flex-1 min-w-0"
+        />
         <Button
           type="button"
           size="sm"

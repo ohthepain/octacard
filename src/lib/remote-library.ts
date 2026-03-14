@@ -129,12 +129,20 @@ export interface SampleAnalysisResponse {
   embeddings?: Array<{ model: string; modelVersion: string; dimensions: number }>;
 }
 
-export async function getSample(sampleId: string): Promise<{ id: string; name: string }> {
+export interface SampleWithPack {
+  id: string;
+  name: string;
+  packId?: string;
+  packName?: string;
+  coverImageProxyUrl?: string | null;
+}
+
+export async function getSample(sampleId: string): Promise<SampleWithPack> {
   const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch sample (${res.status})`);
   }
-  return (await res.json()) as { id: string; name: string };
+  return (await res.json()) as SampleWithPack;
 }
 
 export async function getSampleAnalysis(sampleId: string): Promise<SampleAnalysisResponse> {

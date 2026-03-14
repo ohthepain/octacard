@@ -26,6 +26,9 @@ interface RemoteFilePaneProps {
   title?: string;
   scope: RemoteScope;
   onSelectionChange?: (selection: { path: string; type: "file" | "folder"; name: string } | null) => void;
+  /** When set, open this pack on mount. Cleared via onOpenPackIdConsumed after applying. */
+  openPackId?: string | null;
+  onOpenPackIdConsumed?: () => void;
 }
 
 function formatCredits(credits: number): string {
@@ -92,7 +95,13 @@ function PackRow({
   );
 }
 
-export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: RemoteFilePaneProps) {
+export function RemoteFilePane({
+  title = "Global",
+  scope,
+  onSelectionChange,
+  openPackId,
+  onOpenPackIdConsumed,
+}: RemoteFilePaneProps) {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<RemoteSearchType>("packs");
   const [loading, setLoading] = useState(false);
@@ -149,6 +158,13 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
       window.clearTimeout(timeout);
     };
   }, [query, scope, mode]);
+
+  useEffect(() => {
+    if (openPackId) {
+      setCurrentPackId(openPackId);
+      onOpenPackIdConsumed?.();
+    }
+  }, [openPackId, onOpenPackIdConsumed]);
 
   useEffect(() => {
     if (!currentPackId) {

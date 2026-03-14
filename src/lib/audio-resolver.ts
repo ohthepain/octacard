@@ -13,7 +13,7 @@ export function isRemotePath(path: string): boolean {
   return path.startsWith(REMOTE_PREFIX);
 }
 
-function parseRemoteSampleId(path: string): string | null {
+export function parseRemoteSampleId(path: string): string | null {
   if (!path.startsWith(REMOTE_PREFIX)) return null;
   const id = path.slice(REMOTE_PREFIX.length).split("/")[0];
   return id || null;
