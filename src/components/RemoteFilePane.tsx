@@ -3,12 +3,7 @@ import { ArrowLeft, BarChart3, FileAudio, Folder, Loader2, Search, ShoppingCart 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { toast } from "sonner";
 import {
   addSampleToCollection,
@@ -36,6 +31,11 @@ function formatCredits(credits: number): string {
   return credits <= 0 ? "Free" : `${credits} cr`;
 }
 
+function formatMb(bytes: number | null): string {
+  if (bytes == null || bytes <= 0) return "";
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function PackRow({
   onOpenPack,
   onDragStart,
@@ -59,7 +59,7 @@ function PackRow({
 
 export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: RemoteFilePaneProps) {
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<RemoteSearchType>("both");
+  const [mode, setMode] = useState<RemoteSearchType>("packs");
   const [loading, setLoading] = useState(false);
   const [packs, setPacks] = useState<RemotePackSummary[]>([]);
   const [samples, setSamples] = useState<RemoteSampleSummary[]>([]);
@@ -128,8 +128,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
         if (cancelled) return;
         setPackDetails({
           name: details.name,
-          coverImageUrl:
-            details.coverImageProxyUrl ?? details.coverImageUrl,
+          coverImageUrl: details.coverImageProxyUrl ?? details.coverImageUrl,
           creatorName: details.ownerName,
           isOwner: details.isOwner,
           totalSampleCount: details.totalSampleCount,
@@ -233,11 +232,9 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
           isOwner: details.isOwner,
           totalSampleCount: details.totalSampleCount,
           totalSizeBytes: details.totalSizeBytes,
-        })
+        }),
       );
-      getPackContents(packId).then((contents) =>
-        setPackContents({ packs: contents.packs, samples: contents.samples })
-      );
+      getPackContents(packId).then((contents) => setPackContents({ packs: contents.packs, samples: contents.samples }));
     }
     searchRemoteLibrary({ q: query, scope, types: mode, limit: 100 }).then((result) => {
       setPacks(result.packs);
@@ -273,9 +270,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            {packLoading && (
-              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-            )}
+            {packLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
           </div>
         )
       ) : (
@@ -335,9 +330,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
             ) : packViewEntries.length === 0 ? (
               <div className="py-8 text-center space-y-2">
                 <div className="text-sm text-muted-foreground">This pack is empty</div>
-                <p className="text-xs text-muted-foreground/80">
-                  Add samples or sub-packs to this pack.
-                </p>
+                <p className="text-xs text-muted-foreground/80">Add samples or sub-packs to this pack.</p>
               </div>
             ) : (
               packViewEntries.map((entry) => {
@@ -347,9 +340,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                     <PackRow
                       key={entry.key}
                       onOpenPack={() => setCurrentPackId(pack.id)}
-                      onDragStart={(e) =>
-                        startDrag(e, { kind: "pack", id: pack.id, name: pack.name })
-                      }
+                      onDragStart={(e) => startDrag(e, { kind: "pack", id: pack.id, name: pack.name })}
                     >
                       <div className="min-w-0 flex items-center gap-2">
                         <div className="w-10 h-10 rounded shrink-0 flex items-center justify-center bg-muted overflow-hidden">
@@ -367,13 +358,11 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                         <div className="truncate">
                           <div className="text-sm truncate">{pack.name}</div>
                           <div className="text-xs text-muted-foreground truncate">
-                            {pack.sampleCount} samples, {pack.childPackCount} subfolders
+                            {pack.sampleCount} {pack.sampleCount !== 1 ? "samples" : "sample"}
                           </div>
                         </div>
                       </div>
-                      {pack.isOwner && (
-                        <div className="text-[10px] uppercase text-primary">Mine</div>
-                      )}
+                      {pack.isOwner && <div className="text-[10px] uppercase text-primary">Mine</div>}
                     </PackRow>
                   );
                 }
@@ -408,6 +397,9 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                               <div className="text-sm truncate">{sample.name}</div>
                               <div className="text-xs text-muted-foreground truncate">
                                 {formatCredits(sample.credits)}
+                                {sample.sizeBytes != null && sample.sizeBytes > 0
+                                  ? ` • ${formatMb(sample.sizeBytes)}`
+                                  : ""}
                                 {!sample.canDownload ? " • locked" : ""}
                               </div>
                             </div>
@@ -505,13 +497,11 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                       <div className="truncate">
                         <div className="text-sm truncate">{pack.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
-                          {pack.sampleCount} samples, {pack.childPackCount} subfolders
+                          {pack.sampleCount} {pack.sampleCount !== 1 ? "samples" : "sample"} 
                         </div>
                       </div>
                     </div>
-                    {pack.isOwner && (
-                      <div className="text-[10px] uppercase text-primary">Mine</div>
-                    )}
+                    {pack.isOwner && <div className="text-[10px] uppercase text-primary">Mine</div>}
                   </PackRow>
                 );
               }
@@ -546,6 +536,9 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                             <div className="text-sm truncate">{sample.name}</div>
                             <div className="text-xs text-muted-foreground truncate">
                               {sample.packName} • {formatCredits(sample.credits)}
+                              {sample.sizeBytes != null && sample.sizeBytes > 0
+                                ? ` • ${formatMb(sample.sizeBytes)}`
+                                : ""}
                               {!sample.canDownload ? " • locked" : ""}
                             </div>
                           </div>
@@ -608,9 +601,7 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
         defaultName=""
         editPackId={editPackId}
         initialCoverImageUrl={
-          editPackId === currentPackId && packDetails?.coverImageUrl
-            ? packDetails.coverImageUrl
-            : undefined
+          editPackId === currentPackId && packDetails?.coverImageUrl ? packDetails.coverImageUrl : undefined
         }
         onCreated={handlePackEdited}
       />
