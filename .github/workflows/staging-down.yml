@@ -3,9 +3,9 @@ name: Staging Down
 on:
   workflow_dispatch:
   schedule:
-    # 6pm and 9pm UTC daily. Adjust for your timezone (e.g. 18:00 UTC = 1pm EST, 6pm GMT)
-    - cron: "0 18 * * *"
-    - cron: "0 21 * * *"
+    # 6pm and 9pm CET daily.
+    - cron: "0 17 * * *"
+    - cron: "0 20 * * *"
 
 concurrency:
   group: staging-down
