@@ -6,6 +6,7 @@ import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { MultiSampleBlock } from "@/components/MultiSampleBlock";
 import { fileSystemService } from "@/lib/fileSystem";
+import { getPackDownloadManifest } from "@/lib/remote-library";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SLOT_ROW_SIZE } from "@/stores/multi-sample-store";
@@ -158,6 +159,49 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
 
   const handleMultiDrop = useCallback(
     async (e: React.DragEvent) => {
+      const remoteItemsPayload = e.dataTransfer.getData("octacardRemoteItems");
+      if (remoteItemsPayload) {
+        try {
+          const parsed = JSON.parse(remoteItemsPayload) as Array<{ kind: string; id: string; name: string }>;
+          const validItems = Array.isArray(parsed)
+            ? parsed.filter(
+                (item): item is { kind: "sample" | "pack"; id: string; name: string } =>
+                  Boolean(item) && (item.kind === "sample" || item.kind === "pack") && typeof item.id === "string" && typeof item.name === "string",
+              )
+            : [];
+          if (validItems.length > 0) {
+            const samples: Array<{ path: string; name: string; paneType: "source" }> = [];
+            for (const item of validItems) {
+              if (samples.length >= 8) break;
+              if (item.kind === "sample") {
+                samples.push({ path: `remote://sample/${item.id}`, name: item.name, paneType: "source" });
+              } else {
+                const manifest = await getPackDownloadManifest(item.id);
+                const packSamples = manifest.samples
+                  .slice(0, 8 - samples.length)
+                  .map((s) => ({
+                    path: `remote://sample/${s.id}` as const,
+                    name: s.name,
+                    paneType: "source" as const,
+                  }));
+                samples.push(...packSamples);
+              }
+            }
+            const toAdd = samples.slice(0, 8);
+            if (toAdd.length > 0) {
+              addSamplesToStack(toAdd, 8);
+              openWaveformForActiveSlot();
+            }
+            return;
+          }
+        } catch (err) {
+          toast.error("Failed to add remote items", {
+            description: err instanceof Error ? err.message : "Unknown error",
+          });
+          return;
+        }
+      }
+
       const sourcePath = e.dataTransfer.getData("sourcePath");
       const sourceType = e.dataTransfer.getData("sourceType");
       const sourcePane = e.dataTransfer.getData("sourcePane") as "source" | "dest" | "";

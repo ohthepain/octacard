@@ -14,6 +14,8 @@ import {
   RotateCw,
   Star,
   BarChart3,
+  Play,
+  Square,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,7 @@ import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/Overw
 import { fileSystemService } from "@/lib/fileSystem";
 import { shortenFilenames } from "@/lib/filename-shortener";
 import { capture } from "@/lib/analytics";
+import { getCachedBlob } from "@/lib/audition-cache";
 import { downloadRemoteSampleBlob, getPack, getPackDownloadManifest } from "@/lib/remote-library";
 import { SampleAnalysisDialog } from "@/components/SampleAnalysisDialog";
 import { useSession } from "@/lib/auth-client";
@@ -55,8 +58,43 @@ import { CreatePackDialog } from "@/components/CreatePackDialog";
 import { PackView } from "@/components/PackView";
 import { toast } from "sonner";
 import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { usePlayerStore } from "@/stores/player-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import type { FileSystemResult } from "@/lib/fileSystem";
+
+function FilePanePlayButton({ path, paneType }: { path: string; name: string; paneType: "source" | "dest" }) {
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const mode = usePlayerStore((s) => s.mode);
+  const singleFile = usePlayerStore((s) => s.singleFile);
+  const stack = usePlayerStore((s) => s.stack);
+  const playSingle = usePlayerStore((s) => s.playSingle);
+  const stop = usePlayerStore((s) => s.stop);
+
+  const isThisPlaying =
+    isPlaying &&
+    (mode === "single"
+      ? singleFile?.path === path && singleFile?.paneType === paneType
+      : stack.some((s) => s.path === path && s.paneType === paneType));
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 shrink-0"
+      aria-label={isThisPlaying ? "Stop" : "Play"}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isThisPlaying) {
+          stop();
+        } else {
+          playSingle(path, paneType);
+        }
+      }}
+    >
+      {isThisPlaying ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+    </Button>
+  );
+}
 
 // Registry to track active pane and clear selections in other panes
 const paneRegistry = new Map<string, () => void>();
@@ -2955,7 +2993,10 @@ export const FilePane = ({
       let copiedCount = 0;
       for (const item of items) {
         if (item.kind === "sample") {
-          const blob = await downloadRemoteSampleBlob(item.id);
+          let blob = await getCachedBlob(item.id);
+          if (!blob) {
+            blob = await downloadRemoteSampleBlob(item.id);
+          }
           const result = await fileSystemService.writeBlobToPath(joinPath(destinationPath, item.name), blob, paneType);
           if (!result.success) {
             throw new Error(result.error || `Failed to write ${item.name}`);
@@ -3017,7 +3058,10 @@ export const FilePane = ({
           const filename = parts.pop() ?? sample.name;
           const relativeDir = parts.join("/");
           const targetDir = await ensureFolderPath(packRootPath, relativeDir);
-          const blob = await downloadRemoteSampleBlob(sample.id);
+          let blob = await getCachedBlob(sample.id);
+          if (!blob) {
+            blob = await downloadRemoteSampleBlob(sample.id);
+          }
           const writeResult = await fileSystemService.writeBlobToPath(joinPath(targetDir, filename), blob, paneType);
           if (!writeResult.success) {
             throw new Error(writeResult.error || `Failed to write ${filename}`);
@@ -3896,6 +3940,9 @@ export const FilePane = ({
                   {node.name}
                 </span>
                 {node.size && <span className="text-xs text-muted-foreground font-mono">{node.size}</span>}
+                {node.type === "file" && isAudioFile(node.name) && !isParentLink && (
+                  <FilePanePlayButton path={node.path} name={node.name} paneType={paneType} />
+                )}
                 {(node.type === "file" || node.type === "folder") && !isParentLink && (
                   <Button
                     size="sm"

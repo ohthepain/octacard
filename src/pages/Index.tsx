@@ -37,7 +37,9 @@ import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { capture } from "@/lib/analytics";
 import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
 import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
+import { isRemotePath } from "@/lib/audio-resolver";
 import { ReleaseNotesPanel } from "@/components/ReleaseNotesPanel";
+import { CacheDebugPanel } from "@/components/CacheDebugPanel";
 import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
 import { HomeFooter } from "@/components/HomeFooter";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
@@ -361,6 +363,21 @@ const Index = () => {
       setGlobalTempoBpm(bpm);
     }
   }, [bpmAuto, selectedSourceItem, setGlobalTempoBpm]);
+
+  // Open waveform when user taps a remote sample (audition flow)
+  useEffect(() => {
+    if (
+      selectedSourceItem?.type === "file" &&
+      isAudioFile(selectedSourceItem.name) &&
+      isRemotePath(selectedSourceItem.path)
+    ) {
+      useWaveformEditorStore.getState().openWithFile(
+        selectedSourceItem.path,
+        selectedSourceItem.name,
+        "source",
+      );
+    }
+  }, [selectedSourceItem]);
 
   const handleSourcePathChange = useCallback((path: string, volumeId: string) => {
     setSourcePath(path);
@@ -930,6 +947,8 @@ const Index = () => {
       </header>
 
       <ReleaseNotesPanel />
+
+      <CacheDebugPanel />
 
       <ReleaseTourPointer />
 

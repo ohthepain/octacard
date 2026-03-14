@@ -3,7 +3,7 @@
  * envelope, loop on/off. Used by both waveform editor and multi-sample stack.
  */
 
-import { fileSystemService } from "./fileSystem";
+import { getAudioBlobForPath } from "./audio-resolver";
 import { ensureAudioDecodable } from "./audioConverter";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { usePlayerStore } from "@/stores/player-store";
@@ -142,7 +142,7 @@ export async function startUnifiedPlayback(
   }
 
   for (const sample of samples) {
-    const result = await fileSystemService.getAudioFileBlob(sample.path, sample.paneType);
+    const result = await getAudioBlobForPath(sample.path, sample.paneType);
     if (!result.success || !result.data) continue;
 
     const decodableUrl = await ensureAudioDecodable(result.data, sample.path);
@@ -302,7 +302,7 @@ export async function startUnifiedPlayback(
     const timeUntilNextBarWall = timeUntilNextBarSample / oldSource.playbackRate;
     const switchAt = now + timeUntilNextBarWall;
 
-    const result = await fileSystemService.getAudioFileBlob(newPath, newPaneType);
+    const result = await getAudioBlobForPath(newPath, newPaneType);
     if (!result.success || !result.data || stopped) return;
 
     const decodableUrl = await ensureAudioDecodable(result.data, newPath);

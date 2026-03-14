@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import WaveSurfer from "wavesurfer.js";
 import { fileSystemService } from "@/lib/fileSystem";
+import { getAudioBlobForPath } from "@/lib/audio-resolver";
 import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { toast } from "sonner";
 import { parseBpmFromString } from "@/lib/tempoUtils";
@@ -88,6 +89,24 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
     setIsDragOver(false);
     if (!onDropSample) return;
 
+    const remoteItemsPayload = e.dataTransfer.getData("octacardRemoteItems");
+    if (remoteItemsPayload) {
+      try {
+        const parsed = JSON.parse(remoteItemsPayload) as Array<{ kind: string; id: string; name: string }>;
+        const sampleItem = Array.isArray(parsed) ? parsed.find((item) => item?.kind === "sample") : null;
+        if (sampleItem?.id && sampleItem.name) {
+          onDropSample({
+            path: `remote://sample/${sampleItem.id}`,
+            name: sampleItem.name,
+            paneType: "source",
+          });
+          return;
+        }
+      } catch {
+        // Not valid remote JSON, fall through
+      }
+    }
+
     const sourcePath = e.dataTransfer.getData("sourcePath");
     const sourceType = e.dataTransfer.getData("sourceType");
     const sourcePane = e.dataTransfer.getData("sourcePane") as PaneType | "";
@@ -125,7 +144,7 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
 
     async function loadAndInit() {
       try {
-        const result = await fileSystemService.getAudioFileBlob(sample.path, sample.paneType);
+        const result = await getAudioBlobForPath(sample.path, sample.paneType);
         if (!result.success || !result.data) {
           setErrorMessage(result.error || "Failed to load audio");
           setIsLoading(false);

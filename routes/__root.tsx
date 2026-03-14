@@ -4,6 +4,8 @@ import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { HotkeysProvider } from '@tanstack/react-hotkeys'
+import { GlobalHotkeys } from '@/components/GlobalHotkeys'
 
 const queryClient = new QueryClient()
 
@@ -13,11 +15,14 @@ export const rootRoute = createRootRouteWithContext<{
   component: () => (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <Outlet />
-        </TooltipProvider>
+        <HotkeysProvider>
+          <GlobalHotkeys />
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <Outlet />
+          </TooltipProvider>
+        </HotkeysProvider>
       </QueryClientProvider>
     </ThemeProvider>
   ),

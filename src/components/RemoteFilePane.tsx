@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, BarChart3, FileAudio, Folder, Loader2, Search, ShoppingCart } from "lucide-react";
+import { ArrowLeft, BarChart3, FileAudio, Folder, Loader2, Play, Search, ShoppingCart, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,6 +18,7 @@ import {
 import { PackView } from "@/components/PackView";
 import { CreatePackDialog } from "@/components/CreatePackDialog";
 import { SampleAnalysisDialog } from "@/components/SampleAnalysisDialog";
+import { usePlayerStore } from "@/stores/player-store";
 
 type RemoteDragItem = { kind: "pack"; id: string; name: string } | { kind: "sample"; id: string; name: string };
 
@@ -34,6 +35,40 @@ function formatCredits(credits: number): string {
 function formatMb(bytes: number | null): string {
   if (bytes == null || bytes <= 0) return "";
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function RemoteSamplePlayButton({ path }: { path: string; name: string }) {
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const mode = usePlayerStore((s) => s.mode);
+  const singleFile = usePlayerStore((s) => s.singleFile);
+  const stack = usePlayerStore((s) => s.stack);
+  const playSingle = usePlayerStore((s) => s.playSingle);
+  const stop = usePlayerStore((s) => s.stop);
+
+  const isThisPlaying =
+    isPlaying &&
+    (mode === "single"
+      ? singleFile?.path === path
+      : stack.some((s) => s.path === path));
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-7 w-7 p-0 shrink-0"
+      aria-label={isThisPlaying ? "Stop" : "Play"}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isThisPlaying) {
+          stop();
+        } else {
+          playSingle(path, "source");
+        }
+      }}
+    >
+      {isThisPlaying ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+    </Button>
+  );
 }
 
 function PackRow({
@@ -404,7 +439,11 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                               </div>
                             </div>
                           </div>
-                          {!sample.canDownload && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            {sample.canDownload && (
+                              <RemoteSamplePlayButton path={`remote://sample/${sample.id}`} name={sample.name} />
+                            )}
+                            {!sample.canDownload && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -431,7 +470,8 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                               <ShoppingCart className="w-3 h-3" />
                               Add
                             </Button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </ContextMenuTrigger>
                       <ContextMenuContent>
@@ -543,35 +583,40 @@ export function RemoteFilePane({ title = "Global", scope, onSelectionChange }: R
                             </div>
                           </div>
                         </div>
-                        {!sample.canDownload && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 gap-1"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                await addSampleToCollection(sample.id);
-                                toast.success("Added to collection");
-                                const updated = await searchRemoteLibrary({
-                                  q: query,
-                                  scope,
-                                  types: mode,
-                                  limit: 100,
-                                });
-                                setPacks(updated.packs);
-                                setSamples(updated.samples);
-                              } catch (error) {
-                                toast.error("Failed to add to collection", {
-                                  description: error instanceof Error ? error.message : "Unknown error",
-                                });
-                              }
-                            }}
-                          >
-                            <ShoppingCart className="w-3 h-3" />
-                            Add
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {sample.canDownload && (
+                            <RemoteSamplePlayButton path={`remote://sample/${sample.id}`} name={sample.name} />
+                          )}
+                          {!sample.canDownload && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 gap-1"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  await addSampleToCollection(sample.id);
+                                  toast.success("Added to collection");
+                                  const updated = await searchRemoteLibrary({
+                                    q: query,
+                                    scope,
+                                    types: mode,
+                                    limit: 100,
+                                  });
+                                  setPacks(updated.packs);
+                                  setSamples(updated.samples);
+                                } catch (error) {
+                                  toast.error("Failed to add to collection", {
+                                    description: error instanceof Error ? error.message : "Unknown error",
+                                  });
+                                }
+                              }}
+                            >
+                              <ShoppingCart className="w-3 h-3" />
+                              Add
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </ContextMenuTrigger>
                     <ContextMenuContent>

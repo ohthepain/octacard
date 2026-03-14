@@ -51,6 +51,7 @@ import {
   type AudioFileInfo,
 } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
+import { getAudioBlobForPath, isRemotePath } from "@/lib/audio-resolver";
 import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { detectSliceMarkers, selectTopSlices, type SliceMarker, type SliceDetectionMode } from "@/lib/sliceDetection";
@@ -489,18 +490,20 @@ export const AudioPreview = ({
     let cancelled = false;
     async function loadAudioUrl() {
       try {
-        // Check file size first to avoid loading huge files
-        const statsResult = await fileSystemService.getFileStats(filePath!, paneType!);
-        if (cancelled) return;
-        if (statsResult.success && statsResult.data) {
-          const fileSizeMB = statsResult.data.size / (1024 * 1024);
-          // Warn for very large files but still try to load
-          if (fileSizeMB > 100) {
-            console.warn(`Large file detected: ${fileSizeMB.toFixed(1)}MB. Loading may take a while...`);
+        // Check file size first to avoid loading huge files (skip for remote paths)
+        if (!isRemotePath(filePath!)) {
+          const statsResult = await fileSystemService.getFileStats(filePath!, paneType!);
+          if (cancelled) return;
+          if (statsResult.success && statsResult.data) {
+            const fileSizeMB = statsResult.data.size / (1024 * 1024);
+            // Warn for very large files but still try to load
+            if (fileSizeMB > 100) {
+              console.warn(`Large file detected: ${fileSizeMB.toFixed(1)}MB. Loading may take a while...`);
+            }
           }
         }
 
-        const result = await fileSystemService.getAudioFileBlob(filePath!, paneType!);
+        const result = await getAudioBlobForPath(filePath!, paneType!);
         if (cancelled) return;
 
         if (result.success && result.data) {
@@ -539,7 +542,7 @@ export const AudioPreview = ({
     let cancelled = false;
     (async () => {
       try {
-        const result = await fileSystemService.getAudioFileBlob(filePath, paneType);
+        const result = await getAudioBlobForPath(filePath, paneType);
         if (!result.success || !result.data || cancelled) return;
         const decodableUrl = await ensureAudioDecodable(result.data, filePath);
         if (cancelled) return;
@@ -662,7 +665,7 @@ export const AudioPreview = ({
 
     setIsAnalyzing(true);
     try {
-      const result = await fileSystemService.getAudioFileBlob(filePath, paneType);
+      const result = await getAudioBlobForPath(filePath, paneType);
       if (!result.success || !result.data) {
         setSliceMarkers([]);
         setIsAnalyzing(false);
@@ -938,7 +941,11 @@ export const AudioPreview = ({
         const mode = recordingModeRef.current;
         if (filePath && paneType && mode === "overdub") {
           try {
-            const existingResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
+            if (isRemotePath(filePath)) {
+              toast.error("Cannot overdub remote samples. Download to a local folder first.");
+              return;
+            }
+            const existingResult = await getAudioBlobForPath(filePath, paneType);
             if (!existingResult.success || !existingResult.data) {
               toast.error("Could not load existing audio for overdub");
               return;
@@ -964,7 +971,11 @@ export const AudioPreview = ({
           }
         } else if (filePath && paneType && mode === "replace") {
           try {
-            const existingResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
+            if (isRemotePath(filePath)) {
+              toast.error("Cannot replace remote samples. Download to a local folder first.");
+              return;
+            }
+            const existingResult = await getAudioBlobForPath(filePath, paneType);
             if (existingResult.success && existingResult.data) {
               const decodableUrl = await ensureAudioDecodable(existingResult.data, filePath);
               const existingBlob = await fetch(decodableUrl).then((r) => r.blob());
@@ -1856,7 +1867,7 @@ export const AudioPreview = ({
   const performExport = useCallback(
     async (markerOptions: ExportMarkerOptions | null) => {
       if (!filePath || !paneType) return;
-      const blobResult = await fileSystemService.getAudioFileBlob(filePath, paneType);
+      const blobResult = await getAudioBlobForPath(filePath, paneType);
       if (!blobResult.success || !blobResult.data) {
         toast.error(blobResult.error || "Failed to load audio");
         return;
@@ -1880,11 +1891,24 @@ export const AudioPreview = ({
       const slices = displayedSlices.map((s) => ({ time: s.time }));
       const hasSlices = slices.length > 0;
 
-      const statsResult = await fileSystemService.getFileStats(filePath, paneType);
+      const statsResult = isRemotePath(filePath)
+        ? { success: false, data: undefined }
+        : await fileSystemService.getFileStats(filePath, paneType);
       const willOverwrite = statsResult.success && statsResult.data;
 
       let saveAsTarget: { dirHandle: FileSystemDirectoryHandle; filename: string } | null = null;
-      if (willOverwrite) {
+      if (isRemotePath(filePath)) {
+        setExportSaveAsFilename(fileName ?? "export.wav");
+        setExportSaveAsDirHandle(null);
+        setExportSaveAsOpen(true);
+        const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>((resolve) => {
+          exportSaveAsResolverRef.current = resolve;
+        });
+        setExportSaveAsOpen(false);
+        setExportSaveAsDirHandle(null);
+        if (!result) return;
+        saveAsTarget = result;
+      } else if (willOverwrite) {
         setExportOverwriteOpen(true);
         const choice = await new Promise<"abort" | "overwrite" | "saveAs">((resolve) => {
           exportOverwriteResolverRef.current = resolve;

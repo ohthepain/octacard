@@ -1102,6 +1102,24 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
   return c.json({ ok: true });
 });
 
+libraryApp.get("/samples/:id", async (c) => {
+  const user = c.get("user");
+  const sampleId = c.req.param("id");
+
+  const readable = await canReadSample(user.id, sampleId);
+  if (!readable) {
+    throw new HTTPException(403, { message: "You do not have access to this sample" });
+  }
+
+  const packSample = await prisma.packSample.findFirst({
+    where: { sampleId },
+    select: { name: true },
+  });
+  const name = packSample?.name ?? "sample";
+
+  return c.json({ id: sampleId, name });
+});
+
 libraryApp.get("/samples/:id/download", async (c) => {
   const user = c.get("user");
   const sampleId = c.req.param("id");

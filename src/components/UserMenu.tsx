@@ -1,4 +1,4 @@
-import { User, LogIn, LogOut, Scale, ToggleLeft, Shield } from "lucide-react";
+import { User, LogIn, LogOut, Scale, ToggleLeft, Shield, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,11 +12,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "@tanstack/react-router";
 import { useSession, signOut, isAdminOrSuperadmin } from "@/lib/auth-client";
 import { useAppOptionsStore } from "@/stores/app-options-store";
+import { useCacheDebugStore } from "@/stores/cache-debug-store";
 
 export function UserMenu() {
   const { data: session, isPending } = useSession();
   const devMode = useAppOptionsStore((s) => s.devMode);
   const setDevMode = useAppOptionsStore((s) => s.setDevMode);
+  const openCacheDebug = useCacheDebugStore((s) => s.open);
 
   if (isPending) {
     return (
@@ -82,6 +84,14 @@ export function UserMenu() {
               <ToggleLeft className={`h-4 w-4 ${devMode ? "text-orange-500" : ""}`} />
               Dev Mode {devMode ? "On" : "Off"}
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => openCacheDebug()}
+              className="flex items-center gap-2 cursor-pointer text-violet-600 focus:text-violet-600"
+              data-testid="cache-debug-button"
+            >
+              <Database className="h-4 w-4" />
+              Cache Debug
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => signOut()} className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />
@@ -103,6 +113,14 @@ export function UserMenu() {
             >
               <ToggleLeft className={`h-4 w-4 ${devMode ? "text-orange-500" : ""}`} />
               Dev Mode {devMode ? "On" : "Off"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => openCacheDebug()}
+              className="flex items-center gap-2 cursor-pointer text-violet-600 focus:text-violet-600"
+              data-testid="cache-debug-button"
+            >
+              <Database className="h-4 w-4" />
+              Cache Debug
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
