@@ -8,6 +8,7 @@ import { cors } from "hono/cors";
 import { auth } from "./auth.js";
 import {
   errorHandler,
+  optionalAuth,
   requestLogger,
   requireAdmin,
   requireAuth,
@@ -88,8 +89,8 @@ app.use("/api/upload/*", requireAuth);
 app.use("/api/upload/*", bodyLimit({ maxSize: 10 * 1024 * 1024 })); // 10MB
 app.route("/api/upload", uploadApp);
 
-// /api/library/* - authenticated sample/pack APIs
-app.use("/api/library/*", requireAuth);
+// /api/library/* - optional auth; search allows unauthenticated for scope all/explore
+app.use("/api/library/*", optionalAuth);
 app.use("/api/library/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
 app.route("/api/library", libraryApp);
 

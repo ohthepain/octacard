@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { FilePane } from "@/components/FilePane";
 import { RemoteFilePane } from "@/components/RemoteFilePane";
+import { TempFilesPane } from "@/components/TempFilesPane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
@@ -182,7 +183,6 @@ const Index = () => {
   const setGlobalTempoBpm = useMultiSampleStore((s) => s.setGlobalTempoBpm);
   const bpmAuto = useMultiSampleStore((s) => s.bpmAuto);
   const setBpmAuto = useMultiSampleStore((s) => s.setBpmAuto);
-  const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
   const [destPath, setDestPath] = useState("");
@@ -205,7 +205,7 @@ const Index = () => {
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
-  const [libraryMode, setLibraryMode] = useState<"local" | "global">("local");
+  const [libraryMode, setLibraryMode] = useState<"local" | "global">("global");
   const [globalScope, setGlobalScope] = useState<"mine" | "all" | "explore">("all");
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const waveformEditor = useWaveformEditorStore(
@@ -252,12 +252,6 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    if (isUnsupportedBrowser()) {
-      setUnsupportedBrowserDialogOpen(true);
-    }
-  }, []);
-
-  useEffect(() => {
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     if (params.get("release-tour") === "1" || params.get("release-tour") === "true") {
       useReleaseTourStore.getState().loadAndStart();
@@ -300,11 +294,6 @@ const Index = () => {
     if (requestedDemoPaths.sourcePath) setRequestedSourcePath(requestedDemoPaths.sourcePath);
     if (requestedDemoPaths.destPath) setRequestedDestPath(requestedDemoPaths.destPath);
   }, [tourActive, requestedDemoPaths?.sourcePath, requestedDemoPaths?.destPath, requestedDemoPaths]);
-
-  useEffect(() => {
-    if (!unsupportedBrowserDialogOpen) return;
-    capture("octacard_dialog_opened", { dialog_name: "unsupported_browser" });
-  }, [unsupportedBrowserDialogOpen]);
 
   // Space bar: start whatever was last (multi or single) when idle, stop when playing
   useEffect(() => {
@@ -999,9 +988,9 @@ const Index = () => {
             "right-fav": 20,
           }}
         >
-          {/* Left: Source Favorites - only this separator affects favorites vs center */}
+          {/* Left: Source Favorites - only this separator affects favorites vs center. Hidden when no FS API. */}
           <ResizablePanel id="left-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            {libraryMode === "local" ? (
+            {hasDirectoryPickerSupport() && libraryMode === "local" ? (
               <FavoritesColumn
                 paneType="source"
                 volumeId={sourceVolumeId}
@@ -1009,10 +998,15 @@ const Index = () => {
                 onNavigate={setRequestedSourcePath}
                 onBrowseFromFavorite={(path) => handleBrowseFromFavorite("source", path)}
                 title="Source Favorites"
+                showTempFilesButton
               />
-            ) : (
+            ) : libraryMode === "global" ? (
               <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
                 Global library mode is active. Drag packs or samples into the destination pane to download.
+              </div>
+            ) : (
+              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
+                Temp Files mode. Add files or folders to get started.
               </div>
             )}
           </ResizablePanel>
@@ -1029,6 +1023,17 @@ const Index = () => {
                   onSelectionChange={setSelectedSourceItem}
                   openPackId={openPackId}
                   onOpenPackIdConsumed={() => setOpenPackId(null)}
+                />
+              ) : libraryMode === "local" &&
+                (!hasDirectoryPickerSupport() || requestedSourcePath?.startsWith("temp://")) ? (
+                <TempFilesPane
+                  paneName="source"
+                  title="Temp Files"
+                  onSelectionChange={setSelectedSourceItem}
+                  onPathChange={(path) => handleSourcePathChange(path, "_default")}
+                  refreshToken={sourceRefreshToken}
+                  requestedPath={requestedSourcePath}
+                  onRequestedPathHandled={handleRequestedSourcePathHandled}
                 />
               ) : (
                 <FilePane
@@ -1067,50 +1072,66 @@ const Index = () => {
           {/* Dest Browser - center separator only affects source vs dest */}
           <ResizablePanel id="dest-browser" defaultSize="30%" minSize="15%">
             <div className="h-full min-h-0" data-testid="panel-dest">
-              <FilePane
-                key={`dest-${destRootVersion}`}
-                paneName="dest"
-                title="Destination"
-                onFileTransfer={handleFileTransfer}
-                showSidebar={false}
-                onPathChange={handleDestPathChange}
-                onSelectionChange={setSelectedDestItem}
-                onRequestedPathHandled={handleRequestedDestPathHandled}
-                requestedPath={requestedDestPath}
-                onRequestedRevealPathHandled={handleRequestedDestRevealPathHandled}
-                requestedRevealPath={requestedDestRevealPath}
-                dropMode="navigate"
-                sampleRate={formatSettings.sampleRate}
-                sampleDepth={formatSettings.sampleDepth}
-                fileFormat={formatSettings.fileFormat}
-                pitch={formatSettings.pitch}
-                sanitizeFilename={formatSettings.sanitizeFilename}
-                shortenFilename={formatSettings.shortenFilename}
-                shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
-                mono={formatSettings.mono}
-                normalize={formatSettings.normalize}
-                trimStart={formatSettings.trim}
-                autoNavigateToCard={true}
-                convertFiles={true}
-                showEjectButton={true}
-                showNewFolderButton={true}
-                onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
-                refreshToken={destRefreshToken}
-              />
+              {hasDirectoryPickerSupport() ? (
+                <FilePane
+                  key={`dest-${destRootVersion}`}
+                  paneName="dest"
+                  title="Destination"
+                  onFileTransfer={handleFileTransfer}
+                  showSidebar={false}
+                  onPathChange={handleDestPathChange}
+                  onSelectionChange={setSelectedDestItem}
+                  onRequestedPathHandled={handleRequestedDestPathHandled}
+                  requestedPath={requestedDestPath}
+                  onRequestedRevealPathHandled={handleRequestedDestRevealPathHandled}
+                  requestedRevealPath={requestedDestRevealPath}
+                  dropMode="navigate"
+                  sampleRate={formatSettings.sampleRate}
+                  sampleDepth={formatSettings.sampleDepth}
+                  fileFormat={formatSettings.fileFormat}
+                  pitch={formatSettings.pitch}
+                  sanitizeFilename={formatSettings.sanitizeFilename}
+                  shortenFilename={formatSettings.shortenFilename}
+                  shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
+                  mono={formatSettings.mono}
+                  normalize={formatSettings.normalize}
+                  trimStart={formatSettings.trim}
+                  autoNavigateToCard={true}
+                  convertFiles={true}
+                  showEjectButton={true}
+                  showNewFolderButton={true}
+                  onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
+                  refreshToken={destRefreshToken}
+                />
+              ) : (
+                <TempFilesPane
+                  paneName="dest"
+                  title="Temp Files"
+                  onSelectionChange={setSelectedDestItem}
+                  onPathChange={(path) => handleDestPathChange(path, "_default")}
+                  refreshToken={destRefreshToken}
+                />
+              )}
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
 
-          {/* Right: Dest Favorites - only this separator affects favorites vs center */}
+          {/* Right: Dest Favorites - hidden when no FS API */}
           <ResizablePanel id="right-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            <FavoritesColumn
-              paneType="dest"
-              volumeId={destVolumeId}
-              currentPath={destPath}
-              onNavigate={(path) => setRequestedDestPath(path)}
-              onBrowseFromFavorite={(path) => handleBrowseFromFavorite("dest", path)}
-              title="Dest Favorites"
-            />
+            {hasDirectoryPickerSupport() ? (
+              <FavoritesColumn
+                paneType="dest"
+                volumeId={destVolumeId}
+                currentPath={destPath}
+                onNavigate={(path) => setRequestedDestPath(path)}
+                onBrowseFromFavorite={(path) => handleBrowseFromFavorite("dest", path)}
+                title="Dest Favorites"
+              />
+            ) : (
+              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
+                Temp Files mode. Add files or folders in the destination pane.
+              </div>
+            )}
           </ResizablePanel>
         </ResizablePanelGroup>
         {waveformEditor.isOpen && (
@@ -1133,19 +1154,6 @@ const Index = () => {
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
-
-      <Dialog open={unsupportedBrowserDialogOpen} onOpenChange={setUnsupportedBrowserDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Browser Not Supported</DialogTitle>
-            <DialogDescription>
-              OctaCard requires the File System Access API and currently supports Brave, Chrome, and other
-              Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are
-              not supported.
-            </DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
 
       {pendingConversionRequest && (
         <ConversionConfirmDialog

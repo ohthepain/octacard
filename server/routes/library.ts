@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../types.js";
+import { requireUser } from "../middleware/auth-guard.js";
 import { prisma } from "../db.js";
 import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl, deleteFromS3 } from "../s3.js";
 import { enqueueEssentiaAnalysis } from "../queues/essentia-analysis.js";
@@ -265,6 +266,17 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
   const { q, scope, types, limit } = c.req.valid("query");
   const query = q.trim();
 
+  // scope "mine" requires auth
+  if (scope === "mine" && !user) {
+    throw new HTTPException(401, {
+      message: "Unauthorized",
+      res: new Response(
+        JSON.stringify({ error: "Authentication required" }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
+      ),
+    });
+  }
+
   const packNameFilter = query.length
     ? {
         name: {
@@ -284,7 +296,18 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
     : {};
 
   const packOwnerFilter =
-    scope === "mine" ? { ownerId: user.id } : scope === "explore" ? { ownerId: { not: user.id } } : {};
+    scope === "mine"
+      ? { ownerId: user!.id }
+      : scope === "explore" && user
+        ? { ownerId: { not: user.id } }
+        : {};
+
+  const sampleOwnerFilter =
+    scope === "mine"
+      ? { ownerId: user!.id }
+      : scope === "explore" && user
+        ? { ownerId: { not: user.id } }
+        : {};
 
   const [packs, samples] = await Promise.all([
     types === "samples"
@@ -317,7 +340,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       ? Promise.resolve([])
       : prisma.packSample.findMany({
           where: {
-            ...(scope === "mine" ? { ownerId: user.id } : scope === "explore" ? { ownerId: { not: user.id } } : {}),
+            ...sampleOwnerFilter,
             ...sampleNameFilter,
           },
           include: {
@@ -331,7 +354,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
 
   const sampleIds = samples.map((s) => s.sampleId);
   const collectionRows =
-    sampleIds.length > 0
+    user && sampleIds.length > 0
       ? await prisma.sampleCollection.findMany({
           where: {
             userId: user.id,
@@ -341,13 +364,14 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
         })
       : [];
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
+  const userId = user?.id;
 
   return c.json({
     packs: packs.map((p) => ({
       id: p.id,
       name: p.name,
       ownerId: p.ownerId,
-      isOwner: p.ownerId === user.id,
+      isOwner: userId != null && p.ownerId === userId,
       coverImageProxyUrl: p.coverImageS3Key
         ? `/api/library/packs/${encodeURIComponent(p.id)}/cover?v=${encodeURIComponent(p.coverImageS3Key)}`
         : (p.coverImageUrl ?? null),
@@ -358,7 +382,8 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
     })),
     samples: samples.map((ps) => {
       const content = ps.sample;
-      const readable = ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId);
+      const readable =
+        (userId != null && ps.ownerId === userId) || ps.credits === 0 || inCollection.has(ps.sampleId);
       return {
         id: ps.sampleId,
         name: ps.name,
@@ -368,7 +393,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
         credits: ps.credits,
         sizeBytes: content?.sizeBytes ?? null,
         contentType: content?.contentType ?? "application/octet-stream",
-        isOwner: ps.ownerId === user.id,
+        isOwner: userId != null && ps.ownerId === userId,
         inCollection: inCollection.has(ps.sampleId),
         canDownload: readable,
         createdAt: ps.createdAt,
@@ -379,7 +404,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
 });
 
 libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const { name, parentId, isPublic, priceTokens, defaultSampleTokens, coverImageUrl } = c.req.valid("json");
 
   if (parentId) {
@@ -413,7 +438,7 @@ libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
 });
 
 libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const id = c.req.param("id");
   const { name, parentId, coverImageS3Key, coverImageUrl, isPublic, priceTokens, defaultSampleTokens } =
     c.req.valid("json");
@@ -455,7 +480,7 @@ libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) =
 });
 
 libraryApp.delete("/packs/:id", async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const id = c.req.param("id");
 
   const pack = await prisma.pack.findUnique({
@@ -558,7 +583,7 @@ libraryApp.delete("/packs/:id", async (c) => {
 });
 
 libraryApp.post("/packs/:id/cover-upload-url", zValidator("json", packCoverUploadSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const id = c.req.param("id");
   const { contentType } = c.req.valid("json");
 
@@ -608,26 +633,27 @@ libraryApp.get("/packs/:id/contents", async (c) => {
 
   const sampleIds = packSamples.map((ps) => ps.sampleId);
   const collectionRows =
-    sampleIds.length > 0
+    user && sampleIds.length > 0
       ? await prisma.sampleCollection.findMany({
           where: { userId: user.id, sampleId: { in: sampleIds } },
           select: { sampleId: true },
         })
       : [];
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
+  const userId = user?.id;
 
   return c.json({
     pack: {
       id: pack.id,
       name: pack.name,
       ownerId: pack.ownerId,
-      isOwner: pack.ownerId === user.id,
+      isOwner: userId != null && pack.ownerId === userId,
     },
     packs: childPacks.map((p) => ({
       id: p.id,
       name: p.name,
       ownerId: p.ownerId,
-      isOwner: p.ownerId === user.id,
+      isOwner: userId != null && p.ownerId === userId,
       coverImageProxyUrl: p.coverImageS3Key
         ? `/api/library/packs/${encodeURIComponent(p.id)}/cover?v=${encodeURIComponent(p.coverImageS3Key)}`
         : (p.coverImageUrl ?? null),
@@ -638,7 +664,8 @@ libraryApp.get("/packs/:id/contents", async (c) => {
     })),
     samples: packSamples.map((ps) => {
       const content = ps.sample;
-      const readable = ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId);
+      const readable =
+        (userId != null && ps.ownerId === userId) || ps.credits === 0 || inCollection.has(ps.sampleId);
       return {
         id: ps.sampleId,
         name: ps.name,
@@ -648,7 +675,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
         credits: ps.credits,
         sizeBytes: content?.sizeBytes ?? null,
         contentType: content?.contentType ?? "application/octet-stream",
-        isOwner: ps.ownerId === user.id,
+        isOwner: userId != null && ps.ownerId === userId,
         inCollection: inCollection.has(ps.sampleId),
         canDownload: readable,
         createdAt: ps.createdAt,
@@ -729,12 +756,13 @@ libraryApp.get("/packs/:id", async (c) => {
     0,
   );
 
+  const userId = user?.id;
   return c.json({
     id: pack.id,
     name: pack.name,
     ownerId: pack.ownerId,
     ownerName: pack.owner.name,
-    isOwner: pack.ownerId === user.id,
+    isOwner: userId != null && pack.ownerId === userId,
     coverImageS3Key: pack.coverImageS3Key,
     coverImageUrl,
     coverImageProxyUrl,
@@ -749,7 +777,7 @@ libraryApp.get("/packs/:id", async (c) => {
 });
 
 libraryApp.get("/packs/:id/download-manifest", async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const id = c.req.param("id");
 
   const pack = await prisma.pack.findUnique({
@@ -848,7 +876,7 @@ function contentTypeToExt(contentType: string): string {
 }
 
 libraryApp.post("/samples/upload-url-by-content", zValidator("json", uploadByContentHashSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const { packId, contentHash, contentType } = c.req.valid("json");
   await requireOwnedPack(packId, user.id);
   const ext = contentTypeToExt(contentType);
@@ -858,7 +886,7 @@ libraryApp.post("/samples/upload-url-by-content", zValidator("json", uploadByCon
 });
 
 libraryApp.post("/samples/from-content", zValidator("json", createSampleFromContentSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const { packId, name, contentHash, contentType, sizeBytes, credits } = c.req.valid("json");
   const pack = await requireOwnedPack(packId, user.id);
   const isAudio = isAudioContentType(contentType);
@@ -931,7 +959,7 @@ libraryApp.post(
   "/samples/from-content-batch",
   zValidator("json", createSampleFromContentBatchSchema),
   async (c) => {
-    const user = c.get("user");
+    const user = requireUser(c);
     const { packId, samples } = c.req.valid("json");
     const pack = await requireOwnedPack(packId, user.id);
 
@@ -1014,7 +1042,7 @@ libraryApp.post(
 );
 
 libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const { packId, fileName, contentType, credits, sizeBytes } = c.req.valid("json");
   const pack = await requireOwnedPack(packId, user.id);
   const safeFileName = sanitizePathSegment(fileName);
@@ -1037,7 +1065,7 @@ libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), a
 });
 
 libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const { packId, name, s3Key, contentType, sizeBytes, credits } = c.req.valid("json");
   const pack = await requireOwnedPack(packId, user.id);
   const isAudio = isAudioContentType(contentType);
@@ -1109,7 +1137,7 @@ const updatePackSampleSchema = z.object({
 });
 
 libraryApp.patch("/packs/:packId/samples/:sampleId", zValidator("json", updatePackSampleSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const packId = c.req.param("packId");
   const sampleId = c.req.param("sampleId");
   const { name, credits } = c.req.valid("json");
@@ -1150,7 +1178,7 @@ libraryApp.patch("/packs/:packId/samples/:sampleId", zValidator("json", updatePa
 });
 
 libraryApp.post("/samples/:id/add-to-collection", async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const sampleId = c.req.param("id");
 
   const sample = await prisma.sample.findUnique({
@@ -1193,7 +1221,7 @@ libraryApp.post("/samples/:id/add-to-collection", async (c) => {
 });
 
 libraryApp.get("/samples/:id/analysis", async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const sampleId = c.req.param("id");
 
   const readable = await canReadSample(user.id, sampleId);
@@ -1257,7 +1285,7 @@ libraryApp.get("/samples/:id/analysis", async (c) => {
 });
 
 libraryApp.post("/samples/:id/analysis/retry", async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const sampleId = c.req.param("id");
 
   const readable = await canReadSample(user.id, sampleId);
@@ -1305,7 +1333,7 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
 });
 
 libraryApp.get("/samples/:id", async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const sampleId = c.req.param("id");
 
   const readable = await canReadSample(user.id, sampleId);
@@ -1356,7 +1384,7 @@ libraryApp.get("/samples/:id", async (c) => {
 });
 
 libraryApp.get("/samples/:id/download", async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const sampleId = c.req.param("id");
 
   const sample = await prisma.sample.findUnique({

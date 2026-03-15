@@ -25,6 +25,13 @@ import {
 } from "@/lib/remote-library";
 import { computeAudioContentHash } from "@/lib/content-hash";
 import { fileSystemService } from "@/lib/fileSystem";
+import {
+  fromTempPath,
+  getFile as getTempFile,
+  isTempPath,
+  listDirectory,
+  putFile as putTempFile,
+} from "@/lib/temp-files-store";
 import { useSession } from "@/lib/auth-client";
 import { toast } from "sonner";
 import { Loader2, ImagePlus, Dices, Trash2 } from "lucide-react";
@@ -40,6 +47,66 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+async function getFileForPath(path: string, paneType: "source" | "dest"): Promise<File | null> {
+  if (isTempPath(path)) {
+    const vp = fromTempPath(path);
+    if (!vp) return null;
+    const blob = await getTempFile(vp);
+    if (!blob) return null;
+    const fileName = path.split("/").pop() ?? "file";
+    return new File([blob], fileName, { type: blob.type || "application/octet-stream" });
+  }
+  return fileSystemService.getFile(path, paneType);
+}
+
+async function writeBlobForPath(
+  path: string,
+  blob: Blob,
+  paneType: "source" | "dest",
+): Promise<boolean> {
+  if (isTempPath(path)) {
+    const vp = fromTempPath(path);
+    if (!vp) return false;
+    const fileName = path.split("/").pop() ?? "file";
+    await putTempFile(vp, blob, fileName);
+    return true;
+  }
+  const result = await fileSystemService.writeBlobToPath(path, blob, paneType);
+  return result.success;
+}
+
+async function collectFilesRecursivelyForPath(
+  path: string,
+  paneType: "source" | "dest",
+): Promise<Array<{ path: string; name: string; size: number }>> {
+  if (isTempPath(path)) {
+    const vp = fromTempPath(path) ?? "/Temp Files";
+    const results: Array<{ path: string; name: string; size: number }> = [];
+    const { files, folders } = await listDirectory(vp);
+    for (const f of files) {
+      results.push({ path: f.path, name: f.name, size: f.size });
+    }
+    for (const folder of folders) {
+      const subPath = folder.path;
+      const subResults = await collectFilesRecursivelyForPath(subPath, paneType);
+      results.push(...subResults);
+    }
+    return results;
+  }
+  const allFiles: Array<{ path: string; name: string; size: number }> = [];
+  const result = await fileSystemService.readDirectory(path, paneType);
+  if (!result.success || !result.data) return [];
+  for (const entry of result.data) {
+    if (entry.isDirectory) {
+      const sub = await collectFilesRecursivelyForPath(entry.path, paneType);
+      allFiles.push(...sub);
+    } else {
+      allFiles.push({ path: entry.path, name: entry.name, size: entry.size });
+    }
+  }
+  return allFiles;
+}
 
 function unsplashPhotographerUrl(username: string): string {
   return `https://unsplash.com/@${username}?utm_source=octatrack&utm_medium=referral`;
@@ -241,13 +308,13 @@ export function CreatePackDialog({
           try {
             const base = folderPath.replace(/\/$/, "");
             const packJsonPath = base ? `${base}/pack.json` : "pack.json";
-            const file = await fileSystemService.getFile(packJsonPath, paneType);
+            const file = await getFileForPath(packJsonPath, paneType);
             if (file) {
               const data = JSON.parse(await file.text()) as { name?: string; coverImage?: string };
               if (data.name?.trim()) setName(data.name.trim());
               if (data.coverImage) {
                 const coverPath = base ? `${base}/${data.coverImage}` : data.coverImage;
-                const coverFile = await fileSystemService.getFile(coverPath, paneType);
+                const coverFile = await getFileForPath(coverPath, paneType);
                 if (coverFile) {
                   const ext = data.coverImage.match(/\.(jpe?g|png|webp|gif)$/i)?.[0]?.slice(1) ?? "jpg";
                   const mime =
@@ -412,7 +479,7 @@ export function CreatePackDialog({
             const ownerName = session?.user?.name ?? "Unknown";
             const joinPath = (base: string, file: string) => base.replace(/\/$/, "") + (base ? "/" : "") + file;
             const packJsonPath = joinPath(folderPath, "pack.json");
-            const existingFile = await fileSystemService.getFile(packJsonPath, paneType);
+            const existingFile = await getFileForPath(packJsonPath, paneType);
             let packJson: Record<string, unknown> = {
               packId,
               name: trimmed,
@@ -437,9 +504,9 @@ export function CreatePackDialog({
               const ext = imageFile.type?.includes("png") ? "png" : "jpg";
               const coverImage = `cover.${ext}`;
               packJson.coverImage = coverImage;
-              await fileSystemService.writeBlobToPath(joinPath(folderPath, coverImage), squareBlob, paneType);
+              await writeBlobForPath(joinPath(folderPath, coverImage), squareBlob, paneType);
             }
-            await fileSystemService.writeBlobToPath(
+            await writeBlobForPath(
               packJsonPath,
               new Blob([JSON.stringify(packJson, null, 2)], { type: "application/json" }),
               paneType,
@@ -485,21 +552,10 @@ export function CreatePackDialog({
 
       if (folderPath) {
         const allFiles: Array<{ path: string; name: string; size: number }> = [];
-        const collectFilesRecursively = async (path: string) => {
-          const result = await fileSystemService.readDirectory(path, paneType);
-          if (!result.success || !result.data) {
-            throw new Error(result.error ?? `Failed to list ${path}`);
-          }
-          for (const entry of result.data) {
-            if (entry.isDirectory) {
-              await collectFilesRecursively(entry.path);
-              continue;
-            }
-            allFiles.push({ path: entry.path, name: entry.name, size: entry.size });
-          }
-        };
-
-        await collectFilesRecursively(folderPath);
+        const entries = await collectFilesRecursivelyForPath(folderPath, paneType);
+        for (const entry of entries) {
+          allFiles.push(entry);
+        }
 
         const includedFiles = allFiles.filter((entry) => !isExcludedByServerPattern(entry.name));
         const audioEntries = includedFiles.filter((entry) => AUDIO_EXT.test(entry.name));
@@ -535,7 +591,7 @@ export function CreatePackDialog({
           for (let i = 0; i < uploadEntries.length; i++) {
             setUploadProgress({ current: i, total: uploadEntries.length, phase: "Computing hashes…" });
             const entry = uploadEntries[i];
-            const file = await fileSystemService.getFile(entry.path, paneType);
+            const file = await getFileForPath(entry.path, paneType);
             if (!file) continue;
             const contentHash = await computeAudioContentHash(file);
             filesWithHashes.push({
@@ -608,11 +664,12 @@ export function CreatePackDialog({
             const ext = imageFile.type?.includes("png") ? "png" : "jpg";
             coverImage = `cover.${ext}`;
             const coverBlob = await cropImageToSquare(imageFile);
-            const coverResult = await fileSystemService.writeBlobToPath(
+            const coverOk = await writeBlobForPath(
               joinPath(folderPath, coverImage),
               coverBlob,
               paneType,
             );
+            const coverResult = { success: coverOk };
             if (!coverResult.success) coverImage = null;
           }
 
@@ -627,7 +684,7 @@ export function CreatePackDialog({
           const packJsonBlob = new Blob([JSON.stringify(packJson, null, 2)], {
             type: "application/json",
           });
-          await fileSystemService.writeBlobToPath(joinPath(folderPath, "pack.json"), packJsonBlob, paneType);
+          await writeBlobForPath(joinPath(folderPath, "pack.json"), packJsonBlob, paneType);
         } catch (err) {
           console.warn("Failed to write pack.json to folder:", err);
         }

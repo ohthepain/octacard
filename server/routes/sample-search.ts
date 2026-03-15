@@ -2,6 +2,7 @@
  * Sample search API: faceted search, similarity, text-search.
  */
 import { Hono } from "hono";
+import { requireUser } from "../middleware/auth-guard.js";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../types.js";
@@ -115,7 +116,7 @@ async function buildSampleResult(
 
 // GET / - faceted search on canonical fields (mounted at /samples/search)
 sampleSearchApp.get("/", zValidator("query", searchSamplesSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const params = c.req.valid("query");
 
   const taxonomyConditions: Array<{ taxonomyValue: { key: string; attribute: { key: string } } }> = [];
@@ -198,7 +199,7 @@ sampleSearchApp.get("/", zValidator("query", searchSamplesSchema), async (c) => 
 
 // POST /similar - nearest neighbors from sample ID (audio-to-audio)
 sampleSearchApp.post("/similar", zValidator("json", similarSamplesSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const { sampleId, limit } = c.req.valid("json");
 
   const source = await prisma.sampleEmbedding.findUnique({
@@ -242,7 +243,7 @@ sampleSearchApp.post("/similar", zValidator("json", similarSamplesSchema), async
 
 // POST /text-search - CLAP text embedding vs stored audio embeddings
 sampleSearchApp.post("/text-search", zValidator("json", textSearchSchema), async (c) => {
-  const user = c.get("user");
+  const user = requireUser(c);
   const { query, limit } = c.req.valid("json");
 
   const { AutoTokenizer, ClapTextModelWithProjection } = await import(

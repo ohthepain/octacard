@@ -1,11 +1,13 @@
 /**
  * Central resolver for audio blobs by path.
- * Handles both local paths (via fileSystemService) and remote paths (via audition cache).
+ * Handles local paths (via fileSystemService), remote paths (via audition cache),
+ * and temp paths (via temp-files-store).
  */
 import type { FileSystemResult } from "./fileSystem";
 import type { PaneType } from "./fileSystem";
 import { fileSystemService } from "./fileSystem";
 import { getOrFetchRemoteSample } from "./audition-cache";
+import { fromTempPath, getFile, isTempPath } from "./temp-files-store";
 
 const REMOTE_PREFIX = "remote://sample/";
 
@@ -22,6 +24,7 @@ export function parseRemoteSampleId(path: string): string | null {
 /**
  * Get an audio blob URL for the given path.
  * For remote://sample/{id} paths, fetches from audition cache.
+ * For temp:/// paths, reads from temp-files-store.
  * For local paths, delegates to fileSystemService.
  */
 export async function getAudioBlobForPath(
@@ -41,5 +44,19 @@ export async function getAudioBlobForPath(
       };
     }
   }
+
+  if (isTempPath(path)) {
+    const virtualPath = fromTempPath(path);
+    if (!virtualPath) {
+      return { success: false, error: "Invalid temp path" };
+    }
+    const blob = await getFile(virtualPath);
+    if (!blob) {
+      return { success: false, error: "File not found in Temp Files" };
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    return { success: true, data: objectUrl };
+  }
+
   return fileSystemService.getAudioFileBlob(path, paneType);
 }

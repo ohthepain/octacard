@@ -53,6 +53,9 @@ import {
 } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
 import { getAudioBlobForPath, isRemotePath } from "@/lib/audio-resolver";
+import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
+import { isTempPath } from "@/lib/temp-files-store";
+import JSZip from "jszip";
 import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { parseBpmFromString } from "@/lib/tempoUtils";
 import { computeAutoLoop } from "@/lib/autoLoopDetection";
@@ -1959,30 +1962,16 @@ export const AudioPreview = ({
       const slices = displayedSlices.map((s) => ({ time: s.time }));
       const hasSlices = slices.length > 0;
 
-      const statsResult = isRemotePath(filePath)
-        ? { success: false, data: undefined }
-        : await fileSystemService.getFileStats(filePath, paneType);
+      const useDownloadMode = !hasDirectoryPickerSupport() || isTempPath(filePath);
+      const statsResult =
+        isRemotePath(filePath) || useDownloadMode
+          ? { success: false, data: undefined }
+          : await fileSystemService.getFileStats(filePath, paneType);
       const willOverwrite = statsResult.success && statsResult.data;
 
       let saveAsTarget: { dirHandle: FileSystemDirectoryHandle; filename: string } | null = null;
-      if (isRemotePath(filePath)) {
-        setExportSaveAsFilename(fileName ?? "export.wav");
-        setExportSaveAsDirHandle(null);
-        setExportSaveAsOpen(true);
-        const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>((resolve) => {
-          exportSaveAsResolverRef.current = resolve;
-        });
-        setExportSaveAsOpen(false);
-        setExportSaveAsDirHandle(null);
-        if (!result) return;
-        saveAsTarget = result;
-      } else if (willOverwrite) {
-        setExportOverwriteOpen(true);
-        const choice = await new Promise<"abort" | "overwrite" | "saveAs">((resolve) => {
-          exportOverwriteResolverRef.current = resolve;
-        });
-        if (choice === "abort") return;
-        if (choice === "saveAs") {
+      if (!useDownloadMode) {
+        if (isRemotePath(filePath)) {
           setExportSaveAsFilename(fileName ?? "export.wav");
           setExportSaveAsDirHandle(null);
           setExportSaveAsOpen(true);
@@ -1995,6 +1984,26 @@ export const AudioPreview = ({
           setExportSaveAsDirHandle(null);
           if (!result) return;
           saveAsTarget = result;
+        } else if (willOverwrite) {
+          setExportOverwriteOpen(true);
+          const choice = await new Promise<"abort" | "overwrite" | "saveAs">((resolve) => {
+            exportOverwriteResolverRef.current = resolve;
+          });
+          if (choice === "abort") return;
+          if (choice === "saveAs") {
+            setExportSaveAsFilename(fileName ?? "export.wav");
+            setExportSaveAsDirHandle(null);
+            setExportSaveAsOpen(true);
+            const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>(
+              (resolve) => {
+                exportSaveAsResolverRef.current = resolve;
+              },
+            );
+            setExportSaveAsOpen(false);
+            setExportSaveAsDirHandle(null);
+            if (!result) return;
+            saveAsTarget = result;
+          }
         }
       }
 
@@ -2027,7 +2036,34 @@ export const AudioPreview = ({
         const mainFileName = saveAsTarget ? saveAsTarget.filename : (fileName ?? "export.wav");
         const mainName = `${mainFileName.replace(/\.wav$/i, "")}.wav`;
 
-        if (saveAsTarget) {
+        if (useDownloadMode) {
+          if (sliceBlobs && sliceBlobs.length > 0) {
+            const baseName = mainFileName.replace(/\.wav$/i, "");
+            const zip = new JSZip();
+            zip.file(mainName, mainBlob);
+            const padWidth = Math.max(2, String(sliceBlobs.length).length);
+            for (let i = 0; i < sliceBlobs.length; i++) {
+              const num = String(i + 1).padStart(padWidth, "0");
+              zip.file(`${baseName}_${num}.wav`, sliceBlobs[i]);
+            }
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            const url = URL.createObjectURL(zipBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${baseName}_slices.zip`;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${mainName} and ${sliceBlobs.length} slices`);
+          } else {
+            const url = URL.createObjectURL(mainBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = mainName;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${mainName}`);
+          }
+        } else if (saveAsTarget) {
           const result = await fileSystemService.writeBlobToDirectoryHandle(saveAsTarget.dirHandle, mainName, mainBlob);
           if (!result.success) {
             toast.error(result.error || "Export failed");
@@ -2124,16 +2160,26 @@ export const AudioPreview = ({
         return;
       }
       const safeName = `${name.trim().replace(/\.wav$/i, "")}.wav`;
-      const result = await fileSystemService.addFileFromDrop(
-        new File([blob], safeName, { type: "audio/wav" }),
-        "/",
-        paneType || "source",
-      );
-      if (result.success) {
+      if (!hasDirectoryPickerSupport()) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = safeName;
+        a.click();
+        URL.revokeObjectURL(url);
         toast.success(`Exported ${safeName}`);
-        onFileSaved?.(paneType || "source");
       } else {
-        toast.error(result.error || "Export failed");
+        const result = await fileSystemService.addFileFromDrop(
+          new File([blob], safeName, { type: "audio/wav" }),
+          "/",
+          paneType || "source",
+        );
+        if (result.success) {
+          toast.success(`Exported ${safeName}`);
+          onFileSaved?.(paneType || "source");
+        } else {
+          toast.error(result.error || "Export failed");
+        }
       }
       return;
     }
@@ -2490,6 +2536,30 @@ export const AudioPreview = ({
                   </Button>
                 </div>
               </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 min-w-0 shrink-0 font-mono text-xs"
+                onClick={() => handleTempoChange(tempoBpm * 2)}
+                disabled={isLoading || tempoBpm > 120}
+                title="Double tempo"
+                aria-label="Double tempo"
+              >
+                ×2
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 min-w-0 shrink-0 font-mono text-xs"
+                onClick={() => handleTempoChange(tempoBpm / 2)}
+                disabled={isLoading || tempoBpm < 100}
+                title="Halve tempo"
+                aria-label="Halve tempo"
+              >
+                ÷2
+              </Button>
               <Button
                 size="sm"
                 variant="outline"

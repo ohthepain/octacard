@@ -1,4 +1,4 @@
-import { Star, Trash2 } from "lucide-react";
+import { Folder, Star, Trash2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,8 @@ type DataTransferItemWithFileSystemHandle = DataTransferItem & {
   getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>;
 };
 
+const TEMP_FILES_PATH = "temp:///Temp Files";
+
 interface FavoritesColumnProps {
   paneType: "source" | "dest";
   volumeId: string;
@@ -22,6 +24,8 @@ interface FavoritesColumnProps {
   onBrowseFromFavorite?: (path: string) => void;
   onDropFolder?: (path: string, name: string) => void;
   title?: string;
+  /** When true, show Temp Files button for quick nav to temp-files root */
+  showTempFilesButton?: boolean;
 }
 
 export function FavoritesColumn({
@@ -32,6 +36,7 @@ export function FavoritesColumn({
   onBrowseFromFavorite,
   onDropFolder,
   title,
+  showTempFilesButton = false,
 }: FavoritesColumnProps) {
   const { favorites, addFavorite, removeFavorite } = useFavorites(
     paneType,
@@ -112,6 +117,22 @@ export function FavoritesColumn({
         onDrop={handleDrop}
       >
         <div className="p-2 space-y-0.5">
+          {showTempFilesButton && (
+            <button
+              type="button"
+              onClick={() => onNavigate(TEMP_FILES_PATH)}
+              className={cn(
+                "group flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors cursor-pointer w-full text-left",
+                currentPath === TEMP_FILES_PATH
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "text-foreground hover:bg-muted/50",
+              )}
+              data-testid={`favorite-temp-files-${paneType}`}
+            >
+              <Folder className="w-3 h-3 shrink-0" />
+              <span className="truncate">Temp Files</span>
+            </button>
+          )}
           {favorites.length === 0 ? (
             <div className="px-2 py-4 text-sm text-muted-foreground text-center border-2 border-dashed border-muted rounded-lg">
               No favorites. Drag a folder here to add.

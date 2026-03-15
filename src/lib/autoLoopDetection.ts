@@ -15,6 +15,12 @@ const ENVELOPE_HOP = 1024;
 /** Minimum transient score (0-1) to consider as first onset; below = silence */
 const FIRST_TRANSIENT_THRESHOLD = 0.15;
 
+/** Window at start to check for leading silence (seconds) */
+const LEADING_SILENCE_WINDOW_MS = 80;
+
+/** If start RMS is above this fraction of max RMS in first 2s, treat as no leading silence */
+const START_HAS_AUDIO_THRESHOLD = 0.05;
+
 function rms(samples: Float32Array, start: number, length: number): number {
   let sum = 0;
   const end = Math.min(start + length, samples.length);
@@ -25,6 +31,26 @@ function rms(samples: Float32Array, start: number, length: number): number {
     sum += s * s;
   }
   return Math.sqrt(sum / count);
+}
+
+/**
+ * Returns true if the sample starts with significant audio (no leading silence).
+ */
+function hasAudioAtStart(samples: Float32Array, sampleRate: number): boolean {
+  const windowSamples = Math.min(
+    Math.floor((LEADING_SILENCE_WINDOW_MS / 1000) * sampleRate),
+    samples.length
+  );
+  if (windowSamples <= 0) return true;
+  const startRms = rms(samples, 0, windowSamples);
+
+  const first2sSamples = Math.min(2 * sampleRate, samples.length);
+  let maxRms = 0;
+  for (let pos = 0; pos + FRAME_SIZE <= first2sSamples; pos += HOP_SIZE) {
+    maxRms = Math.max(maxRms, rms(samples, pos, FRAME_SIZE));
+  }
+  if (maxRms < 1e-10) return true;
+  return startRms > maxRms * START_HAS_AUDIO_THRESHOLD;
 }
 
 /**
@@ -65,7 +91,7 @@ function detectFirstTransientTime(samples: Float32Array, sampleRate: number): nu
 /**
  * Build onset strength envelope (downsampled for autocorrelation).
  */
-function buildOnsetEnvelope(samples: Float32Array, sampleRate: number): Float32Array {
+function buildOnsetEnvelope(samples: Float32Array, _sampleRate: number): Float32Array {
   const envelopeLen = Math.floor(samples.length / ENVELOPE_HOP);
   const envelope = new Float32Array(envelopeLen);
   let prevRms = 0;
@@ -161,9 +187,9 @@ export function computeAutoLoop(
   }
   if (bpm == null) bpm = 120;
 
-  // 2. First transient (leading silence trim)
-  const firstTransientTime = detectFirstTransientTime(channel, sampleRate);
-  const loopStart = firstTransientTime;
+  // 2. Loop start: if sample begins with audio, use 0; else trim to first transient
+  const startsWithAudio = hasAudioAtStart(channel, sampleRate);
+  const loopStart = startsWithAudio ? 0 : detectFirstTransientTime(channel, sampleRate);
 
   // 3. Loop end: exactly one bar (4 beats) after start, sample-accurate
   // samples per bar = 4 * (60/bpm) * sampleRate = 240 * sampleRate / bpm
@@ -180,6 +206,6 @@ export function computeAutoLoop(
     loopStart,
     loopEnd: Math.min(loopEnd, duration),
     bpmFromFilename: bpmFromName != null,
-    trimmedSilence: firstTransientTime > 0.01,
+    trimmedSilence: loopStart > 0.01,
   };
 }
