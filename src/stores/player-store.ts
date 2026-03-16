@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { PaneType } from "./multi-sample-store";
+import type { PaneType } from "./project-store";
 
 export interface PlayingSample {
   id: string;

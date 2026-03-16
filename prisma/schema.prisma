@@ -22,6 +22,7 @@ model User {
   ownedPacks    Pack[]              @relation("PackOwner")
   ownedSamples  PackSample[]       @relation("SampleOwner")
   collection    SampleCollection[]
+  project       Project?
 
   @@unique([email])
   @@map("user")
@@ -99,6 +100,8 @@ model Pack {
   isPublic            Boolean      @default(true)
   priceTokens         Int          @default(0)
   defaultSampleTokens Int          @default(0)
+  includeSamples      Json         @default("[]") // string[] of paths for export
+  includeStacks       Boolean      @default(true)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   owner               User         @relation("PackOwner", fields: [ownerId], references: [id], onDelete: Cascade)
@@ -110,6 +113,48 @@ model Pack {
   @@index([parentId])
   @@index([name])
   @@map("pack")
+}
+
+model Project {
+  id                  String         @id @default(cuid())
+  userId              String         @unique
+  name                String         @default("Untitled")
+  coverImageS3Key     String?
+  coverImageUrl       String?        // Unsplash hotlink or external URL
+  isPublic            Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  activeStackId       String?        // which stack is active; null = use first
+
+  sampleEdits         Json           @default("{}")
+  timeSignature       Json?
+  transportDefaults   Json?
+  arrangementMetadata Json?
+  formatSettings      Json?
+
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stacks              ProjectStack[]
+
+  @@map("project")
+}
+
+model ProjectStack {
+  id              String   @id @default(cuid())
+  projectId       String
+  name            String   @default("Stack 1")
+  sortOrder       Int      @default(0)
+  slots           Json     @default("[]")
+  activeSlotIndex Int      @default(0)
+  previewMode     String   @default("single")
+  bpmAuto         Boolean  @default(true)
+  globalTempoBpm  Int      @default(120)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_stack")
 }
 
 // Sample = content identified by hash. Single source of truth; survives DB reset.

@@ -37,10 +37,11 @@ import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
 import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useProjectStore, EMPTY_SLOTS } from "@/stores/project-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { useAppOptionsStore } from "@/stores/app-options-store";
+import { useShallow } from "zustand/react/shallow";
 import {
   exportAudioWithEdits,
   mixOverdub,
@@ -178,7 +179,7 @@ export const AudioPreview = ({
   const requestSwitchAtNextBar = usePlayerStore((s) => s.requestSwitchAtNextBar);
   const muted = usePlayerStore((s) => s.muted);
   const setMuted = usePlayerStore((s) => s.setMuted);
-  const stack = useMultiSampleStore((s) => s.stack);
+  const stack = useProjectStore(useShallow((s) => s.getActiveStackStack()));
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -200,7 +201,7 @@ export const AudioPreview = ({
     return () => clearTimeout(t);
   }, [waveformHeight]);
 
-  const playingSamplePosition = useMultiSampleStore((s) => s.playingSamplePosition);
+  const playingSamplePosition = useProjectStore((s) => s.playingSamplePosition);
 
   // Sync playhead from unified player: multi mode uses playingSamplePosition, single uses playerCurrentTime
   useEffect(() => {
@@ -563,7 +564,7 @@ export const AudioPreview = ({
             const bpmResult = parseBpmFromString(fileName ?? "");
             if (bpmResult?.bpm) setTempoBpm(bpmResult.bpm);
             else {
-              const mainTempo = useMultiSampleStore.getState().globalTempoBpm;
+              const mainTempo = useProjectStore.getState().getActiveStack()?.globalTempoBpm ?? 120;
               if (Number.isFinite(mainTempo) && mainTempo > 0) setTempoBpm(mainTempo);
             }
           }
@@ -652,8 +653,8 @@ export const AudioPreview = ({
   ]);
 
   // When opened from multi-sample, sync tempo with the sample's BPM so loop length in bars matches
-  const slots = useMultiSampleStore((s) => s.slots);
-  const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
+  const slots = useProjectStore(useShallow((s) => s.getActiveStack()?.slots ?? EMPTY_SLOTS));
+  const globalTempoBpm = useProjectStore((s) => s.getActiveStack()?.globalTempoBpm ?? 120);
   useEffect(() => {
     if (!multiSampleId || isEmptyState) return;
     const sample = slots.find((s): s is NonNullable<typeof s> => s != null && s.id === multiSampleId);

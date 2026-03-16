@@ -268,10 +268,12 @@ export default function SignIn() {
         <div className="absolute -bottom-32 -right-16 size-[28rem] rounded-full opacity-5 bg-white" />
 
         {/* Logo */}
-        <div className="relative z-10 flex items-center gap-3">
-          <img src="/favicon.png" alt="" className="w-10 h-10 rounded-xl" aria-hidden />
-          <span className="text-white font-semibold text-lg tracking-wide">Octacard</span>
-        </div>
+        <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
+          <div className="relative z-10 flex items-center gap-3">
+            <img src="/favicon.png" alt="" className="w-10 h-10 rounded-xl" aria-hidden />
+            <span className="text-white font-semibold text-lg tracking-wide">Octacard</span>
+          </div>
+        </Link>
 
         {/* Main copy */}
         <div className="relative z-10">

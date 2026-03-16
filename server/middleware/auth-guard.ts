@@ -66,12 +66,16 @@ export const requireAdmin: MiddlewareHandler = async (c, next) => {
   await next();
 };
 
-/** Optional auth - sets user/session if present, does not require. */
+/** Optional auth - sets user/session if present, does not require. Never blocks. */
 export const optionalAuth: MiddlewareHandler = async (c, next) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (session?.user) {
-    c.set("user", session.user);
-    c.set("session", session.session);
+  try {
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (session?.user) {
+      c.set("user", session.user);
+      c.set("session", session.session);
+    }
+  } catch {
+    // Treat as unauthenticated (e.g. invalid/expired cookie, DB error)
   }
   await next();
 };

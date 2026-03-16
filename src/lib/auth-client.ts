@@ -18,7 +18,7 @@ export const authClient = createAuthClient({
   },
 });
 
-export const { signIn, signUp, signOut, useSession, deleteUser } = authClient;
+export const { signIn, signUp, signOut, useSession, getSession, deleteUser } = authClient;
 
 /** Session data with roles from customSession plugin (ADMIN, SUPERADMIN) */
 export interface SessionDataWithRoles {

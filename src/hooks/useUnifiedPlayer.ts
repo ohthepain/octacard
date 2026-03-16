@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "@/stores/player-store";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useProjectStore } from "@/stores/project-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { startUnifiedPlayback, type PlaybackHandle } from "@/lib/unifiedPlayback";
 
@@ -18,12 +18,12 @@ export function useUnifiedPlayer() {
 
   useEffect(() => {
     prevIsPlayingRef.current = usePlayerStore.getState().isPlaying;
-    prevMultiStackRef.current = useMultiSampleStore.getState().stack.map((s) => ({ id: s.id, path: s.path }));
+    prevMultiStackRef.current = useProjectStore.getState().getActiveStackStack().map((s) => ({ id: s.id, path: s.path }));
 
-    const unsubMulti = useMultiSampleStore.subscribe(() => {
+    const unsubMulti = useProjectStore.subscribe(() => {
       const playerState = usePlayerStore.getState();
       if (!playerState.isPlaying || playerState.mode !== "multi") return;
-      const multiStack = useMultiSampleStore.getState().stack;
+      const multiStack = useProjectStore.getState().getActiveStackStack();
       const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
       if (multiStack.length === 0 || !hasValidBars) return;
       const prevStack = prevMultiStackRef.current;
@@ -47,9 +47,9 @@ export function useUnifiedPlayer() {
       playbackRef.current = null;
       usePlayerStore.setState({ stack: multiStack, activeSampleId: multiStack[0]?.id ?? null });
       const { volume } = playerState;
-      const globalTempoBpm = useMultiSampleStore.getState().globalTempoBpm;
-      const setPlayingSamplePosition = useMultiSampleStore.getState().setPlayingSamplePosition;
-      const setPlayingSamplePositions = useMultiSampleStore.getState().setPlayingSamplePositions;
+      const globalTempoBpm = useProjectStore.getState().getActiveStack()?.globalTempoBpm ?? 120;
+      const setPlayingSamplePosition = useProjectStore.getState().setPlayingSamplePosition;
+      const setPlayingSamplePositions = useProjectStore.getState().setPlayingSamplePositions;
       const samples = multiStack.map((s) => ({
         id: s.id,
         path: s.path,
@@ -102,8 +102,8 @@ export function useUnifiedPlayer() {
           handle.stopSilent();
           playbackRef.current = null;
           const { mode, singleFile, stack, volume, playbackRate } = state;
-          const globalTempoBpm = useMultiSampleStore.getState().globalTempoBpm;
-          const setPlayingSamplePosition = useMultiSampleStore.getState().setPlayingSamplePosition;
+          const globalTempoBpm = useProjectStore.getState().getActiveStack()?.globalTempoBpm ?? 120;
+          const setPlayingSamplePosition = useProjectStore.getState().setPlayingSamplePosition;
           if (mode === "single" && singleFile && singleFile.path === req.path) {
             const effectiveVolume = state.muted ? 0 : state.volume;
             startUnifiedPlayback("single", [{ id: singleFile.path, path: singleFile.path, paneType: singleFile.paneType }], {
@@ -120,9 +120,9 @@ export function useUnifiedPlayer() {
           } else if (mode === "multi" && stack.length > 0) {
             const sample = stack.find((s) => s.path === req.path);
             if (sample) {
-              const setPlayingSamplePositions = useMultiSampleStore.getState().setPlayingSamplePositions;
+              const setPlayingSamplePositions = useProjectStore.getState().setPlayingSamplePositions;
               const samples = stack.map((s) => ({ id: s.id, path: s.path, paneType: s.paneType, bpm: s.bpm, duration: s.duration }));
-              const multiStack = useMultiSampleStore.getState().stack;
+              const multiStack = useProjectStore.getState().getActiveStackStack();
               const sampleVolumes: Record<string, number> = {};
               for (const s of multiStack) {
                 sampleVolumes[s.id] = s.muted ? 0 : (s.volume ?? 1);
@@ -149,7 +149,7 @@ export function useUnifiedPlayer() {
                 console.warn("Multi restart failed:", err);
                 usePlayerStore.getState().stop();
                 setPlayingSamplePosition(null);
-                useMultiSampleStore.getState().setPlayingSamplePositions({});
+                useProjectStore.getState().setPlayingSamplePositions({});
               });
             }
           }
@@ -186,8 +186,8 @@ export function useUnifiedPlayer() {
       }
       if (state.isPlaying && !prevPlaying) {
         const { mode, singleFile, stack, volume, playbackRate } = state;
-        const globalTempoBpm = useMultiSampleStore.getState().globalTempoBpm;
-        const setPlayingSamplePosition = useMultiSampleStore.getState().setPlayingSamplePosition;
+        const globalTempoBpm = useProjectStore.getState().getActiveStack()?.globalTempoBpm ?? 120;
+        const setPlayingSamplePosition = useProjectStore.getState().setPlayingSamplePosition;
 
         if (mode === "single" && singleFile) {
           const effectiveVolume = state.muted ? 0 : state.volume;
@@ -210,7 +210,7 @@ export function useUnifiedPlayer() {
               usePlayerStore.getState().stop();
             });
         } else if (mode === "multi" && stack.length > 0) {
-          const setPlayingSamplePositions = useMultiSampleStore.getState().setPlayingSamplePositions;
+          const setPlayingSamplePositions = useProjectStore.getState().setPlayingSamplePositions;
           const samples = stack.map((s) => ({
             id: s.id,
             path: s.path,
@@ -218,7 +218,7 @@ export function useUnifiedPlayer() {
             bpm: s.bpm,
             duration: s.duration,
           }));
-          const multiStack = useMultiSampleStore.getState().stack;
+          const multiStack = useProjectStore.getState().getActiveStackStack();
           const sampleVolumes: Record<string, number> = {};
           for (const s of multiStack) {
             sampleVolumes[s.id] = s.muted ? 0 : (s.volume ?? 1);
@@ -251,7 +251,7 @@ export function useUnifiedPlayer() {
               console.warn("Unified multi playback failed:", err);
               usePlayerStore.getState().stop();
               setPlayingSamplePosition(null);
-              useMultiSampleStore.getState().setPlayingSamplePositions({});
+              useProjectStore.getState().setPlayingSamplePositions({});
             });
         }
       }

@@ -18,6 +18,8 @@ import { adminApp } from "./routes/admin.js";
 import { healthApp } from "./routes/health.js";
 import { libraryApp } from "./routes/library.js";
 import { uploadApp } from "./routes/upload.js";
+import { roomsApp } from "./routes/rooms.js";
+import { projectsApp } from "./routes/projects.js";
 import type { AppVariables } from "./types.js";
 import { startPgBoss } from "./pgboss.js";
 import { setWorkerEnabled } from "./workers/worker-state.js";
@@ -84,15 +86,22 @@ app.get("/api/version", (c) =>
   }),
 );
 
+// /api/library/* - optional auth; search allows unauthenticated for scope all/explore (authorization.md)
+app.use("/api/library/*", optionalAuth);
+app.use("/api/library/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
+app.route("/api/library", libraryApp);
+
 // /api/upload/* - requires auth, body limit for future uploads
 app.use("/api/upload/*", requireAuth);
 app.use("/api/upload/*", bodyLimit({ maxSize: 10 * 1024 * 1024 })); // 10MB
 app.route("/api/upload", uploadApp);
 
-// /api/library/* - optional auth; search allows unauthenticated for scope all/explore
-app.use("/api/library/*", optionalAuth);
-app.use("/api/library/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }));
-app.route("/api/library", libraryApp);
+// /api/rooms/* - no auth for public list
+app.route("/api/rooms", roomsApp);
+
+// /api/projects/* - requires auth
+app.use("/api/projects/*", requireAuth);
+app.route("/api/projects", projectsApp);
 
 // /api/admin/* - admin/superadmin only
 app.use("/api/admin/*", requireAdmin);
@@ -107,6 +116,7 @@ if (isProduction) {
   app.use("/favicon.ico", serveStatic({ root: distDir }));
   app.use("/favicon.png", serveStatic({ root: distDir }));
   app.use("/favicon.svg", serveStatic({ root: distDir }));
+  app.use("/logo.png", serveStatic({ root: distDir }));
   app.use("/logo_white.png", serveStatic({ root: distDir }));
   app.use("/placeholder.svg", serveStatic({ root: distDir }));
   app.use("/robots.txt", serveStatic({ root: distDir }));

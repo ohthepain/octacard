@@ -150,6 +150,15 @@ async function canReadSample(userId: string, sampleId: string): Promise<boolean>
   return Boolean(pack);
 }
 
+/** True if sample is in at least one public pack (audition allowed when not logged in; authorization.md) */
+async function canAuditionSampleUnauthenticated(sampleId: string): Promise<boolean> {
+  const packSample = await prisma.packSample.findFirst({
+    where: { sampleId, pack: { isPublic: true } },
+    select: { packId: true },
+  });
+  return Boolean(packSample);
+}
+
 type PackPathNode = { id: string; name: string; parentId: string | null; relativeDir: string };
 
 async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNode>> {
@@ -344,7 +353,7 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
             ...sampleNameFilter,
           },
           include: {
-            pack: { select: { id: true, name: true } },
+            pack: { select: { id: true, name: true, isPublic: true } },
             sample: { select: { sizeBytes: true, contentType: true } },
           },
           orderBy: { updatedAt: "desc" },
@@ -383,7 +392,10 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
     samples: samples.map((ps) => {
       const content = ps.sample;
       const readable =
-        (userId != null && ps.ownerId === userId) || ps.credits === 0 || inCollection.has(ps.sampleId);
+        (userId != null && ps.ownerId === userId) ||
+        ps.credits === 0 ||
+        inCollection.has(ps.sampleId) ||
+        (userId == null && ps.pack.isPublic);
       return {
         id: ps.sampleId,
         name: ps.name,
@@ -601,7 +613,7 @@ libraryApp.get("/packs/:id/contents", async (c) => {
 
   const pack = await prisma.pack.findUnique({
     where: { id: packId },
-    select: { id: true, name: true, ownerId: true },
+    select: { id: true, name: true, ownerId: true, isPublic: true },
   });
   if (!pack) {
     throw new HTTPException(404, { message: "Pack not found" });
@@ -665,7 +677,10 @@ libraryApp.get("/packs/:id/contents", async (c) => {
     samples: packSamples.map((ps) => {
       const content = ps.sample;
       const readable =
-        (userId != null && ps.ownerId === userId) || ps.credits === 0 || inCollection.has(ps.sampleId);
+        (userId != null && ps.ownerId === userId) ||
+        ps.credits === 0 ||
+        inCollection.has(ps.sampleId) ||
+        (userId == null && pack.isPublic);
       return {
         id: ps.sampleId,
         name: ps.name,
@@ -1384,7 +1399,7 @@ libraryApp.get("/samples/:id", async (c) => {
 });
 
 libraryApp.get("/samples/:id/download", async (c) => {
-  const user = requireUser(c);
+  const user = c.get("user");
   const sampleId = c.req.param("id");
 
   const sample = await prisma.sample.findUnique({
@@ -1395,7 +1410,9 @@ libraryApp.get("/samples/:id/download", async (c) => {
     throw new HTTPException(404, { message: "Sample not found" });
   }
 
-  const readable = await canReadSample(user.id, sampleId);
+  const readable = user
+    ? await canReadSample(user.id, sampleId)
+    : await canAuditionSampleUnauthenticated(sampleId);
   if (!readable) {
     throw new HTTPException(403, { message: "You do not have access to download this sample" });
   }

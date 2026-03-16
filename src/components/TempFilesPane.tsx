@@ -30,7 +30,7 @@ import {
 } from "@/lib/temp-files-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useProjectStore } from "@/stores/project-store";
 import { sanitizeFilenameMinimal } from "@/lib/filename";
 import JSZip from "jszip";
 
@@ -150,8 +150,8 @@ export function TempFilesPane({
   const [trashConfirmPath, setTrashConfirmPath] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const putSampleInActiveSlot = useMultiSampleStore((s) => s.putSampleInActiveSlot);
-  const previewMode = useMultiSampleStore((s) => s.previewMode);
+  const putSampleInActiveSlot = useProjectStore((s) => s.putSampleInActiveSlot);
+  const previewMode = useProjectStore((s) => s.getActiveStack()?.previewMode ?? "single");
 
   /** Path to add files to: selected folder, or root when nothing/a file is selected */
   const addTargetPath = (() => {
@@ -580,7 +580,9 @@ export function TempFilesPane({
             if (isAudioFile(node.name)) {
               if (previewMode === "multi") {
                 putSampleInActiveSlot({ path: node.path, name: node.name, paneType });
-                const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+                const active = useProjectStore.getState().getActiveStack();
+                const slots = active?.slots ?? [];
+                const activeSlotIndex = active?.activeSlotIndex ?? 0;
                 const sample = slots[activeSlotIndex];
                 if (sample) {
                   useWaveformEditorStore

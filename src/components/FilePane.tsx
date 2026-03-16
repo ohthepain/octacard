@@ -57,7 +57,7 @@ import { useSession } from "@/lib/auth-client";
 import { CreatePackDialog } from "@/components/CreatePackDialog";
 import { PackView } from "@/components/PackView";
 import { toast } from "sonner";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useProjectStore } from "@/stores/project-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import type { FileSystemResult } from "@/lib/fileSystem";
@@ -341,9 +341,9 @@ export const FilePane = ({
   const { saveNavigationState, getNavigationState } = useNavigationState(paneName);
   const paneType = (paneName === "dest" ? "dest" : "source") as "source" | "dest";
   const volumeId = currentVolumeUUID ?? "_default";
-  const previewMode = useMultiSampleStore((s) => s.previewMode);
-  const putSampleInActiveSlot = useMultiSampleStore((s) => s.putSampleInActiveSlot);
-  const setActiveSlotIndex = useMultiSampleStore((s) => s.setActiveSlotIndex);
+  const previewMode = useProjectStore((s) => s.getActiveStack()?.previewMode ?? "single");
+  const putSampleInActiveSlot = useProjectStore((s) => s.putSampleInActiveSlot);
+  const setActiveSlotIndex = useProjectStore((s) => s.setActiveSlotIndex);
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
@@ -3943,7 +3943,7 @@ export const FilePane = ({
                     toggleFolder(node);
                   } else if (node.type === "file" && isAudioFile(node.name)) {
                     if (previewMode === "multi") {
-                      const { slots } = useMultiSampleStore.getState();
+                      const slots = useProjectStore.getState().getActiveStack()?.slots ?? [];
                       const existingSlotIndex = slots.findIndex(
                         (s) => s && s.path === node.path && s.paneType === paneType,
                       );
@@ -3957,7 +3957,9 @@ export const FilePane = ({
                         }
                       } else {
                         putSampleInActiveSlot({ path: node.path, name: node.name, paneType });
-                        const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+                        const active = useProjectStore.getState().getActiveStack();
+                        const slots = active?.slots ?? [];
+                        const activeSlotIndex = active?.activeSlotIndex ?? 0;
                         const sample = slots[activeSlotIndex];
                         if (sample) {
                           useWaveformEditorStore
@@ -4147,7 +4149,7 @@ export const FilePane = ({
                   <ContextMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
-                      const { slots } = useMultiSampleStore.getState();
+                      const slots = useProjectStore.getState().getActiveStack()?.slots ?? [];
                       const existingSlotIndex = slots.findIndex(
                         (s) => s && s.path === node.path && s.paneType === paneType,
                       );
@@ -4161,7 +4163,9 @@ export const FilePane = ({
                         }
                       } else {
                         putSampleInActiveSlot({ path: node.path, name: node.name, paneType });
-                        const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+                        const active = useProjectStore.getState().getActiveStack();
+                        const slots = active?.slots ?? [];
+                        const activeSlotIndex = active?.activeSlotIndex ?? 0;
                         const sample = slots[activeSlotIndex];
                         if (sample) {
                           useWaveformEditorStore
@@ -4171,7 +4175,7 @@ export const FilePane = ({
                       }
                     }}
                   >
-                    {useMultiSampleStore
+                    {useProjectStore
                       .getState()
                       .slots.some((s) => s && s.path === node.path && s.paneType === paneType)
                       ? "Select in multi"

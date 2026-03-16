@@ -1,15 +1,17 @@
 import { useState, useCallback } from "react";
 import { Play, Pause, Square, Plus, Minus, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useProjectStore, EMPTY_SLOTS } from "@/stores/project-store";
+import { useShallow } from "zustand/react/shallow";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { MultiSampleBlock } from "@/components/MultiSampleBlock";
 import { fileSystemService } from "@/lib/fileSystem";
 import { getPackDownloadManifest } from "@/lib/remote-library";
+import { resolveFileDrop } from "@/lib/resolveFileDrop";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { SLOT_ROW_SIZE } from "@/stores/multi-sample-store";
+import { SLOT_ROW_SIZE } from "@/stores/project-store";
 
 type DirectoryHandleWithEntries = FileSystemDirectoryHandle & {
   entries: () => AsyncIterable<[string, FileSystemHandle]>;
@@ -94,17 +96,17 @@ interface MultiSampleStackProps {
 }
 
 export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSampleStackProps) => {
-  const slots = useMultiSampleStore((s) => s.slots);
-  const activeSlotIndex = useMultiSampleStore((s) => s.activeSlotIndex);
-  const stack = useMultiSampleStore((s) => s.stack);
-  const setActiveSlotIndex = useMultiSampleStore((s) => s.setActiveSlotIndex);
-  const removeFromStack = useMultiSampleStore((s) => s.removeFromStack);
-  const addToStack = useMultiSampleStore((s) => s.addToStack);
-  const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
-  const addSlotRowAt = useMultiSampleStore((s) => s.addSlotRowAt);
-  const removeSlotRow = useMultiSampleStore((s) => s.removeSlotRow);
-  const moveSlotRow = useMultiSampleStore((s) => s.moveSlotRow);
-  const replaceSampleAt = useMultiSampleStore((s) => s.replaceSampleAt);
+  const slots = useProjectStore(useShallow((s) => s.getActiveStack()?.slots ?? EMPTY_SLOTS));
+  const activeSlotIndex = useProjectStore((s) => s.getActiveStack()?.activeSlotIndex ?? 0);
+  const stack = useProjectStore(useShallow((s) => s.getActiveStackStack()));
+  const setActiveSlotIndex = useProjectStore((s) => s.setActiveSlotIndex);
+  const removeFromStack = useProjectStore((s) => s.removeFromStack);
+  const addToStack = useProjectStore((s) => s.addToStack);
+  const addSamplesToStack = useProjectStore((s) => s.addSamplesToStack);
+  const addSlotRowAt = useProjectStore((s) => s.addSlotRowAt);
+  const removeSlotRow = useProjectStore((s) => s.removeSlotRow);
+  const moveSlotRow = useProjectStore((s) => s.moveSlotRow);
+  const replaceSampleAt = useProjectStore((s) => s.replaceSampleAt);
   const closeWaveform = useWaveformEditorStore((s) => s.close);
   const [draggingRowIndex, setDraggingRowIndex] = useState<number | null>(null);
   const [dragOverRowIndex, setDragOverRowIndex] = useState<number | null>(null);
@@ -149,7 +151,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
   );
 
   const openWaveformForActiveSlot = useCallback(() => {
-    const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+    const { slots, activeSlotIndex } = useProjectStore.getState().getActiveStack() ?? { slots: [], activeSlotIndex: 0 };
     const sample = slots[activeSlotIndex];
     if (sample) {
       setActiveSample(sample.id);
@@ -227,7 +229,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
       }
 
       const items = e.dataTransfer.items;
-      if (!items?.length || !fileSystemService.hasRootForPane("source")) return;
+      if (!items?.length) return;
 
       const collectAudioFiles = async (
         handle: FileSystemDirectoryHandle,
@@ -253,10 +255,10 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
           const collected: Array<{ file: File; name: string }> = [];
           await collectAudioFiles(dirHandle, collected);
           const samples: Array<{ path: string; name: string; paneType: "source" }> = [];
-          for (const { file, name } of collected) {
-            const result = await fileSystemService.addFileFromDrop(file, "/", "source");
-            if (result.success && result.data) {
-              samples.push({ path: result.data, name, paneType: "source" });
+          for (const { file } of collected) {
+            const result = await resolveFileDrop(file, { paneType: "source" });
+            if (result.success && result.path && result.name) {
+              samples.push({ path: result.path, name: result.name, paneType: "source" });
             }
           }
           if (samples.length > 0) {
@@ -266,26 +268,24 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
         } else if (handle?.kind === "file") {
           const file = await (handle as FileSystemFileHandle).getFile();
           if (file && isAudioFile(file.name)) {
-            const result = await fileSystemService.addFileFromDrop(file, "/", "source");
-            if (result.success && result.data) {
-              const path = result.data;
-              const name = path.split("/").filter(Boolean).pop() || file.name;
-              addToStack({ path, name, paneType: "source" });
+            const result = await resolveFileDrop(file, { paneType: "source" });
+            if (result.success && result.path && result.name) {
+              addToStack({ path: result.path, name: result.name, paneType: "source" });
               openWaveformForActiveSlot();
+            } else {
+              toast.error(result.error || "Failed to add file");
             }
           }
         }
       } catch {
         const file = await item.getAsFile();
         if (file && isAudioFile(file.name)) {
-          const result = await fileSystemService.addFileFromDrop(file, "/", "source");
-          if (result.success && result.data) {
-            const path = result.data;
-            const name = path.split("/").filter(Boolean).pop() || file.name;
-            addToStack({ path, name, paneType: "source" });
+          const result = await resolveFileDrop(file, { paneType: "source" });
+          if (result.success && result.path && result.name) {
+            addToStack({ path: result.path, name: result.name, paneType: "source" });
             openWaveformForActiveSlot();
           } else {
-            toast.error("Select a source folder first to add files from your computer");
+            toast.error(result.error || "Failed to add file");
           }
         }
       }
@@ -419,7 +419,7 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
                   onDropSample={(s) => {
                     replaceSampleAt(slotIndex, s);
                     if (slotIndex === activeSlotIndex) {
-                      const { slots } = useMultiSampleStore.getState();
+                      const slots = useProjectStore.getState().getActiveStack()?.slots ?? [];
                       const updated = slots[activeSlotIndex];
                       if (updated) {
                         setActiveSample(updated.id);

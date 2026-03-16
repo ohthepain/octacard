@@ -12,13 +12,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "@tanstack/react-router";
 import { useSession, signOut, isAdminOrSuperadmin } from "@/lib/auth-client";
 import { useAppOptionsStore } from "@/stores/app-options-store";
-import { useCacheDebugStore } from "@/stores/cache-debug-store";
 
 export function UserMenu() {
   const { data: session, isPending } = useSession();
   const devMode = useAppOptionsStore((s) => s.devMode);
   const setDevMode = useAppOptionsStore((s) => s.setDevMode);
-  const openCacheDebug = useCacheDebugStore((s) => s.open);
+  const openCacheDebug = useAppOptionsStore((s) => s.openCacheDebug);
 
   const user = session?.user;
   const initials = isPending

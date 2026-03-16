@@ -28,6 +28,8 @@ interface SampleEditsState {
   setEdits: (path: string, edits: SampleEdits) => void;
   getEdits: (path: string) => SampleEdits | undefined;
   clearEdits: (path: string) => void;
+  /** Hydrate from project (e.g. when loading a project) */
+  hydrateFromProject: (sampleEdits: Record<string, SampleEdits>) => void;
 }
 
 export const useSampleEditsStore = create<SampleEditsState>((set, get) => ({
@@ -47,5 +49,10 @@ export const useSampleEditsStore = create<SampleEditsState>((set, get) => ({
       const next = new Map(state.editsByPath);
       next.delete(path);
       return { editsByPath: next };
+    }),
+
+  hydrateFromProject: (sampleEdits) =>
+    set({
+      editsByPath: new Map(Object.entries(sampleEdits ?? {})),
     }),
 }));

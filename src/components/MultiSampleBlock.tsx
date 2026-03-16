@@ -3,14 +3,14 @@ import { X, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import WaveSurfer from "wavesurfer.js";
-import { fileSystemService } from "@/lib/fileSystem";
 import { getAudioBlobForPath } from "@/lib/audio-resolver";
+import { resolveFileDrop } from "@/lib/resolveFileDrop";
 import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { toast } from "sonner";
 import { parseBpmFromString } from "@/lib/tempoUtils";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useProjectStore } from "@/stores/project-store";
 import { usePlayerStore } from "@/stores/player-store";
-import type { StackSample, PaneType } from "@/stores/multi-sample-store";
+import type { StackSample, PaneType } from "@/stores/project-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { SampleSourceBadge, sampleSourceFromPath } from "@/components/SampleSourceBadge";
 import { cn } from "@/lib/utils";
@@ -50,21 +50,21 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
-  const updateSampleBars = useMultiSampleStore((s) => s.updateSampleBars);
-  const setPlayingSamplePosition = useMultiSampleStore((s) => s.setPlayingSamplePosition);
-  const playingSamplePosition = useMultiSampleStore((s) => s.playingSamplePosition);
-  const playingSamplePositions = useMultiSampleStore((s) => s.playingSamplePositions);
+  const updateSampleBars = useProjectStore((s) => s.updateSampleBars);
+  const setPlayingSamplePosition = useProjectStore((s) => s.setPlayingSamplePosition);
+  const playingSamplePosition = useProjectStore((s) => s.playingSamplePosition);
+  const playingSamplePositions = useProjectStore((s) => s.playingSamplePositions);
   const playerMode = usePlayerStore((s) => s.mode);
   const singleFile = usePlayerStore((s) => s.singleFile);
   const playerCurrentTime = usePlayerStore((s) => s.currentTime);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
-  const setSampleVolume = useMultiSampleStore((s) => s.setSampleVolume);
-  const setSampleMuted = useMultiSampleStore((s) => s.setSampleMuted);
+  const setSampleVolume = useProjectStore((s) => s.setSampleVolume);
+  const setSampleMuted = useProjectStore((s) => s.setSampleMuted);
   const volume = sample.volume ?? 1;
   const muted = sample.muted ?? false;
 
   const handleBlockClick = () => {
-    useMultiSampleStore.getState().setActiveSlotIndex(index);
+    useProjectStore.getState().setActiveSlotIndex(index);
     onClick?.();
     useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
   };
@@ -124,16 +124,10 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
 
     const file = item.getAsFile();
     if (!file || !isAudioFile(file.name)) return;
-    if (!fileSystemService.hasRootForPane("source")) {
-      toast.error("Select a source folder first to add files from your computer");
-      return;
-    }
     void (async () => {
-      const result = await fileSystemService.addFileFromDrop(file, "/", "source");
-      if (result.success && result.data) {
-        const path = result.data;
-        const name = path.split("/").filter(Boolean).pop() || file.name;
-        onDropSample({ path, name, paneType: "source" });
+      const result = await resolveFileDrop(file, { paneType: "source" });
+      if (result.success && result.path && result.name) {
+        onDropSample({ path: result.path, name: result.name, paneType: "source" });
       } else {
         toast.error(result.error || "Failed to add file");
       }
