@@ -19,7 +19,7 @@ export async function loadProjectFromRoom(room: Room): Promise<ProjectDocument |
 
 let lastSaveToRoomAt = 0;
 
-export function shouldIgnoreStorageUpdate(ignoreWindowMs = 300): boolean {
+export function shouldIgnoreStorageUpdate(ignoreWindowMs = 800): boolean {
   return Date.now() - lastSaveToRoomAt < ignoreWindowMs;
 }
 

@@ -117,7 +117,7 @@ export async function canPersistToDb(): Promise<boolean> {
 /** Get presigned upload URL for project cover (authenticated only) */
 export async function getProjectCoverUploadUrl(
   projectId: string,
-  contentType: string
+  contentType: string,
 ): Promise<{ key: string; uploadUrl: string; expiresIn: number }> {
   const res = await apiFetch(`${API_BASE}/${projectId}/cover-upload-url`, {
     method: "POST",

@@ -37,9 +37,7 @@ export function usePresenceSync(listeningUserId: string | null) {
 
     const unsub = room.subscribe("others", () => {
       const others = room.getOthers();
-      const target = others.find(
-        (o) => (o.id ?? (o.presence as Record<string, unknown>)?.userId) === listeningUserId,
-      );
+      const target = others.find((o) => (o.id ?? (o.presence as Record<string, unknown>)?.userId) === listeningUserId);
       if (!target) return;
 
       const transport = (target.presence as Record<string, unknown>)?.transport as

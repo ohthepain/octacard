@@ -170,11 +170,15 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
     const project = await loadProjectFromRoom(room);
     if (!project) return false;
 
+    // Don't overwrite name while user is editing it (avoids room sync stomping on typing)
+    const nameInputFocused = document.activeElement?.id === "project-name";
+    const nameToUse = nameInputFocused ? useProjectStore.getState().name : project.name;
+
     set({ isHydrating: true });
     try {
       useProjectStore.getState().setMetadata({
         id: project.id,
-        name: project.name,
+        name: nameToUse,
         coverImageS3Key: project.coverImageS3Key ?? null,
         coverImageUrl: project.coverImageUrl ?? null,
         createdAt: project.createdAt,
@@ -198,10 +202,12 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
   },
 
   clearProject: () => {
-    void get().persistToProject().then(() => {
-      useRoomStore.getState().leaveRoom();
-      useProjectStore.getState().clear();
-    });
+    void get()
+      .persistToProject()
+      .then(() => {
+        useRoomStore.getState().leaveRoom();
+        useProjectStore.getState().clear();
+      });
   },
 
   persistToBackend: async () => {

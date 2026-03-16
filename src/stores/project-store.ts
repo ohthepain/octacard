@@ -4,6 +4,7 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { parseBpmFromString } from "@/lib/tempoUtils";
+import type { StackData } from "@/lib/project-document";
 
 export type PreviewMode = "single" | "multi";
 
@@ -138,7 +139,7 @@ interface ProjectState {
   setSampleMuted: (index: number, muted: boolean) => void;
 
   hydrateFromProject: (data: {
-    stacks: ProjectStackState[];
+    stacks: StackData[];
     activeStackId: string | null;
   }) => void;
 
@@ -443,7 +444,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     ),
 
   hydrateFromProject: (data) => {
-    const stacks = data.stacks.length > 0 ? data.stacks : [createDefaultStack()];
+    const rawStacks = data.stacks.length > 0 ? data.stacks : [createDefaultStack()];
+    const stacks: ProjectStackState[] = rawStacks.map((s) => ({
+      ...s,
+      previewMode: s.previewMode === "multi" ? "multi" : "single",
+    }));
     const activeStackId = data.activeStackId ?? stacks[0]?.id ?? null;
     set({ stacks, activeStackId });
   },

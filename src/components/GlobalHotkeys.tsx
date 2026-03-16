@@ -18,14 +18,14 @@ export function GlobalHotkeys() {
     () => {
       room?.history.undo();
     },
-    { preventDefault: !!room }
+    { preventDefault: !!room },
   );
   useHotkey(
     "Mod+Shift+Z",
     () => {
       room?.history.redo();
     },
-    { preventDefault: !!room }
+    { preventDefault: !!room },
   );
 
   return null;

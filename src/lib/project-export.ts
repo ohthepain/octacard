@@ -26,10 +26,7 @@ export interface ExportSampleRef {
   relativePath: string;
 }
 
-function getSampleRefsFromPackSettings(
-  project: ProjectDocument,
-  packSettings: PackExportConfig,
-): ExportSampleRef[] {
+function getSampleRefsFromPackSettings(project: ProjectDocument, packSettings: PackExportConfig): ExportSampleRef[] {
   const refs: ExportSampleRef[] = [];
   const seen = new Set<string>();
 
@@ -53,10 +50,7 @@ function getSampleRefsFromPackSettings(
   return refs;
 }
 
-async function resolvePathToBlob(
-  path: string,
-  paneType: "source" | "dest" = "source",
-): Promise<Blob | null> {
+async function resolvePathToBlob(path: string, paneType: "source" | "dest" = "source"): Promise<Blob | null> {
   const sampleId = parseRemoteSampleId(path);
   if (sampleId) {
     const blob = await getCachedBlob(sampleId);
@@ -117,11 +111,7 @@ export async function exportProjectPackToFolder(
   const packJsonBlob = new Blob([JSON.stringify(packJson, null, 2)], {
     type: "application/json",
   });
-  await fileSystemService.writeBlobToPath(
-    `${destinationPath}/pack.json`,
-    packJsonBlob,
-    paneType,
-  );
+  await fileSystemService.writeBlobToPath(`${destinationPath}/pack.json`, packJsonBlob, paneType);
 
   return { success: true, count };
 }
@@ -188,12 +178,7 @@ export async function exportProjectPack(
     if (!destPath) {
       return { success: false, error: "Destination path required for folder export" };
     }
-    const result = await exportProjectPackToFolder(
-      project,
-      packSettings,
-      destPath,
-      options?.paneType ?? "dest",
-    );
+    const result = await exportProjectPackToFolder(project, packSettings, destPath, options?.paneType ?? "dest");
     return result.success ? { success: true } : { success: false, error: result.error };
   }
 

@@ -225,7 +225,6 @@ export function ProjectMenu() {
 
   const roomLabel = roomId ?? "—";
   const roomStatus = isInRoom ? "Connected" : "Not in room";
-  const hasCover = Boolean(coverDisplayUrl) || Boolean(imagePreview);
 
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

@@ -966,7 +966,7 @@ const Index = () => {
             </div>
           )}
         </div>
-        <div className="flex-1 min-w-0 flex items-center justify-center gap-2" aria-hidden>
+        <div className="flex-1 min-w-[4rem] flex items-center justify-center gap-2" aria-hidden>
           <RoomAvatars />
           <UndoRedoButtons />
         </div>
@@ -1056,7 +1056,7 @@ const Index = () => {
                 <RemoteFilePane
                   key={`source-${sourceRootVersion}`}
                   title="Global Library"
-                  scope={globalScope}
+                  scope={globalScope === "rooms" ? "all" : globalScope}
                   onSelectionChange={setSelectedSourceItem}
                   openPackId={openPackId}
                   onOpenPackIdConsumed={() => setOpenPackId(null)}

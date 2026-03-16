@@ -1,16 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  Folder,
-  File,
-  ChevronRight,
-  Trash2,
-  Plus,
-  FolderInput,
-  Loader2,
-  Play,
-  Square,
-  Download,
-} from "lucide-react";
+import { Folder, File, ChevronRight, Trash2, Plus, FolderInput, Loader2, Play, Square, Download } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -201,9 +190,7 @@ export function TempFilesPane({
       } else {
         newExpanded.add(node.id);
         if (!node.loaded && node.type === "folder") {
-          setFileTree((prev) =>
-            updateNodeInTree(prev, node.id, (n) => ({ ...n, isLoading: true })),
-          );
+          setFileTree((prev) => updateNodeInTree(prev, node.id, (n) => ({ ...n, isLoading: true })));
           try {
             const children = await loadDirectoryForNode(node);
             setFileTree((prev) =>
@@ -216,9 +203,7 @@ export function TempFilesPane({
             );
           } catch (err) {
             toast.error("Failed to load folder", { description: String(err) });
-            setFileTree((prev) =>
-              updateNodeInTree(prev, node.id, (n) => ({ ...n, isLoading: false })),
-            );
+            setFileTree((prev) => updateNodeInTree(prev, node.id, (n) => ({ ...n, isLoading: false })));
           }
         }
       }
@@ -252,7 +237,7 @@ export function TempFilesPane({
     };
     try {
       const result = await listDirectory(TEMP_FILES_ROOT);
-      const rootNodes = listingToNodes(result, TEMP_FILES_ROOT);
+      const rootNodes = listingToNodes(result);
       const refreshed = await refreshNode(rootNodes);
       setFileTree(refreshed);
     } catch (err) {
@@ -334,7 +319,8 @@ export function TempFilesPane({
           const file = files[i];
           if (!file) continue;
           const safeName = sanitizeFilenameMinimal(file.name) || `file_${i}`;
-          const targetPath = basePath === TEMP_FILES_ROOT ? `${TEMP_FILES_ROOT}/${safeName}` : `${basePath}/${safeName}`;
+          const targetPath =
+            basePath === TEMP_FILES_ROOT ? `${TEMP_FILES_ROOT}/${safeName}` : `${basePath}/${safeName}`;
           await putFile(targetPath, file, safeName);
           count++;
         }
@@ -396,9 +382,7 @@ export function TempFilesPane({
         const fileVp = fromTempPath(filePath) ?? filePath;
         const blob = await getFile(fileVp);
         if (blob) {
-          const relativePath = filePath.startsWith(folderPrefix)
-            ? filePath.slice(folderPrefix.length)
-            : fileName;
+          const relativePath = filePath.startsWith(folderPrefix) ? filePath.slice(folderPrefix.length) : fileName;
           zip.file(relativePath, blob);
         }
       }
@@ -550,9 +534,7 @@ export function TempFilesPane({
               </Button>
             )}
           </div>
-          {isExpanded && node.children && (
-            <div>{node.children.map((child) => renderTreeNode(child, depth + 1))}</div>
-          )}
+          {isExpanded && node.children && <div>{node.children.map((child) => renderTreeNode(child, depth + 1))}</div>}
           {isExpanded && node.isLoading && (
             <div className="flex items-center gap-2 py-1.5 px-2" style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}>
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -601,9 +583,7 @@ export function TempFilesPane({
           {node.size != null && (
             <span className="text-xs text-muted-foreground font-mono">{formatFileSize(node.size)}</span>
           )}
-          {isAudioFile(node.name) && (
-            <TempFilesPlayButton path={node.path} name={node.name} paneType={paneType} />
-          )}
+          {isAudioFile(node.name) && <TempFilesPlayButton path={node.path} name={node.name} paneType={paneType} />}
         </button>
         <Button
           size="sm"

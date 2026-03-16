@@ -50,7 +50,31 @@ const updateProjectSchema = z.object({
   formatSettings: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
-function projectToJson(project: { id: string; name: string; coverImageS3Key: string | null; coverImageUrl: string | null; createdAt: Date; updatedAt: Date; isPublic: boolean; activeStackId: string | null; sampleEdits: unknown; timeSignature: unknown; transportDefaults: unknown; arrangementMetadata: unknown; formatSettings: unknown; stacks: Array<{ id: string; name: string; sortOrder: number; slots: unknown; activeSlotIndex: number; previewMode: string; bpmAuto: boolean; globalTempoBpm: number }> }) {
+function projectToJson(project: {
+  id: string;
+  name: string;
+  coverImageS3Key: string | null;
+  coverImageUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  isPublic: boolean;
+  activeStackId: string | null;
+  sampleEdits: unknown;
+  timeSignature: unknown;
+  transportDefaults: unknown;
+  arrangementMetadata: unknown;
+  formatSettings: unknown;
+  stacks: Array<{
+    id: string;
+    name: string;
+    sortOrder: number;
+    slots: unknown;
+    activeSlotIndex: number;
+    previewMode: string;
+    bpmAuto: boolean;
+    globalTempoBpm: number;
+  }>;
+}) {
   return {
     id: project.id,
     name: project.name,
@@ -91,9 +115,12 @@ projectsApp.get("/me", requireUser, async (c) => {
   return c.json(projectToJson(project));
 });
 
-const createProjectSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-}).optional().default({});
+const createProjectSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+  })
+  .optional()
+  .default({});
 
 /** POST /api/projects - Create project if none; return existing if present */
 projectsApp.post("/", requireUser, zValidator("json", createProjectSchema), async (c) => {
@@ -170,17 +197,28 @@ projectsApp.put(
     if (body.stacks !== undefined) {
       await prisma.projectStack.deleteMany({ where: { projectId: id } });
       await prisma.projectStack.createMany({
-        data: body.stacks.map((s: { id: string; name: string; sortOrder: number; slots: unknown; activeSlotIndex: number; previewMode: string; bpmAuto: boolean; globalTempoBpm: number }) => ({
-          id: s.id,
-          projectId: id,
-          name: s.name,
-          sortOrder: s.sortOrder,
-          slots: s.slots,
-          activeSlotIndex: s.activeSlotIndex,
-          previewMode: s.previewMode,
-          bpmAuto: s.bpmAuto,
-          globalTempoBpm: s.globalTempoBpm,
-        })),
+        data: body.stacks.map(
+          (s: {
+            id: string;
+            name: string;
+            sortOrder: number;
+            slots: unknown;
+            activeSlotIndex: number;
+            previewMode: string;
+            bpmAuto: boolean;
+            globalTempoBpm: number;
+          }) => ({
+            id: s.id,
+            projectId: id,
+            name: s.name,
+            sortOrder: s.sortOrder,
+            slots: s.slots,
+            activeSlotIndex: s.activeSlotIndex,
+            previewMode: s.previewMode,
+            bpmAuto: s.bpmAuto,
+            globalTempoBpm: s.globalTempoBpm,
+          }),
+        ),
       });
     }
 
@@ -191,7 +229,7 @@ projectsApp.put(
     });
 
     return c.json(projectToJson(updated));
-  }
+  },
 );
 
 /** POST /api/projects/:id/cover-upload-url - Get presigned URL for cover upload */
@@ -213,31 +251,36 @@ projectsApp.post(
     const uploadUrl = await getPresignedUploadUrl(key, contentType);
 
     return c.json({ key, uploadUrl, expiresIn: 3600 });
-  }
+  },
 );
 
 /** GET /api/projects/:id/cover - Serve project cover image from S3 */
-projectsApp.get("/:id/cover", requireUser, zValidator("param", z.object({ id: z.string().trim().min(1) })), async (c) => {
-  const user = requireUser(c);
-  const { id } = c.req.param();
+projectsApp.get(
+  "/:id/cover",
+  requireUser,
+  zValidator("param", z.object({ id: z.string().trim().min(1) })),
+  async (c) => {
+    const user = requireUser(c);
+    const { id } = c.req.param();
 
-  const project = await prisma.project.findUnique({
-    where: { id },
-    select: { coverImageS3Key: true, userId: true },
-  });
-  if (!project || project.userId !== user.id || !project.coverImageS3Key) {
-    throw new HTTPException(404, { message: "Project cover not found" });
-  }
+    const project = await prisma.project.findUnique({
+      where: { id },
+      select: { coverImageS3Key: true, userId: true },
+    });
+    if (!project || project.userId !== user.id || !project.coverImageS3Key) {
+      throw new HTTPException(404, { message: "Project cover not found" });
+    }
 
-  const buf = await getFromS3(project.coverImageS3Key);
-  if (!buf) throw new HTTPException(404, { message: "Cover image not found" });
+    const buf = await getFromS3(project.coverImageS3Key);
+    if (!buf) throw new HTTPException(404, { message: "Cover image not found" });
 
-  const ext = project.coverImageS3Key.split(".").pop()?.toLowerCase();
-  const contentType = ext === "png" ? "image/png" : "image/jpeg";
-  return c.body(new Uint8Array(buf), 200, {
-    "Content-Type": contentType,
-    "Cache-Control": "private, max-age=3600",
-  });
-});
+    const ext = project.coverImageS3Key.split(".").pop()?.toLowerCase();
+    const contentType = ext === "png" ? "image/png" : "image/jpeg";
+    return c.body(new Uint8Array(buf), 200, {
+      "Content-Type": contentType,
+      "Cache-Control": "private, max-age=3600",
+    });
+  },
+);
 
 export { projectsApp };

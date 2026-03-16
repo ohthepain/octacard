@@ -2,6 +2,7 @@
  * Room connection state for Liveblocks collaboration.
  */
 import { create } from "zustand";
+import type { JsonObject } from "@liveblocks/client";
 import { liveblocksClient, hasLiveblocksConfig } from "@/lib/liveblocks-client";
 import type { Room } from "@liveblocks/client";
 import type { ProjectDocument } from "@/lib/project-document";
@@ -34,13 +35,11 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     if (prevLeave) prevLeave();
 
     try {
-      const options: { initialPresence: object; initialStorage?: object } = {
-        initialPresence: {},
+      const options: { initialPresence: JsonObject; initialStorage?: { projectJson: string } } = {
+        initialPresence: {} as JsonObject,
       };
       if (initialProject) {
-        options.initialStorage = {
-          projectJson: JSON.stringify(initialProject),
-        };
+        options.initialStorage = { projectJson: JSON.stringify(initialProject) };
       }
       const { room, leave } = liveblocksClient.enterRoom(roomId, options);
       set({ roomId, room, leave, isInRoom: true });

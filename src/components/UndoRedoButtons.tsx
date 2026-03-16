@@ -1,22 +1,23 @@
 /**
  * Undo/Redo buttons - uses Liveblocks room history when in a room.
+ * Always visible; disabled when no project or no room.
  */
 import { Undo2, Redo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRoomStore } from "@/stores/room-store";
+import { useProjectStore } from "@/stores/project-store";
 
 export function UndoRedoButtons() {
   const room = useRoomStore((s) => s.room);
+  const hasProject = Boolean(useProjectStore((s) => s.id));
 
-  if (!room) return null;
-
-  const undo = () => room.history.undo();
-  const redo = () => room.history.redo();
-  const canUndo = room.history.canUndo();
-  const canRedo = room.history.canRedo();
+  const undo = () => room?.history.undo();
+  const redo = () => room?.history.redo();
+  const canUndo = hasProject && (room?.history.canUndo() ?? false);
+  const canRedo = hasProject && (room?.history.canRedo() ?? false);
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 shrink-0">
       <Button
         variant="ghost"
         size="sm"

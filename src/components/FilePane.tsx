@@ -4177,7 +4177,8 @@ export const FilePane = ({
                   >
                     {useProjectStore
                       .getState()
-                      .slots.some((s) => s && s.path === node.path && s.paneType === paneType)
+                      .getActiveStackStack()
+                      .some((s) => s.path === node.path && s.paneType === paneType)
                       ? "Select in multi"
                       : "Add to multi"}
                   </ContextMenuItem>

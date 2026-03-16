@@ -40,8 +40,8 @@ export async function assertMultiStackPersistsAfterReload(page) {
   await removeButtons.first().waitFor({ state: "visible" });
   assert.equal(await removeButtons.count(), 1, "Expected one sample in stack before reload.");
 
-  const persistedStore = await page.evaluate(() => localStorage.getItem("octacard_multi_sample_store_v1"));
-  assert.ok(persistedStore, "Expected multi-sample store to be persisted.");
+  // Wait for debounced project persist (useProjectSync DEBOUNCE_MS = 500)
+  await page.waitForTimeout(600);
 
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
