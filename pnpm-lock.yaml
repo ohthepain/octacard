@@ -197,8 +197,8 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.2.1)
       wavesurfer.js:
-        specifier: ^7.12.2
-        version: 7.12.2(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
+        specifier: ^7.12.3
+        version: 7.12.3(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -6362,8 +6362,8 @@ packages:
     resolution: {integrity: sha512-qC9iz2FlN7DQl3+wjwn3802RTyjCx7sDvfQEXchwa6CWOx07/WVfh91gBmQ9fahw8snwGEWU3xGzOt4tFyHLxg==}
     engines: {node: '>= 0.6'}
 
-  srvx@0.11.9:
-    resolution: {integrity: sha512-97wWJS6F0KTKAhDlHVmBzMvlBOp5FiNp3XrLoodIgYJpXxgG5tE9rX4Pg7s46n2shI4wtEsMATTS1+rI3/ubzA==}
+  srvx@0.11.12:
+    resolution: {integrity: sha512-AQfrGqntqVPXgP03pvBDN1KyevHC+KmYVqb8vVf4N+aomQqdhaZxjvoVp+AOm4u6x+GgNQY3MVzAUIn+TqwkOA==}
     engines: {node: '>=20.16.0'}
     hasBin: true
 
@@ -6975,8 +6975,8 @@ packages:
     engines: {node: '>=20.0.0'}
     hasBin: true
 
-  wavesurfer.js@7.12.2:
-    resolution: {integrity: sha512-akVYISAHCw2gNw/7n8Pk/zH1Zz91WJyL/2MaNQCLD1XV3A226gKlWoDHWp9UdWqQ3zXnWttDf9ewZQQ3cxbOmQ==}
+  wavesurfer.js@7.12.3:
+    resolution: {integrity: sha512-+QtFRftd/AktiQJerW7pa9jA8g/LZmMJjBDHDQtDa0PwCX+047KOUZqfvoQb5CClVSwNilhoABIYupUymqfjhw==}
 
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
@@ -12511,7 +12511,7 @@ snapshots:
   h3@2.0.1-rc.14:
     dependencies:
       rou3: 0.7.12
-      srvx: 0.11.9
+      srvx: 0.11.12
 
   has-bigints@1.1.0: {}
 
@@ -14300,7 +14300,7 @@ snapshots:
 
   sqlstring@2.3.3: {}
 
-  srvx@0.11.9: {}
+  srvx@0.11.12: {}
 
   stackback@0.0.2: {}
 
@@ -14929,7 +14929,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  wavesurfer.js@7.12.2(patch_hash=sqsbq5b6btklpv35vnneopl5w4): {}
+  wavesurfer.js@7.12.3(patch_hash=sqsbq5b6btklpv35vnneopl5w4): {}
 
   web-streams-polyfill@3.3.3: {}
 
