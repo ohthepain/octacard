@@ -4343,6 +4343,16 @@ export const FilePane = ({
     currentRootPath === "/" || currentRootPath === ""
       ? fileSystemService.getRootDirectoryName(paneType)
       : basename(currentRootPath);
+  const paneGuidanceInstruction =
+    paneType === "source"
+      ? "Select your raw samples folder here."
+      : "Select a folder for your converted samples here.";
+  const paneGuidanceCopy = (
+    <div className="space-y-1">
+      <p className="text-sm text-muted-foreground">Octacard manages and converts sample files for your hardware.</p>
+      <p className="text-sm text-muted-foreground/80">{paneGuidanceInstruction}</p>
+    </div>
+  );
   const toggleCurrentPathFavorite = () => {
     if (!currentRootPath) return;
     if (isCurrentPathFavorite) {
@@ -4726,9 +4736,7 @@ export const FilePane = ({
                     Navigate to nearest existing folder
                   </Button>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  Octacard manages and converts sample files for your hardware.
-                </p>
+                {paneGuidanceCopy}
               </div>
             ) : isSearchingFolders ? (
               <div className="flex items-center justify-center py-8">
@@ -4740,9 +4748,7 @@ export const FilePane = ({
             ) : searchQuery && searchResultsTree.length === 0 ? (
               <div className="text-center py-8 space-y-2">
                 <div className="text-sm text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-                <p className="text-xs text-muted-foreground/80">
-                  Octacard manages and converts sample files for your hardware.
-                </p>
+                {paneGuidanceCopy}
               </div>
             ) : activeTreeNodes.length === 0 ? (
               <>
@@ -4793,18 +4799,14 @@ export const FilePane = ({
                   ) : searchQuery ? (
                     <div className="space-y-2">
                       <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-                      <p className="text-xs text-muted-foreground/80">
-                        Octacard manages and converts sample files for your hardware.
-                      </p>
+                      {paneGuidanceCopy}
                     </div>
                   ) : (
                     <div className="space-y-2">
                       <div className="text-muted-foreground">
                         {treeViewMode === "folders" ? "No folders found" : "No files found"}
                       </div>
-                      <p className="text-xs text-muted-foreground/80">
-                        Octacard manages and converts sample files for your hardware.
-                      </p>
+                      {paneGuidanceCopy}
                     </div>
                   )}
                 </div>
