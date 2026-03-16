@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getSample } from "@/lib/remote-library";
 import { useNavigateRequestStore } from "@/stores/navigate-request-store";
 import { isRemotePath, parseRemoteSampleId } from "@/lib/audio-resolver";
-import type { PaneType } from "@/stores/multi-sample-store";
+import type { PaneType } from "@/stores/project-store";
 import { cn } from "@/lib/utils";
 
 function dirname(path: string): string {

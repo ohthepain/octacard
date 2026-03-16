@@ -7,7 +7,7 @@ import { getAudioBlobForPath } from "./audio-resolver";
 import { ensureAudioDecodable } from "./audioConverter";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { usePlayerStore } from "@/stores/player-store";
-import type { PaneType } from "@/stores/multi-sample-store";
+import type { PaneType } from "@/stores/project-store";
 import type { EnvelopePoint } from "@/stores/sample-edits-store";
 
 function getGainAtTime(points: EnvelopePoint[], time: number): number {

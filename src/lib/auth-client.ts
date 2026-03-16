@@ -10,11 +10,15 @@ export const authClient = createAuthClient({
     credentials: "include",
     headers: {
       "X-Client-Version": appVersion,
+      // Bypass ngrok free-tier interstitial so OAuth and API requests reach the server
+      ...(typeof window !== "undefined" && window.location.hostname.includes("ngrok")
+        ? { "ngrok-skip-browser-warning": "1" }
+        : {}),
     },
   },
 });
 
-export const { signIn, signUp, signOut, useSession, deleteUser } = authClient;
+export const { signIn, signUp, signOut, useSession, getSession, deleteUser } = authClient;
 
 /** Session data with roles from customSession plugin (ADMIN, SUPERADMIN) */
 export interface SessionDataWithRoles {

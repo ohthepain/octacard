@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { FilePane } from "@/components/FilePane";
 import { RemoteFilePane } from "@/components/RemoteFilePane";
+import { TempFilesPane } from "@/components/TempFilesPane";
 import { FavoritesColumn } from "@/components/FavoritesColumn";
 import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
@@ -22,11 +23,12 @@ import { Progress } from "@/components/ui/progress";
 import { Play, HelpCircle, Activity, Globe, House } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useMultiSampleStore, SLOT_ROW_SIZE } from "@/stores/multi-sample-store";
+import { useProjectStore } from "@/stores/project-store";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
 import { useShallow } from "zustand/react/shallow";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { MultiSampleStack } from "@/components/MultiSampleStack";
+import { ExportPackButton } from "@/components/ExportPackButton";
 import { AudioPreview } from "@/components/AudioPreview";
 import { fileSystemService } from "@/lib/fileSystem";
 import type { FileSystemEntry } from "@/lib/fileSystem";
@@ -39,14 +41,24 @@ import { parseBpmFromString, replaceBpmInString } from "@/lib/tempoUtils";
 import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
 import { isRemotePath } from "@/lib/audio-resolver";
 import { ReleaseNotesPanel } from "@/components/ReleaseNotesPanel";
+import { RoomsTab } from "@/components/RoomsTab";
+import { RoomAvatars } from "@/components/RoomAvatars";
+import { UndoRedoButtons } from "@/components/UndoRedoButtons";
+import { ProjectMenu } from "@/components/ProjectMenu";
 import { CacheDebugPanel } from "@/components/CacheDebugPanel";
 import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
 import { HomeFooter } from "@/components/HomeFooter";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
 import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
+import { useProjectSync } from "@/hooks/useProjectSync";
+import { useRoomStorageSync } from "@/hooks/useRoomStorageSync";
+import { usePublicRoomsCount } from "@/hooks/usePublicRoomsCount";
+import { usePresenceSync } from "@/hooks/usePresenceSync";
 import { usePlayerStore } from "@/stores/player-store";
 import { setCurrentPack } from "@/lib/current-pack";
 import { useNavigateRequestStore } from "@/stores/navigate-request-store";
+import { useCurrentProjectStore } from "@/stores/current-project-store";
+import { useFollowListenStore } from "@/stores/follow-listen-store";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -72,7 +84,7 @@ function isUnsupportedBrowser(): boolean {
 type OctacardTestWindow = Window & {
   __octacardTestHooks?: unknown;
   __octacardPlayerStore?: typeof usePlayerStore;
-  __octacardMultiSampleStore?: typeof useMultiSampleStore;
+  __octacardProjectStore?: typeof useProjectStore;
   __octacardWaveformEditorStore?: typeof useWaveformEditorStore;
   __octacardMultiSampleStoreResetStack?: () => void;
 };
@@ -175,14 +187,13 @@ const Index = () => {
 
   const [aboutOpen, setAboutOpen] = useState(false);
   const [openPackId, setOpenPackId] = useState<string | null>(null);
-  const previewMode = useMultiSampleStore((s) => s.previewMode);
-  const setPreviewMode = useMultiSampleStore((s) => s.setPreviewMode);
-  const addSamplesToStack = useMultiSampleStore((s) => s.addSamplesToStack);
-  const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
-  const setGlobalTempoBpm = useMultiSampleStore((s) => s.setGlobalTempoBpm);
-  const bpmAuto = useMultiSampleStore((s) => s.bpmAuto);
-  const setBpmAuto = useMultiSampleStore((s) => s.setBpmAuto);
-  const [unsupportedBrowserDialogOpen, setUnsupportedBrowserDialogOpen] = useState(false);
+  const previewMode = useProjectStore((s) => s.getActiveStack()?.previewMode ?? "single");
+  const setPreviewMode = useProjectStore((s) => s.setPreviewMode);
+  const addSamplesToStack = useProjectStore((s) => s.addSamplesToStack);
+  const globalTempoBpm = useProjectStore((s) => s.getActiveStack()?.globalTempoBpm ?? 120);
+  const setGlobalTempoBpm = useProjectStore((s) => s.setGlobalTempoBpm);
+  const bpmAuto = useProjectStore((s) => s.getActiveStack()?.bpmAuto ?? true);
+  const setBpmAuto = useProjectStore((s) => s.setBpmAuto);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
   const [destPath, setDestPath] = useState("");
@@ -205,8 +216,8 @@ const Index = () => {
   const [destRootVersion, setDestRootVersion] = useState(0);
   const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
-  const [libraryMode, setLibraryMode] = useState<"local" | "global">("local");
-  const [globalScope, setGlobalScope] = useState<"mine" | "all" | "explore">("all");
+  const [libraryMode, setLibraryMode] = useState<"local" | "global">("global");
+  const [globalScope, setGlobalScope] = useState<"mine" | "all" | "explore" | "rooms">("all");
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const waveformEditor = useWaveformEditorStore(
     useShallow((s) => ({
@@ -251,17 +262,31 @@ const Index = () => {
     resolver?.(choice);
   }, []);
 
-  useEffect(() => {
-    if (isUnsupportedBrowser()) {
-      setUnsupportedBrowserDialogOpen(true);
-    }
-  }, []);
+  useProjectSync();
+  useRoomStorageSync();
+  const publicRoomsCount = usePublicRoomsCount();
+  const listeningUserId = useFollowListenStore((s) => s.listeningUserId);
+  usePresenceSync(listeningUserId);
 
   useEffect(() => {
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     if (params.get("release-tour") === "1" || params.get("release-tour") === "true") {
       useReleaseTourStore.getState().loadAndStart();
     }
+  }, []);
+
+  // Auto-load project on mount (API when authenticated, IndexedDB when not) or create default if none
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const ok = await useCurrentProjectStore.getState().loadProject();
+      if (!ok && !cancelled) {
+        await useCurrentProjectStore.getState().createAndLoadProject("Untitled");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Handle openPack from URL (e.g. from Admin Queue dashboard)
@@ -301,11 +326,6 @@ const Index = () => {
     if (requestedDemoPaths.destPath) setRequestedDestPath(requestedDemoPaths.destPath);
   }, [tourActive, requestedDemoPaths?.sourcePath, requestedDemoPaths?.destPath, requestedDemoPaths]);
 
-  useEffect(() => {
-    if (!unsupportedBrowserDialogOpen) return;
-    capture("octacard_dialog_opened", { dialog_name: "unsupported_browser" });
-  }, [unsupportedBrowserDialogOpen]);
-
   // Space bar: start whatever was last (multi or single) when idle, stop when playing
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -328,7 +348,7 @@ const Index = () => {
       if (we.isOpen && we.filePath && we.paneType && !we.isEmptyState) {
         playSingle(we.filePath, we.paneType);
       } else if (mode === "multi" && stack.length > 0) {
-        const multiStack = useMultiSampleStore.getState().stack;
+        const multiStack = useProjectStore.getState().getActiveStackStack();
         const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
         if (multiStack.length > 0 && hasValidBars) {
           playMulti(
@@ -345,7 +365,7 @@ const Index = () => {
       } else if (mode === "single" && singleFile) {
         playSingle(singleFile.path, singleFile.paneType);
       } else {
-        const multiStack = useMultiSampleStore.getState().stack;
+        const multiStack = useProjectStore.getState().getActiveStackStack();
         if (multiStack.length > 0) {
           const hasValidBars = multiStack.some((s) => s.bars != null && s.bars > 0);
           if (hasValidBars) {
@@ -371,14 +391,10 @@ const Index = () => {
     const win = typeof window !== "undefined" ? (window as OctacardTestWindow) : null;
     if (win?.__octacardTestHooks) {
       win.__octacardPlayerStore = usePlayerStore;
-      win.__octacardMultiSampleStore = useMultiSampleStore;
+      win.__octacardProjectStore = useProjectStore;
       win.__octacardWaveformEditorStore = useWaveformEditorStore;
       win.__octacardMultiSampleStoreResetStack = () => {
-        useMultiSampleStore.setState({
-          slots: Array.from({ length: SLOT_ROW_SIZE }, () => null),
-          activeSlotIndex: 0,
-          stack: [],
-        });
+        useProjectStore.getState().resetActiveStackSlots();
       };
     }
   }, []);
@@ -405,11 +421,7 @@ const Index = () => {
       isAudioFile(selectedSourceItem.name) &&
       isRemotePath(selectedSourceItem.path)
     ) {
-      useWaveformEditorStore.getState().openWithFile(
-        selectedSourceItem.path,
-        selectedSourceItem.name,
-        "source",
-      );
+      useWaveformEditorStore.getState().openWithFile(selectedSourceItem.path, selectedSourceItem.name, "source");
     }
   }, [selectedSourceItem]);
 
@@ -812,9 +824,11 @@ const Index = () => {
           if (!alreadyAdded) toAdd.push({ path: selectedDestItem.path, name: selectedDestItem.name, paneType: "dest" });
         }
         if (toAdd.length > 0) {
-          useMultiSampleStore.getState().setActiveSlotIndex(0);
+          useProjectStore.getState().setActiveSlotIndex(0);
           addSamplesToStack(toAdd, 4);
-          const { slots, activeSlotIndex } = useMultiSampleStore.getState();
+          const active = useProjectStore.getState().getActiveStack();
+          const slots = active?.slots ?? [];
+          const activeSlotIndex = active?.activeSlotIndex ?? 0;
           const sample = slots[activeSlotIndex];
           if (sample) {
             useWaveformEditorStore
@@ -859,11 +873,7 @@ const Index = () => {
       {/* Header */}
       <header className="h-14 border-b border-border bg-card flex items-center px-4 shrink-0 gap-4">
         <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-3 shrink-0">
-            <img src="/favicon.png" alt="" className="w-8 h-8 dark:hidden" aria-hidden />
-            <img src="/logo_white.png" alt="" className="w-8 h-8 hidden dark:block" aria-hidden />
-            <h1 className="text-xl font-bold tracking-tight">OctaCard</h1>
-          </div>
+          <ProjectMenu />
           <Button
             variant={previewMode === "multi" ? "default" : "outline"}
             size="sm"
@@ -884,6 +894,7 @@ const Index = () => {
             <Activity className="w-4 h-4 mr-1" />
             Waveform
           </Button>
+          {previewMode === "multi" && <ExportPackButton />}
           <BpmInput
             value={globalTempoBpm}
             onChange={setGlobalTempoBpm}
@@ -938,16 +949,29 @@ const Index = () => {
               >
                 Explore
               </Button>
+              <Button
+                size="sm"
+                variant={globalScope === "rooms" ? "secondary" : "ghost"}
+                className="rounded-none h-8 px-3 text-xs whitespace-nowrap relative"
+                onClick={() => setGlobalScope("rooms")}
+                aria-label={`Rooms${publicRoomsCount > 0 ? ` (${publicRoomsCount} available)` : ""}`}
+              >
+                Rooms
+                {publicRoomsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                    {publicRoomsCount}
+                  </span>
+                )}
+              </Button>
             </div>
           )}
         </div>
-        <div className="flex-1 min-w-0" aria-hidden />
+        <div className="flex-1 min-w-0 flex items-center justify-center gap-2" aria-hidden>
+          <RoomAvatars />
+          <UndoRedoButtons />
+        </div>
         {libraryMode !== "global" && (
-          <Button
-            onClick={handleStartConversion}
-            className="gap-2 shrink-0"
-            data-testid="convert-button"
-          >
+          <Button onClick={handleStartConversion} className="gap-2 shrink-0" data-testid="convert-button">
             <Play className="w-4 h-4" />
             Convert
           </Button>
@@ -999,9 +1023,9 @@ const Index = () => {
             "right-fav": 20,
           }}
         >
-          {/* Left: Source Favorites - only this separator affects favorites vs center */}
+          {/* Left: Source Favorites - only this separator affects favorites vs center. Hidden when no FS API. */}
           <ResizablePanel id="left-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            {libraryMode === "local" ? (
+            {hasDirectoryPickerSupport() && libraryMode === "local" ? (
               <FavoritesColumn
                 paneType="source"
                 volumeId={sourceVolumeId}
@@ -1009,10 +1033,15 @@ const Index = () => {
                 onNavigate={setRequestedSourcePath}
                 onBrowseFromFavorite={(path) => handleBrowseFromFavorite("source", path)}
                 title="Source Favorites"
+                showTempFilesButton
               />
-            ) : (
+            ) : libraryMode === "global" ? (
               <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
                 Global library mode is active. Drag packs or samples into the destination pane to download.
+              </div>
+            ) : (
+              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
+                Temp Files mode. Add files or folders to get started.
               </div>
             )}
           </ResizablePanel>
@@ -1021,7 +1050,9 @@ const Index = () => {
           {/* Source Browser - center separator only affects source vs dest */}
           <ResizablePanel id="source-browser" defaultSize="30%" minSize="15%">
             <div className="h-full min-h-0" data-testid="panel-source">
-              {libraryMode === "global" ? (
+              {libraryMode === "global" && globalScope === "rooms" ? (
+                <RoomsTab />
+              ) : libraryMode === "global" ? (
                 <RemoteFilePane
                   key={`source-${sourceRootVersion}`}
                   title="Global Library"
@@ -1029,6 +1060,17 @@ const Index = () => {
                   onSelectionChange={setSelectedSourceItem}
                   openPackId={openPackId}
                   onOpenPackIdConsumed={() => setOpenPackId(null)}
+                />
+              ) : libraryMode === "local" &&
+                (!hasDirectoryPickerSupport() || requestedSourcePath?.startsWith("temp://")) ? (
+                <TempFilesPane
+                  paneName="source"
+                  title="Temp Files"
+                  onSelectionChange={setSelectedSourceItem}
+                  onPathChange={(path) => handleSourcePathChange(path, "_default")}
+                  refreshToken={sourceRefreshToken}
+                  requestedPath={requestedSourcePath}
+                  onRequestedPathHandled={handleRequestedSourcePathHandled}
                 />
               ) : (
                 <FilePane
@@ -1067,50 +1109,66 @@ const Index = () => {
           {/* Dest Browser - center separator only affects source vs dest */}
           <ResizablePanel id="dest-browser" defaultSize="30%" minSize="15%">
             <div className="h-full min-h-0" data-testid="panel-dest">
-              <FilePane
-                key={`dest-${destRootVersion}`}
-                paneName="dest"
-                title="Destination"
-                onFileTransfer={handleFileTransfer}
-                showSidebar={false}
-                onPathChange={handleDestPathChange}
-                onSelectionChange={setSelectedDestItem}
-                onRequestedPathHandled={handleRequestedDestPathHandled}
-                requestedPath={requestedDestPath}
-                onRequestedRevealPathHandled={handleRequestedDestRevealPathHandled}
-                requestedRevealPath={requestedDestRevealPath}
-                dropMode="navigate"
-                sampleRate={formatSettings.sampleRate}
-                sampleDepth={formatSettings.sampleDepth}
-                fileFormat={formatSettings.fileFormat}
-                pitch={formatSettings.pitch}
-                sanitizeFilename={formatSettings.sanitizeFilename}
-                shortenFilename={formatSettings.shortenFilename}
-                shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
-                mono={formatSettings.mono}
-                normalize={formatSettings.normalize}
-                trimStart={formatSettings.trim}
-                autoNavigateToCard={true}
-                convertFiles={true}
-                showEjectButton={true}
-                showNewFolderButton={true}
-                onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
-                refreshToken={destRefreshToken}
-              />
+              {hasDirectoryPickerSupport() ? (
+                <FilePane
+                  key={`dest-${destRootVersion}`}
+                  paneName="dest"
+                  title="Destination"
+                  onFileTransfer={handleFileTransfer}
+                  showSidebar={false}
+                  onPathChange={handleDestPathChange}
+                  onSelectionChange={setSelectedDestItem}
+                  onRequestedPathHandled={handleRequestedDestPathHandled}
+                  requestedPath={requestedDestPath}
+                  onRequestedRevealPathHandled={handleRequestedDestRevealPathHandled}
+                  requestedRevealPath={requestedDestRevealPath}
+                  dropMode="navigate"
+                  sampleRate={formatSettings.sampleRate}
+                  sampleDepth={formatSettings.sampleDepth}
+                  fileFormat={formatSettings.fileFormat}
+                  pitch={formatSettings.pitch}
+                  sanitizeFilename={formatSettings.sanitizeFilename}
+                  shortenFilename={formatSettings.shortenFilename}
+                  shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
+                  mono={formatSettings.mono}
+                  normalize={formatSettings.normalize}
+                  trimStart={formatSettings.trim}
+                  autoNavigateToCard={true}
+                  convertFiles={true}
+                  showEjectButton={true}
+                  showNewFolderButton={true}
+                  onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
+                  refreshToken={destRefreshToken}
+                />
+              ) : (
+                <TempFilesPane
+                  paneName="dest"
+                  title="Temp Files"
+                  onSelectionChange={setSelectedDestItem}
+                  onPathChange={(path) => handleDestPathChange(path, "_default")}
+                  refreshToken={destRefreshToken}
+                />
+              )}
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
 
-          {/* Right: Dest Favorites - only this separator affects favorites vs center */}
+          {/* Right: Dest Favorites - hidden when no FS API */}
           <ResizablePanel id="right-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            <FavoritesColumn
-              paneType="dest"
-              volumeId={destVolumeId}
-              currentPath={destPath}
-              onNavigate={(path) => setRequestedDestPath(path)}
-              onBrowseFromFavorite={(path) => handleBrowseFromFavorite("dest", path)}
-              title="Dest Favorites"
-            />
+            {hasDirectoryPickerSupport() ? (
+              <FavoritesColumn
+                paneType="dest"
+                volumeId={destVolumeId}
+                currentPath={destPath}
+                onNavigate={(path) => setRequestedDestPath(path)}
+                onBrowseFromFavorite={(path) => handleBrowseFromFavorite("dest", path)}
+                title="Dest Favorites"
+              />
+            ) : (
+              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
+                Temp Files mode. Add files or folders in the destination pane.
+              </div>
+            )}
           </ResizablePanel>
         </ResizablePanelGroup>
         {waveformEditor.isOpen && (
@@ -1133,19 +1191,6 @@ const Index = () => {
       </div>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
-
-      <Dialog open={unsupportedBrowserDialogOpen} onOpenChange={setUnsupportedBrowserDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Browser Not Supported</DialogTitle>
-            <DialogDescription>
-              OctaCard requires the File System Access API and currently supports Brave, Chrome, and other
-              Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are
-              not supported.
-            </DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
 
       {pendingConversionRequest && (
         <ConversionConfirmDialog

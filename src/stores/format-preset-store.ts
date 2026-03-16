@@ -291,6 +291,8 @@ interface FormatPresetStoreState {
   devicePresets: FormatPreset[];
   updateCurrentPreset: (settings: Partial<FormatSettings>) => void;
   applyDevicePreset: (presetId: string) => void;
+  /** Hydrate from project (e.g. when loading a project) */
+  hydrateFromProject: (formatSettings?: FormatSettings) => void;
 }
 
 export const useFormatPresetStore = create<FormatPresetStoreState>((set, get) => ({
@@ -322,6 +324,16 @@ export const useFormatPresetStore = create<FormatPresetStoreState>((set, get) =>
         ...state.currentPreset,
         settings: { ...preset.settings },
       },
+    }));
+  },
+  hydrateFromProject: (formatSettings) => {
+    if (!formatSettings) return;
+    set((state) => ({
+      currentPreset: {
+        ...state.currentPreset,
+        settings: { ...DEFAULT_FORMAT_SETTINGS, ...formatSettings },
+      },
+      selectedPresetId: "current",
     }));
   },
 }));

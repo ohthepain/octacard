@@ -29,7 +29,10 @@ import {
 } from "./worker-state.js";
 
 const ESSENTIA_QUEUE = "essentia-analysis";
-const CONCURRENCY = Number(process.env.ESSENTIA_WORKER_CONCURRENCY ?? 2);
+const CONCURRENCY = Number(
+  process.env.ESSENTIA_WORKER_CONCURRENCY ??
+    (process.env.NODE_ENV === "production" ? 2 : 1),
+);
 
 async function runEssentiaAnalysis(sampleId: string, s3Key: string): Promise<void> {
   const buffer = await getFromS3(s3Key);
@@ -102,53 +105,56 @@ async function runEssentiaAnalysis(sampleId: string, s3Key: string): Promise<voi
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.sample.update({
-        where: { id: sampleId },
-        data: {
-          durationMs,
-          sampleRate: samplingRate,
-          channels,
-          analysisStatus: "PROCESSING",
-          analysisError: null,
-        },
-      });
-
-      for (const { key, value } of essentiaAttrs) {
-        await tx.sampleAttribute.upsert({
-          where: { sampleId_key: { sampleId, key } },
-          create: { sampleId, key, value },
-          update: { value },
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.sample.update({
+          where: { id: sampleId },
+          data: {
+            durationMs,
+            sampleRate: samplingRate,
+            channels,
+            analysisStatus: "PROCESSING",
+            analysisError: null,
+          },
         });
-      }
 
-      await tx.sampleAnnotation.deleteMany({
-        where: { sampleId, source: "essentia" },
-      });
+        for (const { key, value } of essentiaAttrs) {
+          await tx.sampleAttribute.upsert({
+            where: { sampleId_key: { sampleId, key } },
+            create: { sampleId, key, value },
+            update: { value },
+          });
+        }
 
-      for (const ann of annotations) {
-        await tx.sampleAnnotation.upsert({
-          where: {
-            sampleId_taxonomyValueId: {
+        await tx.sampleAnnotation.deleteMany({
+          where: { sampleId, source: "essentia" },
+        });
+
+        for (const ann of annotations) {
+          await tx.sampleAnnotation.upsert({
+            where: {
+              sampleId_taxonomyValueId: {
+                sampleId,
+                taxonomyValueId: ann.taxonomyValueId,
+              },
+            },
+            create: {
               sampleId,
               taxonomyValueId: ann.taxonomyValueId,
+              confidence: ann.confidence,
+              source: ann.source,
+              rank: ann.rank,
             },
-          },
-          create: {
-            sampleId,
-            taxonomyValueId: ann.taxonomyValueId,
-            confidence: ann.confidence,
-            source: ann.source,
-            rank: ann.rank,
-          },
-          update: {
-            confidence: ann.confidence,
-            source: ann.source,
-            rank: ann.rank,
-          },
-        });
-      }
-    });
+            update: {
+              confidence: ann.confidence,
+              source: ann.source,
+              rank: ann.rank,
+            },
+          });
+        }
+      },
+      { timeout: 60_000 },
+    );
 
     await enqueueClapAnalysis(sampleId, s3Key);
   } finally {

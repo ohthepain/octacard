@@ -23,6 +23,7 @@ import {
   GripHorizontal,
   Repeat,
   Info,
+  Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -36,10 +37,11 @@ import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
 import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import { useSampleEditsStore } from "@/stores/sample-edits-store";
-import { useMultiSampleStore } from "@/stores/multi-sample-store";
+import { useProjectStore, EMPTY_SLOTS } from "@/stores/project-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { useAppOptionsStore } from "@/stores/app-options-store";
+import { useShallow } from "zustand/react/shallow";
 import {
   exportAudioWithEdits,
   mixOverdub,
@@ -52,8 +54,12 @@ import {
 } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
 import { getAudioBlobForPath, isRemotePath } from "@/lib/audio-resolver";
+import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
+import { isTempPath } from "@/lib/temp-files-store";
+import JSZip from "jszip";
 import { ensureAudioDecodable } from "@/lib/audioConverter";
 import { parseBpmFromString } from "@/lib/tempoUtils";
+import { computeAutoLoop } from "@/lib/autoLoopDetection";
 import { detectSliceMarkers, selectTopSlices, type SliceMarker, type SliceDetectionMode } from "@/lib/sliceDetection";
 import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
 import {
@@ -173,7 +179,7 @@ export const AudioPreview = ({
   const requestSwitchAtNextBar = usePlayerStore((s) => s.requestSwitchAtNextBar);
   const muted = usePlayerStore((s) => s.muted);
   const setMuted = usePlayerStore((s) => s.setMuted);
-  const stack = useMultiSampleStore((s) => s.stack);
+  const stack = useProjectStore(useShallow((s) => s.getActiveStackStack()));
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -195,7 +201,7 @@ export const AudioPreview = ({
     return () => clearTimeout(t);
   }, [waveformHeight]);
 
-  const playingSamplePosition = useMultiSampleStore((s) => s.playingSamplePosition);
+  const playingSamplePosition = useProjectStore((s) => s.playingSamplePosition);
 
   // Sync playhead from unified player: multi mode uses playingSamplePosition, single uses playerCurrentTime
   useEffect(() => {
@@ -265,6 +271,7 @@ export const AudioPreview = ({
   const [infoOpen, setInfoOpen] = useState(false);
   const [audioFileInfo, setAudioFileInfo] = useState<AudioFileInfo | null>(null);
   const [sampleRate, setSampleRate] = useState(44100);
+  const [isAutoRunning, setIsAutoRunning] = useState(false);
   const devMode = useAppOptionsStore((s) => s.devMode);
 
   useEffect(() => {
@@ -557,7 +564,7 @@ export const AudioPreview = ({
             const bpmResult = parseBpmFromString(fileName ?? "");
             if (bpmResult?.bpm) setTempoBpm(bpmResult.bpm);
             else {
-              const mainTempo = useMultiSampleStore.getState().globalTempoBpm;
+              const mainTempo = useProjectStore.getState().getActiveStack()?.globalTempoBpm ?? 120;
               if (Number.isFinite(mainTempo) && mainTempo > 0) setTempoBpm(mainTempo);
             }
           }
@@ -646,8 +653,8 @@ export const AudioPreview = ({
   ]);
 
   // When opened from multi-sample, sync tempo with the sample's BPM so loop length in bars matches
-  const slots = useMultiSampleStore((s) => s.slots);
-  const globalTempoBpm = useMultiSampleStore((s) => s.globalTempoBpm);
+  const slots = useProjectStore(useShallow((s) => s.getActiveStack()?.slots ?? EMPTY_SLOTS));
+  const globalTempoBpm = useProjectStore((s) => s.getActiveStack()?.globalTempoBpm ?? 120);
   useEffect(() => {
     if (!multiSampleId || isEmptyState) return;
     const sample = slots.find((s): s is NonNullable<typeof s> => s != null && s.id === multiSampleId);
@@ -705,6 +712,39 @@ export const AudioPreview = ({
       setIsAnalyzing(false);
     }
   }, [fileName, isEmptyState, filePath, paneType, sliceDetectionMode]);
+
+  const handleAutoLoop = useCallback(async () => {
+    if (isEmptyState || !filePath || !paneType) return;
+    setIsAutoRunning(true);
+    try {
+      const result = await getAudioBlobForPath(filePath, paneType);
+      if (!result.success || !result.data) {
+        toast.error("Could not load audio for auto-detect");
+        return;
+      }
+      const decodableUrl = await ensureAudioDecodable(result.data, filePath);
+      const res = await fetch(decodableUrl);
+      const arrayBuffer = await res.arrayBuffer();
+      const ctx = new AudioContext();
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      await ctx.close();
+
+      const { bpm, loopStart: newStart, loopEnd: newEnd } = computeAutoLoop(
+        buffer,
+        fileName ?? ""
+      );
+      setTempoBpm(bpm);
+      setLoopStart(newStart);
+      setLoopEnd(newEnd);
+      setPlayStart(newStart);
+      toast.success(`Auto: BPM ${bpm}, loop ${newStart.toFixed(2)}s–${newEnd.toFixed(2)}s`);
+    } catch (err) {
+      console.warn("Auto loop detection failed:", err);
+      toast.error("Auto-detect failed");
+    } finally {
+      setIsAutoRunning(false);
+    }
+  }, [fileName, isEmptyState, filePath, paneType]);
 
   useEffect(() => {
     if (isEmptyState || !filePath) {
@@ -1696,6 +1736,38 @@ export const AudioPreview = ({
     [clampToDuration, loopStart, parsedTimeSignature.beatsPerBar, secondsPerBeat],
   );
 
+  const handleTempoChange = useCallback(
+    (newTempo: number) => {
+      const n = Math.max(50, Math.min(240, Math.round(newTempo)));
+      const oldTempo = tempoBpm;
+      setTempoBpm(n);
+      setTempoEditingValue(null);
+      // Preserve musical length (bars/beats/16ths) when tempo changes; recalc loopEnd
+      if (n !== oldTempo && duration > 0) {
+        const effectiveLoopEnd = loopEnd > 0 ? loopEnd : duration;
+        const beatUnitFactor = 4 / parsedTimeSignature.beatUnit;
+        const oldSecondsPerBeat = (60 / Math.max(1, oldTempo)) * beatUnitFactor;
+        const newSecondsPerBeat = (60 / n) * beatUnitFactor;
+        const totalBeats =
+          oldSecondsPerBeat > 0 ? Math.max(0, effectiveLoopEnd - loopStart) / oldSecondsPerBeat : 0;
+        if (totalBeats > 0) {
+          const nextEnd = Math.max(
+            loopStart + 0.001,
+            Math.min(duration, loopStart + totalBeats * newSecondsPerBeat),
+          );
+          setLoopEnd(nextEnd);
+        }
+      }
+    },
+    [
+      duration,
+      loopEnd,
+      loopStart,
+      parsedTimeSignature.beatUnit,
+      tempoBpm,
+    ],
+  );
+
   const handleLoopBoundaryDrag = useCallback(
     (which: "start" | "end", e: React.MouseEvent) => {
       e.preventDefault();
@@ -1891,30 +1963,16 @@ export const AudioPreview = ({
       const slices = displayedSlices.map((s) => ({ time: s.time }));
       const hasSlices = slices.length > 0;
 
-      const statsResult = isRemotePath(filePath)
-        ? { success: false, data: undefined }
-        : await fileSystemService.getFileStats(filePath, paneType);
+      const useDownloadMode = !hasDirectoryPickerSupport() || isTempPath(filePath);
+      const statsResult =
+        isRemotePath(filePath) || useDownloadMode
+          ? { success: false, data: undefined }
+          : await fileSystemService.getFileStats(filePath, paneType);
       const willOverwrite = statsResult.success && statsResult.data;
 
       let saveAsTarget: { dirHandle: FileSystemDirectoryHandle; filename: string } | null = null;
-      if (isRemotePath(filePath)) {
-        setExportSaveAsFilename(fileName ?? "export.wav");
-        setExportSaveAsDirHandle(null);
-        setExportSaveAsOpen(true);
-        const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>((resolve) => {
-          exportSaveAsResolverRef.current = resolve;
-        });
-        setExportSaveAsOpen(false);
-        setExportSaveAsDirHandle(null);
-        if (!result) return;
-        saveAsTarget = result;
-      } else if (willOverwrite) {
-        setExportOverwriteOpen(true);
-        const choice = await new Promise<"abort" | "overwrite" | "saveAs">((resolve) => {
-          exportOverwriteResolverRef.current = resolve;
-        });
-        if (choice === "abort") return;
-        if (choice === "saveAs") {
+      if (!useDownloadMode) {
+        if (isRemotePath(filePath)) {
           setExportSaveAsFilename(fileName ?? "export.wav");
           setExportSaveAsDirHandle(null);
           setExportSaveAsOpen(true);
@@ -1927,6 +1985,26 @@ export const AudioPreview = ({
           setExportSaveAsDirHandle(null);
           if (!result) return;
           saveAsTarget = result;
+        } else if (willOverwrite) {
+          setExportOverwriteOpen(true);
+          const choice = await new Promise<"abort" | "overwrite" | "saveAs">((resolve) => {
+            exportOverwriteResolverRef.current = resolve;
+          });
+          if (choice === "abort") return;
+          if (choice === "saveAs") {
+            setExportSaveAsFilename(fileName ?? "export.wav");
+            setExportSaveAsDirHandle(null);
+            setExportSaveAsOpen(true);
+            const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>(
+              (resolve) => {
+                exportSaveAsResolverRef.current = resolve;
+              },
+            );
+            setExportSaveAsOpen(false);
+            setExportSaveAsDirHandle(null);
+            if (!result) return;
+            saveAsTarget = result;
+          }
         }
       }
 
@@ -1959,7 +2037,34 @@ export const AudioPreview = ({
         const mainFileName = saveAsTarget ? saveAsTarget.filename : (fileName ?? "export.wav");
         const mainName = `${mainFileName.replace(/\.wav$/i, "")}.wav`;
 
-        if (saveAsTarget) {
+        if (useDownloadMode) {
+          if (sliceBlobs && sliceBlobs.length > 0) {
+            const baseName = mainFileName.replace(/\.wav$/i, "");
+            const zip = new JSZip();
+            zip.file(mainName, mainBlob);
+            const padWidth = Math.max(2, String(sliceBlobs.length).length);
+            for (let i = 0; i < sliceBlobs.length; i++) {
+              const num = String(i + 1).padStart(padWidth, "0");
+              zip.file(`${baseName}_${num}.wav`, sliceBlobs[i]);
+            }
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            const url = URL.createObjectURL(zipBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${baseName}_slices.zip`;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${mainName} and ${sliceBlobs.length} slices`);
+          } else {
+            const url = URL.createObjectURL(mainBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = mainName;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${mainName}`);
+          }
+        } else if (saveAsTarget) {
           const result = await fileSystemService.writeBlobToDirectoryHandle(saveAsTarget.dirHandle, mainName, mainBlob);
           if (!result.success) {
             toast.error(result.error || "Export failed");
@@ -2056,16 +2161,26 @@ export const AudioPreview = ({
         return;
       }
       const safeName = `${name.trim().replace(/\.wav$/i, "")}.wav`;
-      const result = await fileSystemService.addFileFromDrop(
-        new File([blob], safeName, { type: "audio/wav" }),
-        "/",
-        paneType || "source",
-      );
-      if (result.success) {
+      if (!hasDirectoryPickerSupport()) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = safeName;
+        a.click();
+        URL.revokeObjectURL(url);
         toast.success(`Exported ${safeName}`);
-        onFileSaved?.(paneType || "source");
       } else {
-        toast.error(result.error || "Export failed");
+        const result = await fileSystemService.addFileFromDrop(
+          new File([blob], safeName, { type: "audio/wav" }),
+          "/",
+          paneType || "source",
+        );
+        if (result.success) {
+          toast.success(`Exported ${safeName}`);
+          onFileSaved?.(paneType || "source");
+        } else {
+          toast.error(result.error || "Export failed");
+        }
       }
       return;
     }
@@ -2378,24 +2493,86 @@ export const AudioPreview = ({
                 disabled={isLoading}
                 title="Time signature"
               />
-              <Input
-                data-testid="audio-preview-tempo"
-                className="h-7 w-[68px] text-xs font-mono"
-                inputMode="numeric"
-                value={tempoEditingValue ?? String(Math.round(tempoBpm))}
-                onFocus={() => setTempoEditingValue(String(Math.round(tempoBpm)))}
-                onChange={(e) => setTempoEditingValue(e.target.value)}
-                onBlur={() => {
-                  const n = Number.parseFloat(tempoEditingValue ?? "");
-                  if (Number.isFinite(n) && n >= 50 && n <= 240) setTempoBpm(n);
-                  setTempoEditingValue(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                }}
-                disabled={isLoading}
-                title="Tempo BPM"
-              />
+              <div className="flex items-stretch rounded-md border border-input bg-background" title="Tempo BPM">
+                <Input
+                  data-testid="audio-preview-tempo"
+                  className="h-7 w-[52px] rounded-r-none border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0"
+                  inputMode="numeric"
+                  value={tempoEditingValue ?? String(Math.round(tempoBpm))}
+                  onFocus={() => setTempoEditingValue(String(Math.round(tempoBpm)))}
+                  onChange={(e) => setTempoEditingValue(e.target.value)}
+                  onBlur={() => {
+                    const n = Number.parseFloat(tempoEditingValue ?? "");
+                    if (Number.isFinite(n) && n >= 50 && n <= 240) handleTempoChange(n);
+                    setTempoEditingValue(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  disabled={isLoading}
+                  title="Tempo BPM"
+                />
+                <div className="flex flex-col border-l border-input">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-3.5 w-6 min-w-0 rounded-none rounded-tr-md border-0 p-0 hover:bg-muted"
+                    onClick={() => handleTempoChange(tempoBpm + 1)}
+                    disabled={isLoading || tempoBpm >= 240}
+                    aria-label="Increase BPM by 1"
+                  >
+                    <ChevronUp className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-3.5 w-6 min-w-0 rounded-none rounded-br-md border-0 p-0 hover:bg-muted"
+                    onClick={() => handleTempoChange(tempoBpm - 1)}
+                    disabled={isLoading || tempoBpm <= 50}
+                    aria-label="Decrease BPM by 1"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 min-w-0 shrink-0 font-mono text-xs"
+                onClick={() => handleTempoChange(tempoBpm * 2)}
+                disabled={isLoading || tempoBpm > 120}
+                title="Double tempo"
+                aria-label="Double tempo"
+              >
+                ×2
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 min-w-0 shrink-0 font-mono text-xs"
+                onClick={() => handleTempoChange(tempoBpm / 2)}
+                disabled={isLoading || tempoBpm < 100}
+                title="Halve tempo"
+                aria-label="Halve tempo"
+              >
+                ÷2
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 w-7 p-0 shrink-0"
+                onClick={() => handleAutoLoop()}
+                disabled={isLoading || isAutoRunning}
+                title="Auto: detect BPM, trim leading silence, set loop to 1 bar"
+                aria-label="Auto-detect BPM and loop bounds"
+                data-testid="audio-preview-auto-loop"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+              </Button>
               <Input
                 data-testid="audio-preview-root-key"
                 className="h-7 w-[60px] text-xs font-mono"

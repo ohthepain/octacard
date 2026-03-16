@@ -54,12 +54,7 @@ export function PackView({
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <div className="w-20 h-20 rounded-md overflow-hidden bg-muted shrink-0 flex items-center justify-center">
           {coverImageUrl ? (
-            <img
-              src={coverImageUrl}
-              alt=""
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+            <img src={coverImageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
           ) : (
             <Folder className="w-5 h-5 text-muted-foreground" />
           )}

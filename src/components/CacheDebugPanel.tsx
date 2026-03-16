@@ -20,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useCacheDebugStore } from "@/stores/cache-debug-store";
+import { useAppOptionsStore } from "@/stores/app-options-store";
 import {
   listCacheEntries,
   evictAll,
@@ -259,7 +259,10 @@ function CacheCard({ entry, onRefresh }: CacheCardProps) {
 }
 
 export function CacheDebugPanel() {
-  const { isOpen, close } = useCacheDebugStore();
+  const cacheDebugPanelOpen = useAppOptionsStore((s) => s.cacheDebugPanelOpen);
+  const closeCacheDebug = useAppOptionsStore((s) => s.closeCacheDebug);
+  const isOpen = cacheDebugPanelOpen;
+  const close = closeCacheDebug;
   const [entries, setEntries] = useState<CacheEntryInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);

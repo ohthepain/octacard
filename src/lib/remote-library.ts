@@ -227,6 +227,63 @@ export async function createSampleFromContent(params: {
   return res.json();
 }
 
+const BATCH_CREATE_MAX = 100;
+
+export interface CreateSamplesFromContentBatchInput {
+  packId: string;
+  samples: Array<{
+    name: string;
+    contentHash: string;
+    contentType: string;
+    sizeBytes?: number;
+    credits: number;
+  }>;
+}
+
+export interface CreateSamplesFromContentBatchResponse {
+  created: number;
+  samples: Array<{
+    id: string;
+    name: string;
+    packId: string;
+    ownerId: string;
+    credits: number;
+    sizeBytes: number | null;
+    contentType: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+export async function createSamplesFromContentBatch(
+  params: CreateSamplesFromContentBatchInput,
+): Promise<CreateSamplesFromContentBatchResponse> {
+  const { packId, samples } = params;
+  if (samples.length === 0) {
+    return { created: 0, samples: [] };
+  }
+  const chunks: typeof samples[] = [];
+  for (let i = 0; i < samples.length; i += BATCH_CREATE_MAX) {
+    chunks.push(samples.slice(i, i + BATCH_CREATE_MAX));
+  }
+  let totalCreated = 0;
+  const allSamples: CreateSamplesFromContentBatchResponse["samples"] = [];
+  for (const chunk of chunks) {
+    const res = await apiFetch("/api/library/samples/from-content-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packId, samples: chunk }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to create samples (${res.status})`);
+    }
+    const data = (await res.json()) as CreateSamplesFromContentBatchResponse;
+    totalCreated += data.created;
+    allSamples.push(...data.samples);
+  }
+  return { created: totalCreated, samples: allSamples };
+}
+
 export async function createPack(params: {
   name: string;
   parentId?: string;
