@@ -1,12 +1,15 @@
 /**
  * Fetches and caches the count of public rooms for the Rooms tab badge.
+ * Refetches when roomsRefreshVersion changes (e.g. after going live or leaving).
  */
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { hasLiveblocksConfig } from "@/lib/liveblocks-client";
+import { useRoomsRefreshStore } from "@/stores/rooms-refresh-store";
 
 export function usePublicRoomsCount(): number {
   const [count, setCount] = useState(0);
+  const refreshVersion = useRoomsRefreshStore((s) => s.version);
 
   useEffect(() => {
     if (!hasLiveblocksConfig()) return;
@@ -24,7 +27,7 @@ export function usePublicRoomsCount(): number {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshVersion]);
 
   return count;
 }

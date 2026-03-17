@@ -1,13 +1,15 @@
 /**
  * Rooms tab: list public rooms, create room, join room.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Users, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useRoomStore } from "@/stores/room-store";
 import { useCurrentProjectStore } from "@/stores/current-project-store";
 import { useProjectStore } from "@/stores/project-store";
+import { useProjectSettingsStore } from "@/stores/project-settings-store";
+import { useRoomsRefreshStore } from "@/stores/rooms-refresh-store";
 import { hasLiveblocksConfig } from "@/lib/liveblocks-client";
 import { apiFetch } from "@/lib/api-client";
 
@@ -24,40 +26,58 @@ export function RoomsTab() {
   const [creating, setCreating] = useState(false);
   const projectId = useProjectStore((s) => s.id);
   const projectName = useProjectStore((s) => s.name);
+  const coverImageS3Key = useProjectStore((s) => s.coverImageS3Key);
+  const coverImageUrl = useProjectStore((s) => s.coverImageUrl);
   const getProjectDocument = useCurrentProjectStore((s) => s.getProjectDocument);
+  const requestOpenProjectSettings = useProjectSettingsStore((s) => s.requestOpen);
+  const triggerRoomsRefresh = useRoomsRefreshStore((s) => s.triggerRefresh);
   const loadProjectFromRoomStorage = useCurrentProjectStore((s) => s.loadProjectFromRoomStorage);
   const persistToBackend = useCurrentProjectStore((s) => s.persistToBackend);
   const enterRoom = useRoomStore((s) => s.enterRoom);
   const leaveRoom = useRoomStore((s) => s.leaveRoom);
   const isInRoom = useRoomStore((s) => s.isInRoom);
 
-  useEffect(() => {
+  const fetchRooms = useCallback(async () => {
     if (!hasLiveblocksConfig()) return;
     setLoading(true);
-    void (async () => {
-      try {
-        const res = await apiFetch("/api/rooms/public");
-        if (res.ok) {
-          const data = (await res.json()) as { rooms: PublicRoomInfo[] };
-          setRooms(data.rooms ?? []);
-        } else {
-          setRooms([]);
-        }
-      } catch {
+    try {
+      const res = await apiFetch("/api/rooms/public");
+      if (res.ok) {
+        const data = (await res.json()) as { rooms: PublicRoomInfo[] };
+        setRooms(data.rooms ?? []);
+      } else {
         setRooms([]);
-      } finally {
-        setLoading(false);
       }
-    })();
+    } catch {
+      setRooms([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchRooms();
+  }, [fetchRooms]);
+
+  const hasProjectNameAndImage =
+    projectName?.trim() &&
+    projectName.trim() !== "Untitled" &&
+    Boolean(coverImageS3Key || coverImageUrl);
 
   const handleCreateRoom = async () => {
     if (!projectId) {
-      toast.error("Create a project with a name first");
+      toast.error("Create a project first");
+      requestOpenProjectSettings();
       return;
     }
-    if (!projectName?.trim()) {
+    if (!projectName?.trim() || projectName.trim() === "Untitled") {
       toast.error("Give your project a name before creating a room");
+      requestOpenProjectSettings();
+      return;
+    }
+    if (!coverImageS3Key && !coverImageUrl) {
+      toast.error("Add a cover image to your project before creating a room");
+      requestOpenProjectSettings();
       return;
     }
     if (!hasLiveblocksConfig()) {
@@ -67,15 +87,29 @@ export function RoomsTab() {
 
     const initialProject = getProjectDocument();
     setCreating(true);
-    try {
-      const ok = await enterRoom(projectId, initialProject ?? undefined);
-      if (ok) {
-        const loaded = await loadProjectFromRoomStorage();
-        if (loaded) {
+      try {
+        const ok = await enterRoom(projectId, initialProject ?? undefined);
+        if (ok) {
+          await loadProjectFromRoomStorage();
+          try {
+            await apiFetch("/api/rooms/register", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                roomId: `project-${projectId}`,
+                projectId,
+                projectName: projectName?.trim() ?? "Untitled",
+                participantCount: 1,
+              }),
+            });
+          } catch {
+            // Non-fatal
+          }
           toast.success("Room created");
-        }
-      } else {
-        toast.error("Failed to create room");
+          triggerRoomsRefresh();
+          void fetchRooms();
+        } else {
+          toast.error("Failed to create room");
       }
     } finally {
       setCreating(false);
@@ -109,8 +143,19 @@ export function RoomsTab() {
 
   const handleLeaveRoom = async () => {
     await persistToBackend();
+    try {
+      await apiFetch("/api/rooms/unregister", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId: `project-${projectId}` }),
+      });
+    } catch {
+      // Non-fatal
+    }
     leaveRoom();
     toast.success("Left room");
+    triggerRoomsRefresh();
+    void fetchRooms();
   };
 
   if (!hasLiveblocksConfig()) {
@@ -133,7 +178,7 @@ export function RoomsTab() {
           <Button
             size="sm"
             onClick={handleCreateRoom}
-            disabled={creating || !projectName?.trim()}
+            disabled={creating || !hasProjectNameAndImage}
             aria-label="Create room"
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}

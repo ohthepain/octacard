@@ -46,11 +46,11 @@ import { RoomsTab } from "@/components/RoomsTab";
 import { RoomAvatars } from "@/components/RoomAvatars";
 import { UndoRedoButtons } from "@/components/UndoRedoButtons";
 import { ProjectMenu } from "@/components/ProjectMenu";
+import { LiveToggle } from "@/components/LiveToggle";
 import { CacheDebugPanel } from "@/components/CacheDebugPanel";
 import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
 import { HomeFooter } from "@/components/HomeFooter";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
-import { useHotkey } from "@tanstack/react-hotkeys";
 import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
 import { useProjectSync } from "@/hooks/useProjectSync";
 import { useRoomStorageSync } from "@/hooks/useRoomStorageSync";
@@ -879,8 +879,6 @@ const Index = () => {
     we.open();
   }, [previewMode, selectedSourceItem, selectedDestItem]);
 
-  useHotkey("Mod+W", handleWaveformToggle, { preventDefault: true });
-
   const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
     if (result.success && result.data) {
@@ -912,6 +910,7 @@ const Index = () => {
       <header className="h-14 border-b border-border bg-card flex items-center px-4 shrink-0 gap-4">
         <div className="flex items-center gap-3 shrink-0">
           <ProjectMenu />
+          <LiveToggle />
           <Button
             variant={previewMode === "multi" ? "default" : "outline"}
             size="sm"
@@ -936,8 +935,7 @@ const Index = () => {
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Show waveform when selecting samples</p>
-              <p className="text-muted-foreground text-xs">⌘W</p>
+              <p>Show waveform when selecting samples (⌘E)</p>
             </TooltipContent>
           </Tooltip>
           {previewMode === "multi" && <ExportPackButton />}

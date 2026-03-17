@@ -19,6 +19,7 @@ import { useProjectStore } from "@/stores/project-store";
 import { useCurrentProjectStore } from "@/stores/current-project-store";
 import { useFormatPresetStore } from "@/stores/format-preset-store";
 import { useRoomStore } from "@/stores/room-store";
+import { useProjectSettingsStore } from "@/stores/project-settings-store";
 import { hasLiveblocksConfig } from "@/lib/liveblocks-client";
 import { getProjectCoverUploadUrl, canPersistToDb } from "@/lib/project-persistence";
 import { cropImageToSquare } from "@/lib/image-utils";
@@ -75,6 +76,18 @@ export function ProjectMenu() {
 
   useEffect(() => {
     void canPersistToDb().then(setIsAuthenticated);
+  }, []);
+
+  useEffect(() => {
+    let prevVersion = useProjectSettingsStore.getState().openRequestVersion;
+    const unsub = useProjectSettingsStore.subscribe(() => {
+      const v = useProjectSettingsStore.getState().openRequestVersion;
+      if (v > prevVersion) {
+        prevVersion = v;
+        setDialogOpen(true);
+      }
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {

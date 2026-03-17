@@ -8,7 +8,6 @@ import { useProjectStore, setSkipHistoryForHydrate } from "./project-store";
 import { useSampleEditsStore } from "./sample-edits-store";
 import { useFormatPresetStore } from "./format-preset-store";
 import { useRoomStore } from "./room-store";
-import { hasLiveblocksConfig } from "@/lib/liveblocks-client";
 import {
   loadProjectFromRoom,
   saveProjectToRoom,
@@ -59,10 +58,7 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
       });
       useSampleEditsStore.getState().hydrateFromProject(project.sampleEdits);
       useFormatPresetStore.getState().hydrateFromProject(project.formatSettings);
-      if (hasLiveblocksConfig()) {
-        await useRoomStore.getState().ensureProjectRoom(project.id, project);
-        await get().persistToProject();
-      }
+      // Room is joined only when user explicitly goes live via Live toggle
       return true;
     } finally {
       set({ isHydrating: false });
@@ -88,10 +84,7 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
       });
       useSampleEditsStore.getState().hydrateFromProject(project.sampleEdits);
       useFormatPresetStore.getState().hydrateFromProject(project.formatSettings);
-      if (hasLiveblocksConfig()) {
-        await useRoomStore.getState().ensureProjectRoom(project.id, project);
-        await get().persistToProject();
-      }
+      // Room is joined only when user explicitly goes live via Live toggle
       return project;
     } finally {
       set({ isHydrating: false });
@@ -120,10 +113,7 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
       });
       useSampleEditsStore.getState().hydrateFromProject(project.sampleEdits);
       useFormatPresetStore.getState().hydrateFromProject(project.formatSettings);
-      if (hasLiveblocksConfig()) {
-        await useRoomStore.getState().ensureProjectRoom(project.id, project);
-        await get().persistToProject();
-      }
+      // Room is joined only when user explicitly goes live via Live toggle
       return project;
     } finally {
       set({ isHydrating: false });
