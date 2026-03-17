@@ -67,6 +67,12 @@ export async function assertViewAnalysisResultsDoesNotAutoRerun(page, { baseUrl 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
 
+  const localModeButton = page.getByRole("button", { name: "Local files mode" });
+  if (await localModeButton.isVisible().catch(() => false)) {
+    await localModeButton.click();
+    await page.getByTestId("panel-source").locator('button[title="Browse for folder to navigate to"]').waitFor({ state: "visible" });
+  }
+
   await page.evaluate(() => {
     const sourcePanel = document.querySelector('[data-testid="panel-source"]');
     if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found");

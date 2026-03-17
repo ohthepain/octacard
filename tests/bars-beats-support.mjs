@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import { waitForAriaPressed } from "./wait-utils.mjs";
 
 export async function assertBarsBeatsSupport(page) {
+  const waveformButton = page.getByTestId("waveform-editor-button");
+  await waveformButton.waitFor({ state: "visible" });
+  if ((await waveformButton.getAttribute("aria-pressed")) !== "true") {
+    await waveformButton.click();
+    await waitForAriaPressed(page, "waveform-editor-button", "true");
+  }
+
   const fileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
   await fileNode.waitFor({ state: "visible" });
   await fileNode.click();

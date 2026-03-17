@@ -62,5 +62,12 @@ export async function assertMultiStackPersistsAfterReload(page) {
   await reloadedMultiToggle.click();
   await waitForAriaPressed(page, "multi-mode-toggle", "false");
 
+  // After reload, libraryMode resets to "global"; switch back to local so FilePane (with browse button) is shown
+  const localModeButton = page.getByRole("button", { name: "Local files mode" });
+  if (await localModeButton.isVisible().catch(() => false)) {
+    await localModeButton.click();
+    await page.getByTestId("panel-source").locator('button[title="Browse for folder to navigate to"]').waitFor({ state: "visible" });
+  }
+
   await openSourceAndDestRoots(page);
 }

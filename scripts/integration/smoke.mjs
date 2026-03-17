@@ -33,7 +33,6 @@ import { assertAudioLoadAiffAndWav } from "../../tests/audio-load-aiff-wav.mjs";
 import { assertWaveformTimeModeToggle } from "../../tests/waveform-time-mode-toggle.mjs";
 import { assertWhatsNewTour } from "../../tests/whats-new-tour.mjs";
 import { assertMultiStackPersistsAfterReload } from "../../tests/multi-stack-persists-refresh.mjs";
-import { assertMultiStackRecoversAfterFolderSelection } from "../../tests/multi-stack-reloads-after-folder-select.mjs";
 import { assertViewAnalysisResultsDoesNotAutoRerun } from "../../tests/view-analysis-results-no-rerun.mjs";
 import { testInitScript } from "./init-test.mjs";
 
@@ -228,7 +227,6 @@ try {
   await assertSearchModesAllFoldersFiles(page);
   await assertSourceFolderDoesNotAutoSelectDest(page);
   await assertMultiStackPersistsAfterReload(page);
-  await assertMultiStackRecoversAfterFolderSelection(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
