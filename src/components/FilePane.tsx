@@ -1058,9 +1058,19 @@ export const FilePane = ({
 
     return () => {
       cancelled = true;
-      timeouts.forEach((timeout) => { clearTimeout(timeout); });
+      timeouts.forEach((timeout) => {
+        clearTimeout(timeout);
+      });
     };
-  }, [expandAllInPack, folderViewRoot, currentRootPath, fileTree, loadDirectory, isRestoringExpanded, isSearchingFolders]);
+  }, [
+    expandAllInPack,
+    folderViewRoot,
+    currentRootPath,
+    fileTree,
+    loadDirectory,
+    isRestoringExpanded,
+    isSearchingFolders,
+  ]);
 
   // Helper to get flat list of nodes for shift-click range selection
   const getFlatNodeList = useCallback((nodes: FileNode[]): FileNode[] => {
@@ -1977,7 +1987,16 @@ export const FilePane = ({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRootPath, expandedFolders, selectedItems, fileTree, paneName, loadDirectory, getFlatNodeList, populatePackCacheFromIndex]);
+  }, [
+    currentRootPath,
+    expandedFolders,
+    selectedItems,
+    fileTree,
+    paneName,
+    loadDirectory,
+    getFlatNodeList,
+    populatePackCacheFromIndex,
+  ]);
 
   useEffect(() => {
     if (typeof refreshToken !== "number") return;
@@ -2036,9 +2055,7 @@ export const FilePane = ({
             }
             setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
             setFolderViewCreatorName(
-              typeof data.ownerName === "string" && data.ownerName.trim()
-                ? data.ownerName.trim()
-                : null,
+              typeof data.ownerName === "string" && data.ownerName.trim() ? data.ownerName.trim() : null,
             );
           } catch {
             setFolderViewPackName(null);
@@ -2088,9 +2105,7 @@ export const FilePane = ({
           }
           setFolderViewPackId(typeof data.packId === "string" ? data.packId : null);
           setFolderViewCreatorName(
-            typeof data.ownerName === "string" && data.ownerName.trim()
-              ? data.ownerName.trim()
-              : null,
+            typeof data.ownerName === "string" && data.ownerName.trim() ? data.ownerName.trim() : null,
           );
           if (typeof data.coverImage === "string" && data.coverImage.trim()) {
             coverImageFromJson = data.coverImage.trim();
@@ -4350,8 +4365,8 @@ export const FilePane = ({
       : basename(currentRootPath);
   const paneGuidanceInstruction =
     paneType === "source"
-      ? "Select your raw samples folder here."
-      : "Select a folder for your converted samples here.";
+      ? "Select your raw (source) samples folder here."
+      : "Select a destination folder for your converted samples here.";
   const paneGuidanceCopy = (
     <div className="space-y-1">
       <p className="text-sm text-muted-foreground">Octacard manages and converts sample files for your hardware.</p>
