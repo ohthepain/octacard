@@ -3,7 +3,12 @@
  */
 import { create } from "zustand";
 import type { ProjectDocument } from "@/lib/project-document";
-import { getProject, createProject, saveProject } from "@/lib/project-persistence";
+import {
+  getProject,
+  createProject,
+  createNewProject as createNewProjectFromApi,
+  saveProject,
+} from "@/lib/project-persistence";
 import { useProjectStore, setSkipHistoryForHydrate } from "./project-store";
 import { useSampleEditsStore } from "./sample-edits-store";
 import { useFormatPresetStore } from "./format-preset-store";
@@ -23,8 +28,8 @@ interface CurrentProjectState {
   setProjectName: (name: string) => void;
   clearProject: () => void;
   loadProjectFromRoomStorage: () => Promise<boolean>;
-  /** Create new project: new id, reset content. Preserves Liveblocks room. */
-  createNewProject: (name: string) => Promise<ProjectDocument | null>;
+  /** Create new project: new id, reset content. Preserves formatSettings from current or passed value. */
+  createNewProject: (name: string, formatSettings?: Record<string, unknown> | null) => Promise<ProjectDocument | null>;
   /** Build project document from current stores (for export, etc.) */
   getProjectDocument: () => ProjectDocument | null;
   /** Persist current project to IndexedDB/API (e.g. before leaving room). */
@@ -91,11 +96,13 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
     }
   },
 
-  createNewProject: async (name: string) => {
+  createNewProject: async (name: string, formatSettings?: Record<string, unknown> | null) => {
     await get().persistToProject();
     useRoomStore.getState().leaveRoom();
 
-    const project = await createProject(name);
+    const formatState = useFormatPresetStore.getState();
+    const settingsToPreserve = formatSettings ?? formatState.currentPreset.settings;
+    const project = await createNewProjectFromApi(name, settingsToPreserve);
     set({ isHydrating: true });
     try {
       useProjectStore.getState().setMetadata({

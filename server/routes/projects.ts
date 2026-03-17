@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../types.js";
 import { requireUser } from "../middleware/auth-guard.js";
+import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../db.js";
 import { getFromS3, getPresignedUploadUrl } from "../s3.js";
 
@@ -121,6 +122,84 @@ const createProjectSchema = z
   })
   .optional()
   .default({});
+
+const createNewProjectSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  formatSettings: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+/** POST /api/projects/new - Create new project with fresh state. Resets stack, cover, timeSignature, transportDefaults, arrangementMetadata. Preserves formatSettings from request. */
+projectsApp.post("/new", requireUser, zValidator("json", createNewProjectSchema), async (c) => {
+  const user = requireUser(c);
+  const body = c.req.valid("json");
+  console.log("[projects] POST /new", { userId: user.id, name: body?.name });
+  const name = body?.name ?? "Untitled";
+  const formatSettings = body?.formatSettings ?? null;
+
+  const existing = await prisma.project.findUnique({
+    where: { userId: user.id },
+    include: { stacks: true },
+  });
+
+  const stackId = crypto.randomUUID();
+  const emptySlots = [null, null, null, null] as Prisma.InputJsonValue;
+  const freshStack = {
+    id: stackId,
+    name: "Stack 1",
+    sortOrder: 0,
+    slots: emptySlots,
+    activeSlotIndex: 0,
+    previewMode: "single",
+    bpmAuto: true,
+    globalTempoBpm: 120,
+  };
+
+  if (existing) {
+    await prisma.projectStack.deleteMany({ where: { projectId: existing.id } });
+    await prisma.projectStack.create({
+      data: {
+        ...freshStack,
+        projectId: existing.id,
+      },
+    });
+    const updated = await prisma.project.update({
+      where: { id: existing.id },
+      data: {
+        name,
+        coverImageS3Key: null,
+        coverImageUrl: null,
+        timeSignature: Prisma.DbNull,
+        transportDefaults: Prisma.DbNull,
+        arrangementMetadata: Prisma.DbNull,
+        sampleEdits: {},
+        formatSettings: formatSettings != null ? (formatSettings as Prisma.InputJsonValue) : Prisma.DbNull,
+        activeStackId: stackId,
+      },
+      include: { stacks: { orderBy: { sortOrder: "asc" } } },
+    });
+    const json = projectToJson(updated as unknown as Parameters<typeof projectToJson>[0]);
+    console.log("[projects] POST /new returning updated project", json.id);
+    return c.json(json);
+  }
+
+  const project = await prisma.project.create({
+    data: {
+      userId: user.id,
+      name,
+      activeStackId: stackId,
+      formatSettings: formatSettings != null ? (formatSettings as Prisma.InputJsonValue) : undefined,
+      stacks: {
+        create: {
+          ...freshStack,
+        },
+      },
+    },
+    include: { stacks: { orderBy: { sortOrder: "asc" } } },
+  });
+  const json = projectToJson(project as unknown as Parameters<typeof projectToJson>[0]);
+  console.log("[projects] POST /new returning new project", json.id);
+  return c.json(json);
+});
 
 /** POST /api/projects - Create project if none; return existing if present */
 projectsApp.post("/", requireUser, zValidator("json", createProjectSchema), async (c) => {

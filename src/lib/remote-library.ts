@@ -321,6 +321,23 @@ export interface UnsplashPhotoResult {
   downloadLocation?: string;
 }
 
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  createdAt: string;
+}
+
+export interface UserProfileStats {
+  packsCreated: number;
+  publicPacks: number;
+  samplesCreated: number;
+  publicSamples: number;
+  downloadedSamplesByOthers: number;
+  downloadedPacksByOthers: number;
+}
+
 export async function fetchUnsplashRandomPhoto(query?: string): Promise<UnsplashPhotoResult> {
   const params = new URLSearchParams();
   if (query?.trim()) params.set("query", query.trim());
@@ -333,6 +350,42 @@ export async function fetchUnsplashRandomPhoto(query?: string): Promise<Unsplash
   }
   const data = (await res.json()) as UnsplashPhotoResult;
   return data;
+}
+
+export async function getMyProfile(): Promise<UserProfile> {
+  const res = await apiFetch("/api/library/profile");
+  if (!res.ok) {
+    throw new Error(`Failed to fetch profile (${res.status})`);
+  }
+  return (await res.json()) as UserProfile;
+}
+
+export async function updateMyProfile(input: { name?: string; image?: string | null }): Promise<UserProfile> {
+  const res = await apiFetch("/api/library/profile", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let message: string | null = null;
+    try {
+      const json = JSON.parse(text) as { message?: string; error?: string };
+      message = json.message?.trim() || json.error?.trim() || null;
+    } catch {
+      message = text.trim() || null;
+    }
+    throw new Error(message ?? `Failed to update profile (${res.status})`);
+  }
+  return (await res.json()) as UserProfile;
+}
+
+export async function getMyProfileStats(): Promise<UserProfileStats> {
+  const res = await apiFetch("/api/library/profile/stats");
+  if (!res.ok) {
+    throw new Error(`Failed to fetch profile stats (${res.status})`);
+  }
+  return (await res.json()) as UserProfileStats;
 }
 
 export async function getPackCoverUploadUrl(

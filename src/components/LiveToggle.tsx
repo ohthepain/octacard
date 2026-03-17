@@ -95,6 +95,10 @@ export function LiveToggle() {
       }
       await loadProjectFromRoomStorage();
       try {
+        const coverUrl =
+          coverImageS3Key && projectId
+            ? `/api/projects/${encodeURIComponent(projectId)}/cover?v=${encodeURIComponent(coverImageS3Key)}`
+            : coverImageUrl;
         await apiFetch("/api/rooms/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -103,6 +107,7 @@ export function LiveToggle() {
             projectId,
             projectName: projectName?.trim() ?? "Untitled",
             participantCount: 1,
+            coverImageUrl: coverUrl ?? null,
           }),
         });
       } catch {

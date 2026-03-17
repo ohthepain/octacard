@@ -1,4 +1,5 @@
-import { LogIn, LogOut, Scale, ToggleLeft, Shield, Database } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { LogIn, LogOut, Scale, ToggleLeft, Shield, Database, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,18 +13,35 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "@tanstack/react-router";
 import { useSession, signOut, isAdminOrSuperadmin } from "@/lib/auth-client";
 import { useAppOptionsStore } from "@/stores/app-options-store";
+import { ProfileDialog } from "@/components/ProfileDialog";
 
 export function UserMenu() {
   const { data: session, isPending } = useSession();
   const devMode = useAppOptionsStore((s) => s.devMode);
   const setDevMode = useAppOptionsStore((s) => s.setDevMode);
   const openCacheDebug = useAppOptionsStore((s) => s.openCacheDebug);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [profileNameOverride, setProfileNameOverride] = useState<string | null>(null);
+  const [profileImageOverride, setProfileImageOverride] = useState<string | null | undefined>(undefined);
 
   const user = session?.user;
+  const displayName = useMemo(
+    () => profileNameOverride ?? user?.name ?? user?.email ?? "User",
+    [profileNameOverride, user?.email, user?.name],
+  );
+  const displayImage = profileImageOverride !== undefined ? profileImageOverride : user?.image ?? null;
+
+  useEffect(() => {
+    if (!user) {
+      setProfileNameOverride(null);
+      setProfileImageOverride(undefined);
+    }
+  }, [user]);
+
   const initials = isPending
     ? "…"
-    : user?.name
-      ? user.name
+    : displayName
+      ? displayName
           .split(" ")
           .map((n) => n[0])
           .join("")
@@ -42,7 +60,7 @@ export function UserMenu() {
           data-testid="user-menu"
         >
           <Avatar className="h-8 w-8">
-            <AvatarImage src={user?.image ?? undefined} alt={user?.name ?? ""} />
+            <AvatarImage src={displayImage ?? undefined} alt={displayName} />
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>
           </Avatar>
         </Button>
@@ -52,7 +70,7 @@ export function UserMenu() {
           <>
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col gap-1">
-                <span className="font-medium">{user.name ?? user.email}</span>
+                <span className="font-medium">{displayName}</span>
                 {devMode && (
                   <span className="text-xs font-mono text-muted-foreground truncate" title={user.id}>
                     {user.id}
@@ -61,6 +79,13 @@ export function UserMenu() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setProfileDialogOpen(true)}
+              className="flex items-center gap-2 cursor-pointer"
+            >
+              <UserRound className="h-4 w-4" />
+              Profile
+            </DropdownMenuItem>
             {isAdminOrSuperadmin(session) && (
               <DropdownMenuItem asChild>
                 <Link to="/admin" className="flex items-center gap-2 cursor-pointer">
@@ -131,6 +156,19 @@ export function UserMenu() {
           </>
         )}
       </DropdownMenuContent>
+      {user && (
+        <ProfileDialog
+          open={profileDialogOpen}
+          onOpenChange={setProfileDialogOpen}
+          fallbackName={displayName}
+          fallbackEmail={user.email}
+          fallbackImage={displayImage}
+          onSaved={(profile) => {
+            setProfileNameOverride(profile.name);
+            setProfileImageOverride(profile.image);
+          }}
+        />
+      )}
     </DropdownMenu>
   );
 }

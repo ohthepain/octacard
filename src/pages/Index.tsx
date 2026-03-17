@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
-import { Play, HelpCircle, Activity, Globe, House } from "lucide-react";
+import { Play, HelpCircle, Activity, Globe, House, Radio } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useProjectStore } from "@/stores/project-store";
@@ -968,7 +968,7 @@ const Index = () => {
             </Button>
           </div>
           {libraryMode === "global" && (
-            <div className="flex items-center rounded-md border border-border overflow-hidden shrink-0">
+            <div className="flex items-center rounded-md border border-border overflow-visible shrink-0">
               <Button
                 size="sm"
                 variant={globalScope === "mine" ? "secondary" : "ghost"}
@@ -1001,8 +1001,9 @@ const Index = () => {
                 aria-label={`Rooms${publicRoomsCount > 0 ? ` (${publicRoomsCount} available)` : ""}`}
               >
                 Rooms
+                <Radio className="w-4 h-4 mr-1" />
                 {publicRoomsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-card bg-primary px-1 text-[10px] font-medium text-primary-foreground shadow-sm">
                     {publicRoomsCount}
                   </span>
                 )}

@@ -201,6 +201,22 @@ const unsplashRandomSchema = z.object({
   _: z.string().optional(), // cache-bust param from client, ignored
 });
 
+const updateProfileSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  image: z
+    .string()
+    .trim()
+    .max(2_000_000)
+    .refine(
+      (value) =>
+        value.startsWith("data:image/") ||
+        /^https?:\/\//.test(value),
+      { message: "Profile image must be an https URL or data image URL" },
+    )
+    .nullable()
+    .optional(),
+});
+
 libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchema), async (c) => {
   const accessKey = process.env.UNSPLASH_ACCESS_KEY;
   if (!accessKey) {
@@ -267,6 +283,85 @@ libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchem
     photographerName: photo?.user?.name ?? undefined,
     photographerUsername: photo?.user?.username ?? undefined,
     downloadLocation: photo?.links?.download_location ?? undefined,
+  });
+});
+
+libraryApp.get("/profile", async (c) => {
+  const user = requireUser(c);
+  const profile = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { id: true, name: true, email: true, image: true, createdAt: true },
+  });
+  if (!profile) {
+    throw new HTTPException(404, { message: "Profile not found" });
+  }
+  return c.json(profile);
+});
+
+libraryApp.patch("/profile", zValidator("json", updateProfileSchema), async (c) => {
+  const user = requireUser(c);
+  const body = c.req.valid("json");
+  if (body.name === undefined && body.image === undefined) {
+    throw new HTTPException(400, { message: "No profile updates were provided" });
+  }
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.image !== undefined ? { image: body.image } : {}),
+    },
+    select: { id: true, name: true, email: true, image: true, createdAt: true },
+  });
+  return c.json(updated);
+});
+
+libraryApp.get("/profile/stats", async (c) => {
+  const user = requireUser(c);
+  const [packsCreated, publicPacks, samplesCreatedRows, publicSamplesRows, downloadedSamplesRows, downloadedPacks] =
+    await Promise.all([
+      prisma.pack.count({ where: { ownerId: user.id } }),
+      prisma.pack.count({ where: { ownerId: user.id, isPublic: true } }),
+      prisma.packSample.findMany({
+        where: { ownerId: user.id },
+        distinct: ["sampleId"],
+        select: { sampleId: true },
+      }),
+      prisma.packSample.findMany({
+        where: { ownerId: user.id, pack: { isPublic: true } },
+        distinct: ["sampleId"],
+        select: { sampleId: true },
+      }),
+      prisma.packSample.findMany({
+        where: {
+          ownerId: user.id,
+          sample: { collections: { some: { userId: { not: user.id } } } },
+        },
+        distinct: ["sampleId"],
+        select: { sampleId: true },
+      }),
+      prisma.pack.count({
+        where: {
+          ownerId: user.id,
+          packSamples: {
+            some: {
+              sample: {
+                collections: {
+                  some: { userId: { not: user.id } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+  return c.json({
+    packsCreated,
+    publicPacks,
+    samplesCreated: samplesCreatedRows.length,
+    publicSamples: publicSamplesRows.length,
+    downloadedSamplesByOthers: downloadedSamplesRows.length,
+    downloadedPacksByOthers: downloadedPacks,
   });
 });
 

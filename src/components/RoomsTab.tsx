@@ -12,12 +12,27 @@ import { useProjectSettingsStore } from "@/stores/project-settings-store";
 import { useRoomsRefreshStore } from "@/stores/rooms-refresh-store";
 import { hasLiveblocksConfig } from "@/lib/liveblocks-client";
 import { apiFetch } from "@/lib/api-client";
+import { useSession } from "@/lib/auth-client";
+
+function getProjectCoverDisplayUrl(
+  projectId: string | null,
+  coverImageS3Key: string | null,
+  coverImageUrl: string | null,
+): string | null {
+  if (coverImageS3Key && projectId) {
+    return `/api/projects/${encodeURIComponent(projectId)}/cover?v=${encodeURIComponent(coverImageS3Key)}`;
+  }
+  if (coverImageUrl) return coverImageUrl;
+  return null;
+}
 
 export interface PublicRoomInfo {
   roomId: string;
   projectId: string;
   projectName: string;
   participantCount: number;
+  coverImageUrl?: string | null;
+  creatorId?: string | null;
 }
 
 export function RoomsTab() {
@@ -31,11 +46,14 @@ export function RoomsTab() {
   const getProjectDocument = useCurrentProjectStore((s) => s.getProjectDocument);
   const requestOpenProjectSettings = useProjectSettingsStore((s) => s.requestOpen);
   const triggerRoomsRefresh = useRoomsRefreshStore((s) => s.triggerRefresh);
+  const roomsRefreshVersion = useRoomsRefreshStore((s) => s.version);
   const loadProjectFromRoomStorage = useCurrentProjectStore((s) => s.loadProjectFromRoomStorage);
   const persistToBackend = useCurrentProjectStore((s) => s.persistToBackend);
   const enterRoom = useRoomStore((s) => s.enterRoom);
   const leaveRoom = useRoomStore((s) => s.leaveRoom);
   const isInRoom = useRoomStore((s) => s.isInRoom);
+  const roomId = useRoomStore((s) => s.roomId);
+  const { data: session } = useSession();
 
   const fetchRooms = useCallback(async () => {
     if (!hasLiveblocksConfig()) return;
@@ -57,7 +75,7 @@ export function RoomsTab() {
 
   useEffect(() => {
     void fetchRooms();
-  }, [fetchRooms]);
+  }, [fetchRooms, roomsRefreshVersion]);
 
   const hasProjectNameAndImage =
     projectName?.trim() &&
@@ -92,6 +110,7 @@ export function RoomsTab() {
         if (ok) {
           await loadProjectFromRoomStorage();
           try {
+            const coverUrl = getProjectCoverDisplayUrl(projectId, coverImageS3Key, coverImageUrl);
             await apiFetch("/api/rooms/register", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -100,6 +119,7 @@ export function RoomsTab() {
                 projectId,
                 projectName: projectName?.trim() ?? "Untitled",
                 participantCount: 1,
+                coverImageUrl: coverUrl,
               }),
             });
           } catch {
@@ -141,19 +161,26 @@ export function RoomsTab() {
     }
   };
 
-  const handleLeaveRoom = async () => {
+  const currentRoom = roomId ? rooms.find((r) => r.roomId === roomId) : undefined;
+  const amCreator = Boolean(currentRoom?.creatorId && session?.user?.id && currentRoom.creatorId === session.user.id);
+
+  const handleLeaveOrCloseRoom = async () => {
     await persistToBackend();
-    try {
-      await apiFetch("/api/rooms/unregister", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId: `project-${projectId}` }),
-      });
-    } catch {
-      // Non-fatal
+    if (amCreator && roomId) {
+      try {
+        await apiFetch("/api/rooms/unregister", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomId }),
+        });
+      } catch {
+        // Non-fatal
+      }
+      toast.success("Room closed");
+    } else {
+      toast.success("Left room");
     }
     leaveRoom();
-    toast.success("Left room");
     triggerRoomsRefresh();
     void fetchRooms();
   };
@@ -171,8 +198,8 @@ export function RoomsTab() {
       <div className="p-4 border-b border-border flex items-center justify-between">
         <h2 className="font-semibold">Rooms</h2>
         {isInRoom ? (
-          <Button size="sm" variant="outline" onClick={handleLeaveRoom}>
-            Leave room
+          <Button size="sm" variant="outline" onClick={handleLeaveOrCloseRoom}>
+            {amCreator ? "Close room" : "Leave room"}
           </Button>
         ) : (
           <Button
@@ -198,28 +225,52 @@ export function RoomsTab() {
           </div>
         ) : (
           <ul className="space-y-2">
-            {rooms.map((room) => (
-              <li
-                key={room.roomId}
-                className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30"
-              >
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{room.projectName}</div>
-                  <div className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Users className="w-3 h-3" />
-                    {room.participantCount} participant{room.participantCount !== 1 ? "s" : ""}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => handleJoinRoom(room.roomId, room.projectId)}
-                  disabled={creating || isInRoom}
+            {rooms.map((room) => {
+              const inThisRoom = room.roomId === roomId;
+              const createdThisRoom = Boolean(room.creatorId && session?.user?.id && room.creatorId === session.user.id);
+              const roomButtonLabel = createdThisRoom ? "Close room" : inThisRoom ? "Leave room" : "Join";
+              const roomButtonAction = createdThisRoom || inThisRoom
+                ? handleLeaveOrCloseRoom
+                : () => handleJoinRoom(room.roomId, room.projectId);
+              const roomButtonDisabled = (createdThisRoom || inThisRoom) ? false : creating || isInRoom;
+
+              return (
+                <li
+                  key={room.roomId}
+                  className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-muted/30"
                 >
-                  Join
-                </Button>
-              </li>
-            ))}
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {room.coverImageUrl ? (
+                      <img
+                        src={room.coverImageUrl}
+                        alt=""
+                        className="w-10 h-10 rounded object-cover shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded bg-muted shrink-0 flex items-center justify-center">
+                        <Users className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{room.projectName}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Users className="w-3 h-3" />
+                        {room.participantCount} participant{room.participantCount !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={roomButtonAction}
+                    disabled={roomButtonDisabled}
+                  >
+                    {roomButtonLabel}
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

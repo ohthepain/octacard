@@ -2,7 +2,7 @@
  * Project menu: centered dialog. Edit name, upload or generate cover image, save.
  */
 import { useState, useEffect, useRef, useCallback } from "react";
-import { FilePlus, Save, Globe, Lock, Users, ImagePlus, Trash2, Dices, Loader2 } from "lucide-react";
+import { FilePlus, Save, Globe, Lock, ImagePlus, Trash2, Dices, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,7 @@ import { fetchUnsplashRandomPhoto } from "@/lib/remote-library";
 import { useProjectStore } from "@/stores/project-store";
 import { useCurrentProjectStore } from "@/stores/current-project-store";
 import { useFormatPresetStore } from "@/stores/format-preset-store";
-import { useRoomStore } from "@/stores/room-store";
 import { useProjectSettingsStore } from "@/stores/project-settings-store";
-import { hasLiveblocksConfig } from "@/lib/liveblocks-client";
 import { getProjectCoverUploadUrl, canPersistToDb } from "@/lib/project-persistence";
 import { cropImageToSquare } from "@/lib/image-utils";
 import { toast } from "sonner";
@@ -58,9 +56,7 @@ export function ProjectMenu() {
   const setIsPublic = useProjectStore((s) => s.setIsPublic);
   const persistToProject = useCurrentProjectStore((s) => s.persistToProject);
   const createNewProject = useCurrentProjectStore((s) => s.createNewProject);
-  const { roomId, room, isInRoom } = useRoomStore();
 
-  const [othersCount, setOthersCount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -89,17 +85,6 @@ export function ProjectMenu() {
     });
     return unsub;
   }, []);
-
-  useEffect(() => {
-    if (!room) {
-      setOthersCount(0);
-      return;
-    }
-    const update = () => setOthersCount(room.getOthers().length);
-    update();
-    const unsub = room.subscribe("others", update);
-    return () => unsub();
-  }, [room]);
 
   useEffect(() => {
     if (!imageFile) {
@@ -228,16 +213,16 @@ export function ProjectMenu() {
 
   const handleCreateNew = async () => {
     setDialogOpen(false);
-    const formatSettings = useFormatPresetStore.getState().currentPreset.settings;
-    const project = await createNewProject("Untitled");
-    if (project) {
-      useFormatPresetStore.getState().hydrateFromProject(formatSettings);
-      toast.success("New project created");
+    try {
+      const formatSettings = useFormatPresetStore.getState().currentPreset.settings;
+      const project = await createNewProject("Untitled", formatSettings as unknown as Record<string, unknown>);
+      if (project) {
+        toast.success("New project created");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create new project");
     }
   };
-
-  const roomLabel = roomId ?? "—";
-  const roomStatus = isInRoom ? "Connected" : "Not in room";
 
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -398,25 +383,6 @@ export function ProjectMenu() {
                 </div>
                 <Switch checked={isPublic} onCheckedChange={() => void handleTogglePublic()} />
               </div>
-              {hasLiveblocksConfig() && (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Users className="w-4 h-4 text-muted-foreground" />
-                    Room
-                  </div>
-                  <div className="text-xs text-muted-foreground space-y-0.5 font-mono">
-                    <div className="truncate" title={roomLabel}>
-                      {roomLabel}
-                    </div>
-                    <div>{roomStatus}</div>
-                    {isInRoom && othersCount > 0 && (
-                      <div>
-                        {othersCount} other{othersCount === 1 ? "" : "s"} in room
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
               <Button onClick={handleSave} disabled={isSaving} className="w-full">
                 <Save className="w-4 h-4 mr-2" />
                 {isSaving ? "Saving…" : "Save project"}

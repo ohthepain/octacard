@@ -7,6 +7,7 @@ import { getSession } from "./auth-client";
 import type { ProjectDocument } from "./project-document";
 import { normalizeProjectDocument } from "./project-document";
 import { SLOT_ROW_SIZE } from "@/stores/project-store";
+import type { FormatSettings } from "@/stores/format-preset-store";
 
 const API_BASE = "/api/projects";
 
@@ -15,7 +16,7 @@ async function hasSession(): Promise<boolean> {
   return Boolean(data?.user);
 }
 
-function createProjectInMemory(name: string): ProjectDocument {
+function createProjectInMemory(name: string, formatSettings?: FormatSettings | null): ProjectDocument {
   const now = Date.now();
   const stackId = crypto.randomUUID();
   return {
@@ -40,6 +41,7 @@ function createProjectInMemory(name: string): ProjectDocument {
       },
     ],
     sampleEdits: {},
+    formatSettings: formatSettings ?? undefined,
   };
 }
 
@@ -54,6 +56,36 @@ export async function getProject(_id?: string): Promise<ProjectDocument | null> 
   if (res.status === 404) return null;
   if (res.status === 401) return null;
   return null;
+}
+
+/** Create new project with fresh state. Resets stack, cover, timeSignature, transportDefaults, arrangementMetadata. Preserves formatSettings. */
+export async function createNewProject(
+  name: string,
+  formatSettings: FormatSettings | Record<string, unknown> | null,
+): Promise<ProjectDocument> {
+  const res = await apiFetch(`${API_BASE}/new`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, formatSettings }),
+  });
+  if (res.status === 401) {
+    return createProjectInMemory(name, formatSettings as unknown as FormatSettings | undefined);
+  }
+  if (!res.ok) {
+    throw new Error(`Failed to create new project: ${res.status}`);
+  }
+  const text = await res.text();
+  if (!text || text.trim() === "") {
+    // Server returned 200 with empty body - often means request didn't reach API (e.g. wrong port, proxy issue).
+    // Fall back to in-memory project so the UI at least updates.
+    return createProjectInMemory(name, formatSettings as unknown as FormatSettings | undefined);
+  }
+  try {
+    const data = JSON.parse(text) as Record<string, unknown>;
+    return normalizeProjectDocument(data);
+  } catch {
+    throw new Error(`Invalid JSON in response: ${text.slice(0, 100)}`);
+  }
 }
 
 /** Create project: API when authenticated, in-memory when not. */
