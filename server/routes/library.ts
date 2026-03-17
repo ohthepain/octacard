@@ -1,14 +1,19 @@
+import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import type { AppVariables } from "../types.js";
-import { requireUser } from "../middleware/auth-guard.js";
 import { prisma } from "../db.js";
-import { getFromS3, getPresignedUploadUrl, getPresignedDownloadUrl, deleteFromS3 } from "../s3.js";
-import { enqueueEssentiaAnalysis } from "../queues/essentia-analysis.js";
-import { sampleSearchApp } from "./sample-search.js";
 import { tracedFetch } from "../external-api-trace.js";
+import { requireUser } from "../middleware/auth-guard.js";
+import { enqueueEssentiaAnalysis } from "../queues/essentia-analysis.js";
+import {
+  deleteFromS3,
+  getFromS3,
+  getPresignedDownloadUrl,
+  getPresignedUploadUrl,
+} from "../s3.js";
+import type { AppVariables } from "../types.js";
+import { sampleSearchApp } from "./sample-search.js";
 
 const libraryApp = new Hono<{ Variables: AppVariables }>();
 
@@ -17,6 +22,7 @@ const searchSchema = z.object({
   scope: z.enum(["mine", "all", "explore"]).default("all"),
   types: z.enum(["packs", "samples", "both"]).default("both"),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  ownerId: z.string().trim().min(1).optional(),
 });
 
 const createPackSchema = z.object({
@@ -117,13 +123,18 @@ async function requireOwnedPack(packId: string, userId: string) {
   }
 
   if (pack.ownerId !== userId) {
-    throw new HTTPException(403, { message: "Only the owner can update this pack" });
+    throw new HTTPException(403, {
+      message: "Only the owner can update this pack",
+    });
   }
 
   return pack;
 }
 
-async function isSampleInCollection(userId: string, sampleId: string): Promise<boolean> {
+async function isSampleInCollection(
+  userId: string,
+  sampleId: string,
+): Promise<boolean> {
   const existing = await prisma.sampleCollection.findUnique({
     where: {
       userId_sampleId: {
@@ -136,7 +147,10 @@ async function isSampleInCollection(userId: string, sampleId: string): Promise<b
   return Boolean(existing);
 }
 
-async function canReadSample(userId: string, sampleId: string): Promise<boolean> {
+async function canReadSample(
+  userId: string,
+  sampleId: string,
+): Promise<boolean> {
   if (await isSampleInCollection(userId, sampleId)) return true;
   const packSample = await prisma.packSample.findFirst({
     where: { sampleId, OR: [{ ownerId: userId }, { credits: 0 }] },
@@ -151,7 +165,9 @@ async function canReadSample(userId: string, sampleId: string): Promise<boolean>
 }
 
 /** True if sample is in at least one public pack (audition allowed when not logged in; authorization.md) */
-async function canAuditionSampleUnauthenticated(sampleId: string): Promise<boolean> {
+async function canAuditionSampleUnauthenticated(
+  sampleId: string,
+): Promise<boolean> {
   const packSample = await prisma.packSample.findFirst({
     where: { sampleId, pack: { isPublic: true } },
     select: { packId: true },
@@ -159,9 +175,24 @@ async function canAuditionSampleUnauthenticated(sampleId: string): Promise<boole
   return Boolean(packSample);
 }
 
-type PackPathNode = { id: string; name: string; parentId: string | null; relativeDir: string };
+type PackPathNode = {
+  id: string;
+  name: string;
+  parentId: string | null;
+  relativeDir: string;
+};
+type PackReactionSummary = {
+  favoriteCount: number;
+  hideCount: number;
+  isFavoritedByMe: boolean;
+  isHiddenByMe: boolean;
+  canViewHideCount: boolean;
+  canViewLikers: boolean;
+};
 
-async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNode>> {
+async function loadPackTree(
+  rootPackId: string,
+): Promise<Map<string, PackPathNode>> {
   const root = await prisma.pack.findUnique({
     where: { id: rootPackId },
     select: { id: true, name: true, parentId: true },
@@ -169,7 +200,12 @@ async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNod
   if (!root) return new Map();
 
   const map = new Map<string, PackPathNode>();
-  map.set(root.id, { id: root.id, name: root.name, parentId: root.parentId, relativeDir: "" });
+  map.set(root.id, {
+    id: root.id,
+    name: root.name,
+    parentId: root.parentId,
+    relativeDir: "",
+  });
 
   let frontier: string[] = [root.id];
   while (frontier.length) {
@@ -181,7 +217,9 @@ async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNod
 
     for (const child of children) {
       const parent = child.parentId ? map.get(child.parentId) : null;
-      const relativeDir = parent?.relativeDir ? `${parent.relativeDir}/${child.name}` : child.name;
+      const relativeDir = parent?.relativeDir
+        ? `${parent.relativeDir}/${child.name}`
+        : child.name;
       map.set(child.id, {
         id: child.id,
         name: child.name,
@@ -196,6 +234,80 @@ async function loadPackTree(rootPackId: string): Promise<Map<string, PackPathNod
   return map;
 }
 
+async function isAdminOrSuperadmin(userId: string): Promise<boolean> {
+  const role = await prisma.userRole.findFirst({
+    where: {
+      userId,
+      role: { in: ["ADMIN", "SUPERADMIN"] },
+    },
+    select: { userId: true },
+  });
+  return Boolean(role);
+}
+
+async function getPackReactionSummaryMap(
+  packOwners: Array<{ id: string; ownerId: string }>,
+  userId?: string,
+): Promise<Map<string, PackReactionSummary>> {
+  const packIds = packOwners.map((pack) => pack.id);
+  if (packIds.length === 0) return new Map();
+
+  const [favoriteCounts, hideCounts, myFavorites, myHides, admin] =
+    await Promise.all([
+      prisma.packFavorite.groupBy({
+        by: ["packId"],
+        where: { packId: { in: packIds } },
+        _count: { packId: true },
+      }),
+      prisma.packHide.groupBy({
+        by: ["packId"],
+        where: { packId: { in: packIds } },
+        _count: { packId: true },
+      }),
+      userId
+        ? prisma.packFavorite.findMany({
+            where: { userId, packId: { in: packIds } },
+            select: { packId: true },
+          })
+        : Promise.resolve([]),
+      userId
+        ? prisma.packHide.findMany({
+            where: { userId, packId: { in: packIds } },
+            select: { packId: true },
+          })
+        : Promise.resolve([]),
+      userId ? isAdminOrSuperadmin(userId) : Promise.resolve(false),
+    ]);
+
+  const favoriteCountByPackId = new Map(
+    favoriteCounts.map((row) => [row.packId, row._count.packId]),
+  );
+  const hideCountByPackId = new Map(
+    hideCounts.map((row) => [row.packId, row._count.packId]),
+  );
+  const favoritedPackIds = new Set(myFavorites.map((row) => row.packId));
+  const hiddenPackIds = new Set(myHides.map((row) => row.packId));
+
+  return new Map(
+    packOwners.map((pack) => {
+      const canViewHideCount =
+        userId != null && (pack.ownerId === userId || admin);
+      const canViewLikers = userId != null && pack.ownerId === userId;
+      return [
+        pack.id,
+        {
+          favoriteCount: favoriteCountByPackId.get(pack.id) ?? 0,
+          hideCount: hideCountByPackId.get(pack.id) ?? 0,
+          isFavoritedByMe: favoritedPackIds.has(pack.id),
+          isHiddenByMe: hiddenPackIds.has(pack.id),
+          canViewHideCount,
+          canViewLikers,
+        },
+      ];
+    }),
+  );
+}
+
 const unsplashRandomSchema = z.object({
   query: z.string().trim().max(100).optional().default("music"),
   _: z.string().optional(), // cache-bust param from client, ignored
@@ -208,83 +320,87 @@ const updateProfileSchema = z.object({
     .trim()
     .max(2_000_000)
     .refine(
-      (value) =>
-        value.startsWith("data:image/") ||
-        /^https?:\/\//.test(value),
+      (value) => value.startsWith("data:image/") || /^https?:\/\//.test(value),
       { message: "Profile image must be an https URL or data image URL" },
     )
     .nullable()
     .optional(),
 });
 
-libraryApp.get("/unsplash/random-photo", zValidator("query", unsplashRandomSchema), async (c) => {
-  const accessKey = process.env.UNSPLASH_ACCESS_KEY;
-  if (!accessKey) {
-    throw new HTTPException(503, { message: "Unsplash is not configured" });
-  }
-  const { query } = c.req.valid("query");
-  const searchTerm = query || "music";
-  const headers: Record<string, string> = {
-    "Accept-Version": "v1",
-    Authorization: `Client-ID ${accessKey}`,
-  };
+libraryApp.get(
+  "/unsplash/random-photo",
+  zValidator("query", unsplashRandomSchema),
+  async (c) => {
+    const accessKey = process.env.UNSPLASH_ACCESS_KEY;
+    if (!accessKey) {
+      throw new HTTPException(503, { message: "Unsplash is not configured" });
+    }
+    const { query } = c.req.valid("query");
+    const searchTerm = query || "music";
+    const headers: Record<string, string> = {
+      "Accept-Version": "v1",
+      Authorization: `Client-ID ${accessKey}`,
+    };
 
-  type UnsplashPhoto = {
-    urls?: { regular?: string };
-    user?: { username?: string; name?: string };
-    links?: { download_location?: string };
-  };
-  let imageUrl: string | undefined;
-  let photo: UnsplashPhoto | undefined;
+    type UnsplashPhoto = {
+      urls?: { regular?: string };
+      user?: { username?: string; name?: string };
+      links?: { download_location?: string };
+    };
+    let imageUrl: string | undefined;
+    let photo: UnsplashPhoto | undefined;
 
-  // Use /search/photos for queried requests - /photos/random often returns 404 for specific queries
-  const searchParams = new URLSearchParams({
-    query: searchTerm,
-    per_page: "15",
-    orientation: "squarish",
-  });
-  const searchRes = await tracedFetch(
-    `https://api.unsplash.com/search/photos?${searchParams}`,
-    { headers },
-    { service: "unsplash", operation: "search/photos" },
-  );
-  if (searchRes.ok) {
-    const searchData = (await searchRes.json()) as { results?: UnsplashPhoto[] };
-    const results = searchData.results ?? [];
-    if (results.length > 0) {
-      photo = results[Math.floor(Math.random() * results.length)];
+    // Use /search/photos for queried requests - /photos/random often returns 404 for specific queries
+    const searchParams = new URLSearchParams({
+      query: searchTerm,
+      per_page: "15",
+      orientation: "squarish",
+    });
+    const searchRes = await tracedFetch(
+      `https://api.unsplash.com/search/photos?${searchParams}`,
+      { headers },
+      { service: "unsplash", operation: "search/photos" },
+    );
+    if (searchRes.ok) {
+      const searchData = (await searchRes.json()) as {
+        results?: UnsplashPhoto[];
+      };
+      const results = searchData.results ?? [];
+      if (results.length > 0) {
+        photo = results[Math.floor(Math.random() * results.length)];
+        imageUrl = photo.urls?.regular;
+      }
+    }
+
+    // Fallback: /photos/random (no query) when search returns no results
+    if (!imageUrl) {
+      const fallbackRes = await tracedFetch(
+        "https://api.unsplash.com/photos/random?orientation=squarish",
+        { headers },
+        { service: "unsplash", operation: "photos/random-fallback" },
+      );
+      if (!fallbackRes.ok) {
+        const text = await fallbackRes.text();
+        throw new HTTPException(502, {
+          message: `Unsplash API error: ${fallbackRes.status} ${text.slice(0, 200)}`,
+        });
+      }
+      photo = (await fallbackRes.json()) as UnsplashPhoto;
       imageUrl = photo.urls?.regular;
     }
-  }
 
-  // Fallback: /photos/random (no query) when search returns no results
-  if (!imageUrl) {
-    const fallbackRes = await tracedFetch(
-      "https://api.unsplash.com/photos/random?orientation=squarish",
-      { headers },
-      { service: "unsplash", operation: "photos/random-fallback" },
-    );
-    if (!fallbackRes.ok) {
-      const text = await fallbackRes.text();
-      throw new HTTPException(502, {
-        message: `Unsplash API error: ${fallbackRes.status} ${text.slice(0, 200)}`,
-      });
+    if (!imageUrl) {
+      throw new HTTPException(502, { message: "Invalid Unsplash response" });
     }
-    photo = (await fallbackRes.json()) as UnsplashPhoto;
-    imageUrl = photo.urls?.regular;
-  }
 
-  if (!imageUrl) {
-    throw new HTTPException(502, { message: "Invalid Unsplash response" });
-  }
-
-  return c.json({
-    url: imageUrl,
-    photographerName: photo?.user?.name ?? undefined,
-    photographerUsername: photo?.user?.username ?? undefined,
-    downloadLocation: photo?.links?.download_location ?? undefined,
-  });
-});
+    return c.json({
+      url: imageUrl,
+      photographerName: photo?.user?.name ?? undefined,
+      photographerUsername: photo?.user?.username ?? undefined,
+      downloadLocation: photo?.links?.download_location ?? undefined,
+    });
+  },
+);
 
 libraryApp.get("/profile", async (c) => {
   const user = requireUser(c);
@@ -298,62 +414,115 @@ libraryApp.get("/profile", async (c) => {
   return c.json(profile);
 });
 
-libraryApp.patch("/profile", zValidator("json", updateProfileSchema), async (c) => {
-  const user = requireUser(c);
-  const body = c.req.valid("json");
-  if (body.name === undefined && body.image === undefined) {
-    throw new HTTPException(400, { message: "No profile updates were provided" });
-  }
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.image !== undefined ? { image: body.image } : {}),
-    },
-    select: { id: true, name: true, email: true, image: true, createdAt: true },
+libraryApp.patch(
+  "/profile",
+  zValidator("json", updateProfileSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const body = c.req.valid("json");
+    if (body.name === undefined && body.image === undefined) {
+      throw new HTTPException(400, {
+        message: "No profile updates were provided",
+      });
+    }
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.image !== undefined ? { image: body.image } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        createdAt: true,
+      },
+    });
+    return c.json(updated);
+  },
+);
+
+libraryApp.get("/profile/:userId/public", async (c) => {
+  const userId = c.req.param("userId");
+  const profile = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, image: true },
   });
-  return c.json(updated);
+  if (!profile) {
+    throw new HTTPException(404, { message: "Profile not found" });
+  }
+  const [publicPacks, publicSamplesRows, favoritedPacks] = await Promise.all([
+    prisma.pack.count({
+      where: { ownerId: userId, isPublic: true, parentId: null },
+    }),
+    prisma.packSample.findMany({
+      where: { ownerId: userId, pack: { isPublic: true } },
+      distinct: ["sampleId"],
+      select: { sampleId: true },
+    }),
+    prisma.packFavorite.count({
+      where: {
+        pack: { ownerId: userId, isPublic: true },
+        userId: { not: userId },
+      },
+    }),
+  ]);
+  return c.json({
+    id: profile.id,
+    name: profile.name,
+    image: profile.image,
+    publicPacks,
+    publicSamples: publicSamplesRows.length,
+    favoritedPacks,
+  });
 });
 
 libraryApp.get("/profile/stats", async (c) => {
   const user = requireUser(c);
-  const [packsCreated, publicPacks, samplesCreatedRows, publicSamplesRows, downloadedSamplesRows, downloadedPacks] =
-    await Promise.all([
-      prisma.pack.count({ where: { ownerId: user.id } }),
-      prisma.pack.count({ where: { ownerId: user.id, isPublic: true } }),
-      prisma.packSample.findMany({
-        where: { ownerId: user.id },
-        distinct: ["sampleId"],
-        select: { sampleId: true },
-      }),
-      prisma.packSample.findMany({
-        where: { ownerId: user.id, pack: { isPublic: true } },
-        distinct: ["sampleId"],
-        select: { sampleId: true },
-      }),
-      prisma.packSample.findMany({
-        where: {
-          ownerId: user.id,
-          sample: { collections: { some: { userId: { not: user.id } } } },
-        },
-        distinct: ["sampleId"],
-        select: { sampleId: true },
-      }),
-      prisma.pack.count({
-        where: {
-          ownerId: user.id,
-          packSamples: {
-            some: {
-              sample: {
-                collections: {
-                  some: { userId: { not: user.id } },
-                },
+  const [
+    packsCreated,
+    publicPacks,
+    samplesCreatedRows,
+    publicSamplesRows,
+    downloadedSamplesRows,
+    downloadedPacks,
+  ] = await Promise.all([
+    prisma.pack.count({ where: { ownerId: user.id } }),
+    prisma.pack.count({ where: { ownerId: user.id, isPublic: true } }),
+    prisma.packSample.findMany({
+      where: { ownerId: user.id },
+      distinct: ["sampleId"],
+      select: { sampleId: true },
+    }),
+    prisma.packSample.findMany({
+      where: { ownerId: user.id, pack: { isPublic: true } },
+      distinct: ["sampleId"],
+      select: { sampleId: true },
+    }),
+    prisma.packSample.findMany({
+      where: {
+        ownerId: user.id,
+        sample: { collections: { some: { userId: { not: user.id } } } },
+      },
+      distinct: ["sampleId"],
+      select: { sampleId: true },
+    }),
+    prisma.pack.count({
+      where: {
+        ownerId: user.id,
+        packSamples: {
+          some: {
+            sample: {
+              collections: {
+                some: { userId: { not: user.id } },
               },
             },
           },
         },
-      }),
-    ]);
+      },
+    }),
+  ]);
 
   return c.json({
     packsCreated,
@@ -367,17 +536,17 @@ libraryApp.get("/profile/stats", async (c) => {
 
 libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
   const user = c.get("user");
-  const { q, scope, types, limit } = c.req.valid("query");
+  const { q, scope, types, limit, ownerId } = c.req.valid("query");
   const query = q.trim();
 
-  // scope "mine" requires auth
-  if (scope === "mine" && !user) {
+  // scope "mine" requires auth (unless ownerId filter is used)
+  if (scope === "mine" && !user && !ownerId) {
     throw new HTTPException(401, {
       message: "Unauthorized",
-      res: new Response(
-        JSON.stringify({ error: "Authentication required" }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      ),
+      res: new Response(JSON.stringify({ error: "Authentication required" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
     });
   }
 
@@ -399,15 +568,18 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       }
     : {};
 
-  const packOwnerFilter =
-    scope === "mine"
+  // When ownerId is set, show only that creator's public packs/samples
+  const packOwnerFilter = ownerId
+    ? { ownerId, isPublic: true }
+    : scope === "mine"
       ? { ownerId: user!.id }
       : scope === "explore" && user
         ? { ownerId: { not: user.id } }
         : {};
 
-  const sampleOwnerFilter =
-    scope === "mine"
+  const sampleOwnerFilter = ownerId
+    ? { ownerId, pack: { isPublic: true } }
+    : scope === "mine"
       ? { ownerId: user!.id }
       : scope === "explore" && user
         ? { ownerId: { not: user.id } }
@@ -469,9 +641,21 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
       : [];
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
   const userId = user?.id;
+  const packReactions = await getPackReactionSummaryMap(
+    packs.map((pack) => ({ id: pack.id, ownerId: pack.ownerId })),
+    userId,
+  );
 
   return c.json({
     packs: packs.map((p) => ({
+      ...(packReactions.get(p.id) ?? {
+        favoriteCount: 0,
+        hideCount: 0,
+        isFavoritedByMe: false,
+        isHiddenByMe: false,
+        canViewHideCount: false,
+        canViewLikers: false,
+      }),
       id: p.id,
       name: p.name,
       ownerId: p.ownerId,
@@ -512,7 +696,14 @@ libraryApp.get("/search", zValidator("query", searchSchema), async (c) => {
 
 libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
   const user = requireUser(c);
-  const { name, parentId, isPublic, priceTokens, defaultSampleTokens, coverImageUrl } = c.req.valid("json");
+  const {
+    name,
+    parentId,
+    isPublic,
+    priceTokens,
+    defaultSampleTokens,
+    coverImageUrl,
+  } = c.req.valid("json");
 
   if (parentId) {
     await requireOwnedPack(parentId, user.id);
@@ -544,47 +735,60 @@ libraryApp.post("/packs", zValidator("json", createPackSchema), async (c) => {
   return c.json(pack, 201);
 });
 
-libraryApp.patch("/packs/:id", zValidator("json", updatePackSchema), async (c) => {
-  const user = requireUser(c);
-  const id = c.req.param("id");
-  const { name, parentId, coverImageS3Key, coverImageUrl, isPublic, priceTokens, defaultSampleTokens } =
-    c.req.valid("json");
+libraryApp.patch(
+  "/packs/:id",
+  zValidator("json", updatePackSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const id = c.req.param("id");
+    const {
+      name,
+      parentId,
+      coverImageS3Key,
+      coverImageUrl,
+      isPublic,
+      priceTokens,
+      defaultSampleTokens,
+    } = c.req.valid("json");
 
-  await requireOwnedPack(id, user.id);
+    await requireOwnedPack(id, user.id);
 
-  if (parentId === id) {
-    throw new HTTPException(400, { message: "Pack cannot be its own parent" });
-  }
+    if (parentId === id) {
+      throw new HTTPException(400, {
+        message: "Pack cannot be its own parent",
+      });
+    }
 
-  if (parentId) {
-    await requireOwnedPack(parentId, user.id);
-  }
+    if (parentId) {
+      await requireOwnedPack(parentId, user.id);
+    }
 
-  const pack = await prisma.pack.update({
-    where: { id },
-    data: {
-      ...(name ? { name: normalizeName(name) } : {}),
-      ...(parentId !== undefined ? { parentId } : {}),
-      ...(coverImageS3Key !== undefined ? { coverImageS3Key } : {}),
-      ...(coverImageUrl !== undefined ? { coverImageUrl } : {}),
-      ...(isPublic !== undefined ? { isPublic } : {}),
-      ...(priceTokens !== undefined ? { priceTokens } : {}),
-      ...(defaultSampleTokens !== undefined ? { defaultSampleTokens } : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      ownerId: true,
-      parentId: true,
-      coverImageS3Key: true,
-      coverImageUrl: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
+    const pack = await prisma.pack.update({
+      where: { id },
+      data: {
+        ...(name ? { name: normalizeName(name) } : {}),
+        ...(parentId !== undefined ? { parentId } : {}),
+        ...(coverImageS3Key !== undefined ? { coverImageS3Key } : {}),
+        ...(coverImageUrl !== undefined ? { coverImageUrl } : {}),
+        ...(isPublic !== undefined ? { isPublic } : {}),
+        ...(priceTokens !== undefined ? { priceTokens } : {}),
+        ...(defaultSampleTokens !== undefined ? { defaultSampleTokens } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+        parentId: true,
+        coverImageS3Key: true,
+        coverImageUrl: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-  return c.json(pack);
-});
+    return c.json(pack);
+  },
+);
 
 libraryApp.delete("/packs/:id", async (c) => {
   const user = requireUser(c);
@@ -605,7 +809,9 @@ libraryApp.delete("/packs/:id", async (c) => {
   }
 
   if (pack.ownerId !== user.id) {
-    throw new HTTPException(403, { message: "Only the owner can delete this pack" });
+    throw new HTTPException(403, {
+      message: "Only the owner can delete this pack",
+    });
   }
 
   if (pack.isPublic) {
@@ -621,7 +827,9 @@ libraryApp.delete("/packs/:id", async (c) => {
     where: { packId: { in: packIds } },
     select: { sampleId: true },
   });
-  const sampleIdsInTree = [...new Set(packSamplesInTree.map((ps) => ps.sampleId))];
+  const sampleIdsInTree = [
+    ...new Set(packSamplesInTree.map((ps) => ps.sampleId)),
+  ];
 
   if (sampleIdsInTree.length > 0) {
     const otherPurchasers = await prisma.sampleCollection.findFirst({
@@ -649,7 +857,11 @@ libraryApp.delete("/packs/:id", async (c) => {
       try {
         await deleteFromS3(p.coverImageS3Key);
       } catch (err) {
-        console.warn("[library] Failed to delete pack cover from S3:", p.coverImageS3Key, err);
+        console.warn(
+          "[library] Failed to delete pack cover from S3:",
+          p.coverImageS3Key,
+          err,
+        );
       }
     }
   }
@@ -666,12 +878,13 @@ libraryApp.delete("/packs/:id", async (c) => {
       return inOtherPacks ? null : sampleId;
     }),
   );
-  const orphanSampleIds = samplesOnlyInTree.filter((id): id is string => id !== null);
+  const orphanSampleIds = samplesOnlyInTree.filter(
+    (id): id is string => id !== null,
+  );
 
   await prisma.pack.delete({ where: { id } });
 
   for (const sampleId of orphanSampleIds) {
-
     const sample = await prisma.sample.findUnique({
       where: { id: sampleId },
       select: { s3Key: true },
@@ -680,7 +893,11 @@ libraryApp.delete("/packs/:id", async (c) => {
       try {
         await deleteFromS3(sample.s3Key);
       } catch (err) {
-        console.warn("[library] Failed to delete sample from S3:", sample.s3Key, err);
+        console.warn(
+          "[library] Failed to delete sample from S3:",
+          sample.s3Key,
+          err,
+        );
       }
       await prisma.sample.delete({ where: { id: sampleId } });
     }
@@ -689,18 +906,199 @@ libraryApp.delete("/packs/:id", async (c) => {
   return c.json({ ok: true }, 200);
 });
 
-libraryApp.post("/packs/:id/cover-upload-url", zValidator("json", packCoverUploadSchema), async (c) => {
+libraryApp.put("/packs/:id/favorite", async (c) => {
   const user = requireUser(c);
   const id = c.req.param("id");
-  const { contentType } = c.req.valid("json");
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true },
+  });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
 
-  await requireOwnedPack(id, user.id);
+  await prisma.packFavorite.upsert({
+    where: { packId_userId: { packId: id, userId: user.id } },
+    create: { packId: id, userId: user.id },
+    update: {},
+  });
 
-  const key = `packs/${user.id}/${id}/cover-${Date.now()}.${contentType.includes("png") ? "png" : "jpg"}`;
-  const uploadUrl = await getPresignedUploadUrl(key, contentType);
+  const reaction = (
+    await getPackReactionSummaryMap(
+      [{ id: pack.id, ownerId: pack.ownerId }],
+      user.id,
+    )
+  ).get(pack.id) ?? {
+    favoriteCount: 0,
+    hideCount: 0,
+    isFavoritedByMe: true,
+    isHiddenByMe: false,
+    canViewHideCount: false,
+    canViewLikers: false,
+  };
 
-  return c.json({ key, uploadUrl, expiresIn: 3600 });
+  return c.json({ packId: id, ...reaction });
 });
+
+libraryApp.delete("/packs/:id/favorite", async (c) => {
+  const user = requireUser(c);
+  const id = c.req.param("id");
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true },
+  });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
+
+  await prisma.packFavorite.deleteMany({
+    where: { packId: id, userId: user.id },
+  });
+
+  const reaction = (
+    await getPackReactionSummaryMap(
+      [{ id: pack.id, ownerId: pack.ownerId }],
+      user.id,
+    )
+  ).get(pack.id) ?? {
+    favoriteCount: 0,
+    hideCount: 0,
+    isFavoritedByMe: false,
+    isHiddenByMe: false,
+    canViewHideCount: false,
+    canViewLikers: false,
+  };
+
+  return c.json({ packId: id, ...reaction });
+});
+
+libraryApp.put("/packs/:id/hide", async (c) => {
+  const user = requireUser(c);
+  const id = c.req.param("id");
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true },
+  });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
+
+  await prisma.packHide.upsert({
+    where: { packId_userId: { packId: id, userId: user.id } },
+    create: { packId: id, userId: user.id },
+    update: {},
+  });
+
+  const reaction = (
+    await getPackReactionSummaryMap(
+      [{ id: pack.id, ownerId: pack.ownerId }],
+      user.id,
+    )
+  ).get(pack.id) ?? {
+    favoriteCount: 0,
+    hideCount: 0,
+    isFavoritedByMe: false,
+    isHiddenByMe: true,
+    canViewHideCount: false,
+    canViewLikers: false,
+  };
+
+  return c.json({ packId: id, ...reaction });
+});
+
+libraryApp.delete("/packs/:id/hide", async (c) => {
+  const user = requireUser(c);
+  const id = c.req.param("id");
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true },
+  });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
+
+  await prisma.packHide.deleteMany({
+    where: { packId: id, userId: user.id },
+  });
+
+  const reaction = (
+    await getPackReactionSummaryMap(
+      [{ id: pack.id, ownerId: pack.ownerId }],
+      user.id,
+    )
+  ).get(pack.id) ?? {
+    favoriteCount: 0,
+    hideCount: 0,
+    isFavoritedByMe: false,
+    isHiddenByMe: false,
+    canViewHideCount: false,
+    canViewLikers: false,
+  };
+
+  return c.json({ packId: id, ...reaction });
+});
+
+libraryApp.get("/packs/:id/favorites", async (c) => {
+  const user = requireUser(c);
+  const id = c.req.param("id");
+  const pack = await prisma.pack.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true },
+  });
+  if (!pack) {
+    throw new HTTPException(404, { message: "Pack not found" });
+  }
+
+  const isAdmin = await isAdminOrSuperadmin(user.id);
+  if (pack.ownerId !== user.id && !isAdmin) {
+    throw new HTTPException(403, {
+      message: "Only the owner or an admin can view pack favorites",
+    });
+  }
+
+  const favorites = await prisma.packFavorite.findMany({
+    where: { packId: id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      createdAt: true,
+      user: {
+        select: {
+          id: true,
+          name: true,
+          image: true,
+        },
+      },
+    },
+  });
+
+  return c.json({
+    packId: id,
+    total: favorites.length,
+    users: favorites.map((favorite) => ({
+      id: favorite.user.id,
+      name: favorite.user.name,
+      image: favorite.user.image,
+      favoritedAt: favorite.createdAt,
+    })),
+  });
+});
+
+libraryApp.post(
+  "/packs/:id/cover-upload-url",
+  zValidator("json", packCoverUploadSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const id = c.req.param("id");
+    const { contentType } = c.req.valid("json");
+
+    await requireOwnedPack(id, user.id);
+
+    const key = `packs/${user.id}/${id}/cover-${Date.now()}.${contentType.includes("png") ? "png" : "jpg"}`;
+    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+
+    return c.json({ key, uploadUrl, expiresIn: 3600 });
+  },
+);
 
 libraryApp.get("/packs/:id/contents", async (c) => {
   const user = c.get("user");
@@ -748,6 +1146,24 @@ libraryApp.get("/packs/:id/contents", async (c) => {
       : [];
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
   const userId = user?.id;
+  const packReactions = await getPackReactionSummaryMap(
+    [
+      { id: pack.id, ownerId: pack.ownerId },
+      ...childPacks.map((childPack) => ({
+        id: childPack.id,
+        ownerId: childPack.ownerId,
+      })),
+    ],
+    userId,
+  );
+  const rootPackReaction = packReactions.get(pack.id) ?? {
+    favoriteCount: 0,
+    hideCount: 0,
+    isFavoritedByMe: false,
+    isHiddenByMe: false,
+    canViewHideCount: false,
+    canViewLikers: false,
+  };
 
   return c.json({
     pack: {
@@ -755,8 +1171,17 @@ libraryApp.get("/packs/:id/contents", async (c) => {
       name: pack.name,
       ownerId: pack.ownerId,
       isOwner: userId != null && pack.ownerId === userId,
+      ...rootPackReaction,
     },
     packs: childPacks.map((p) => ({
+      ...(packReactions.get(p.id) ?? {
+        favoriteCount: 0,
+        hideCount: 0,
+        isFavoritedByMe: false,
+        isHiddenByMe: false,
+        canViewHideCount: false,
+        canViewLikers: false,
+      }),
       id: p.id,
       name: p.name,
       ownerId: p.ownerId,
@@ -867,7 +1292,21 @@ libraryApp.get("/packs/:id", async (c) => {
   );
 
   const userId = user?.id;
+  const packReaction = (
+    await getPackReactionSummaryMap(
+      [{ id: pack.id, ownerId: pack.ownerId }],
+      userId,
+    )
+  ).get(pack.id) ?? {
+    favoriteCount: 0,
+    hideCount: 0,
+    isFavoritedByMe: false,
+    isHiddenByMe: false,
+    canViewHideCount: false,
+    canViewLikers: false,
+  };
   return c.json({
+    ...packReaction,
     id: pack.id,
     name: pack.name,
     ownerId: pack.ownerId,
@@ -926,11 +1365,17 @@ libraryApp.get("/packs/:id/download-manifest", async (c) => {
   const inCollection = new Set(collectionRows.map((row) => row.sampleId));
 
   const downloadable = packSamples.filter(
-    (ps) => ps.ownerId === user.id || ps.credits === 0 || inCollection.has(ps.sampleId) || pack.ownerId === user.id,
+    (ps) =>
+      ps.ownerId === user.id ||
+      ps.credits === 0 ||
+      inCollection.has(ps.sampleId) ||
+      pack.ownerId === user.id,
   );
 
   if (downloadable.length === 0) {
-    throw new HTTPException(403, { message: "No downloadable samples in this pack for current user" });
+    throw new HTTPException(403, {
+      message: "No downloadable samples in this pack for current user",
+    });
   }
 
   return c.json({
@@ -959,16 +1404,20 @@ libraryApp.get("/packs/:id/download-manifest", async (c) => {
 
 libraryApp.route("/samples/search", sampleSearchApp);
 
-libraryApp.post("/samples/check-exist", zValidator("json", checkSamplesExistSchema), async (c) => {
-  const { contentHashes } = c.req.valid("json");
-  const existing = await prisma.sample.findMany({
-    where: { id: { in: contentHashes } },
-    select: { id: true },
-  });
-  const existingSet = new Set(existing.map((e) => e.id));
-  const missing = contentHashes.filter((h) => !existingSet.has(h));
-  return c.json({ existing: Array.from(existingSet), missing });
-});
+libraryApp.post(
+  "/samples/check-exist",
+  zValidator("json", checkSamplesExistSchema),
+  async (c) => {
+    const { contentHashes } = c.req.valid("json");
+    const existing = await prisma.sample.findMany({
+      where: { id: { in: contentHashes } },
+      select: { id: true },
+    });
+    const existingSet = new Set(existing.map((e) => e.id));
+    const missing = contentHashes.filter((h) => !existingSet.has(h));
+    return c.json({ existing: Array.from(existingSet), missing });
+  },
+);
 
 function contentTypeToExt(contentType: string): string {
   const map: Record<string, string> = {
@@ -985,85 +1434,100 @@ function contentTypeToExt(contentType: string): string {
   return map[contentType.toLowerCase()] ?? "bin";
 }
 
-libraryApp.post("/samples/upload-url-by-content", zValidator("json", uploadByContentHashSchema), async (c) => {
-  const user = requireUser(c);
-  const { packId, contentHash, contentType } = c.req.valid("json");
-  await requireOwnedPack(packId, user.id);
-  const ext = contentTypeToExt(contentType);
-  const key = `samples/${contentHash}.${ext}`;
-  const uploadUrl = await getPresignedUploadUrl(key, contentType);
-  return c.json({ key, uploadUrl, expiresIn: 3600 });
-});
+libraryApp.post(
+  "/samples/upload-url-by-content",
+  zValidator("json", uploadByContentHashSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const { packId, contentHash, contentType } = c.req.valid("json");
+    await requireOwnedPack(packId, user.id);
+    const ext = contentTypeToExt(contentType);
+    const key = `samples/${contentHash}.${ext}`;
+    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+    return c.json({ key, uploadUrl, expiresIn: 3600 });
+  },
+);
 
-libraryApp.post("/samples/from-content", zValidator("json", createSampleFromContentSchema), async (c) => {
-  const user = requireUser(c);
-  const { packId, name, contentHash, contentType, sizeBytes, credits } = c.req.valid("json");
-  const pack = await requireOwnedPack(packId, user.id);
-  const isAudio = isAudioContentType(contentType);
+libraryApp.post(
+  "/samples/from-content",
+  zValidator("json", createSampleFromContentSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const { packId, name, contentHash, contentType, sizeBytes, credits } =
+      c.req.valid("json");
+    const pack = await requireOwnedPack(packId, user.id);
+    const isAudio = isAudioContentType(contentType);
 
-  const ext = contentTypeToExt(contentType);
-  const s3Key = `samples/${contentHash}.${ext}`;
+    const ext = contentTypeToExt(contentType);
+    const s3Key = `samples/${contentHash}.${ext}`;
 
-  const created = await prisma.sample.upsert({
-    where: { id: contentHash },
-    create: {
-      id: contentHash,
-      s3Key,
-      contentType,
-      sizeBytes: sizeBytes ?? null,
-      analysisStatus: isAudio ? "PENDING" : "READY",
-    },
-    update: {},
-  });
+    const created = await prisma.sample.upsert({
+      where: { id: contentHash },
+      create: {
+        id: contentHash,
+        s3Key,
+        contentType,
+        sizeBytes: sizeBytes ?? null,
+        analysisStatus: isAudio ? "PENDING" : "READY",
+      },
+      update: {},
+    });
 
-  // Enqueue analysis only for audio content.
-  if (isAudio && (created.analysisStatus === "PENDING" || created.analysisStatus === "FAILED")) {
-    try {
-      const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
-      console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("[library] Failed to enqueue sample analysis:", err);
-      await prisma.sample.update({
-        where: { id: created.id },
-        data: {
-          analysisStatus: "FAILED",
-          analysisError: `Failed to queue analysis: ${message}`,
-        },
-      });
+    // Enqueue analysis only for audio content.
+    if (
+      isAudio &&
+      (created.analysisStatus === "PENDING" ||
+        created.analysisStatus === "FAILED")
+    ) {
+      try {
+        const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
+        console.log(
+          `[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[library] Failed to enqueue sample analysis:", err);
+        await prisma.sample.update({
+          where: { id: created.id },
+          data: {
+            analysisStatus: "FAILED",
+            analysisError: `Failed to queue analysis: ${message}`,
+          },
+        });
+      }
     }
-  }
 
-  const ps = await prisma.packSample.upsert({
-    where: { packId_sampleId: { packId: pack.id, sampleId: contentHash } },
-    create: {
-      packId: pack.id,
-      sampleId: contentHash,
-      name: normalizeName(name),
-      ownerId: user.id,
-      credits,
-    },
-    update: {},
-    include: {
-      sample: { select: { sizeBytes: true, contentType: true } },
-    },
-  });
+    const ps = await prisma.packSample.upsert({
+      where: { packId_sampleId: { packId: pack.id, sampleId: contentHash } },
+      create: {
+        packId: pack.id,
+        sampleId: contentHash,
+        name: normalizeName(name),
+        ownerId: user.id,
+        credits,
+      },
+      update: {},
+      include: {
+        sample: { select: { sizeBytes: true, contentType: true } },
+      },
+    });
 
-  return c.json(
-    {
-      id: ps.sampleId,
-      name: ps.name,
-      packId: ps.packId,
-      ownerId: ps.ownerId,
-      credits: ps.credits,
-      sizeBytes: ps.sample?.sizeBytes ?? null,
-      contentType: ps.sample?.contentType ?? "application/octet-stream",
-      createdAt: ps.createdAt,
-      updatedAt: ps.updatedAt,
-    },
-    201,
-  );
-});
+    return c.json(
+      {
+        id: ps.sampleId,
+        name: ps.name,
+        packId: ps.packId,
+        ownerId: ps.ownerId,
+        credits: ps.credits,
+        sizeBytes: ps.sample?.sizeBytes ?? null,
+        contentType: ps.sample?.contentType ?? "application/octet-stream",
+        createdAt: ps.createdAt,
+        updatedAt: ps.updatedAt,
+      },
+      201,
+    );
+  },
+);
 
 libraryApp.post(
   "/samples/from-content-batch",
@@ -1085,7 +1549,13 @@ libraryApp.post(
       updatedAt: Date;
     }> = [];
 
-    for (const { name, contentHash, contentType, sizeBytes, credits } of samples) {
+    for (const {
+      name,
+      contentHash,
+      contentType,
+      sizeBytes,
+      credits,
+    } of samples) {
       const isAudio = isAudioContentType(contentType);
       const ext = contentTypeToExt(contentType);
       const s3Key = `samples/${contentHash}.${ext}`;
@@ -1102,10 +1572,19 @@ libraryApp.post(
         update: {},
       });
 
-      if (isAudio && (created.analysisStatus === "PENDING" || created.analysisStatus === "FAILED")) {
+      if (
+        isAudio &&
+        (created.analysisStatus === "PENDING" ||
+          created.analysisStatus === "FAILED")
+      ) {
         try {
-          const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
-          console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
+          const jobId = await enqueueEssentiaAnalysis(
+            created.id,
+            created.s3Key,
+          );
+          console.log(
+            `[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`,
+          );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.error("[library] Failed to enqueue sample analysis:", err);
@@ -1151,141 +1630,161 @@ libraryApp.post(
   },
 );
 
-libraryApp.post("/samples/upload-url", zValidator("json", uploadSampleSchema), async (c) => {
-  const user = requireUser(c);
-  const { packId, fileName, contentType, credits, sizeBytes } = c.req.valid("json");
-  const pack = await requireOwnedPack(packId, user.id);
-  const safeFileName = sanitizePathSegment(fileName);
-  const key = `samples/${user.id}/${pack.id}/${Date.now()}-${safeFileName}`;
-  const uploadUrl = await getPresignedUploadUrl(key, contentType);
+libraryApp.post(
+  "/samples/upload-url",
+  zValidator("json", uploadSampleSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const { packId, fileName, contentType, credits, sizeBytes } =
+      c.req.valid("json");
+    const pack = await requireOwnedPack(packId, user.id);
+    const safeFileName = sanitizePathSegment(fileName);
+    const key = `samples/${user.id}/${pack.id}/${Date.now()}-${safeFileName}`;
+    const uploadUrl = await getPresignedUploadUrl(key, contentType);
 
-  return c.json({
-    key,
-    uploadUrl,
-    expiresIn: 3600,
-    suggestedSample: {
-      name: safeFileName,
-      packId: pack.id,
-      ownerId: user.id,
-      contentType,
-      credits,
-      sizeBytes: sizeBytes ?? null,
-    },
-  });
-});
+    return c.json({
+      key,
+      uploadUrl,
+      expiresIn: 3600,
+      suggestedSample: {
+        name: safeFileName,
+        packId: pack.id,
+        ownerId: user.id,
+        contentType,
+        credits,
+        sizeBytes: sizeBytes ?? null,
+      },
+    });
+  },
+);
 
-libraryApp.post("/samples", zValidator("json", createSampleSchema), async (c) => {
-  const user = requireUser(c);
-  const { packId, name, s3Key, contentType, sizeBytes, credits } = c.req.valid("json");
-  const pack = await requireOwnedPack(packId, user.id);
-  const isAudio = isAudioContentType(contentType);
+libraryApp.post(
+  "/samples",
+  zValidator("json", createSampleSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const { packId, name, s3Key, contentType, sizeBytes, credits } =
+      c.req.valid("json");
+    const pack = await requireOwnedPack(packId, user.id);
+    const isAudio = isAudioContentType(contentType);
 
-  const keyPrefix = `samples/${user.id}/${pack.id}/`;
-  if (!s3Key.startsWith(keyPrefix)) {
-    throw new HTTPException(400, { message: "Invalid s3Key for current owner/pack" });
-  }
-
-  const legacyContentId = `legacy_${crypto.randomUUID().replace(/-/g, "")}`;
-  const created = await prisma.sample.create({
-    data: {
-      id: legacyContentId,
-      s3Key,
-      contentType,
-      sizeBytes: sizeBytes ?? null,
-      analysisStatus: isAudio ? "PENDING" : "READY",
-    },
-  });
-  if (isAudio) {
-    try {
-      const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
-      console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("[library] Failed to enqueue sample analysis:", err);
-      await prisma.sample.update({
-        where: { id: created.id },
-        data: {
-          analysisStatus: "FAILED",
-          analysisError: `Failed to queue analysis: ${message}`,
-        },
+    const keyPrefix = `samples/${user.id}/${pack.id}/`;
+    if (!s3Key.startsWith(keyPrefix)) {
+      throw new HTTPException(400, {
+        message: "Invalid s3Key for current owner/pack",
       });
     }
-  }
 
-  const ps = await prisma.packSample.create({
-    data: {
-      packId: pack.id,
-      sampleId: legacyContentId,
-      name: normalizeName(name),
-      ownerId: user.id,
-      credits,
-    },
-    include: {
-      sample: { select: { sizeBytes: true, contentType: true } },
-    },
-  });
+    const legacyContentId = `legacy_${crypto.randomUUID().replace(/-/g, "")}`;
+    const created = await prisma.sample.create({
+      data: {
+        id: legacyContentId,
+        s3Key,
+        contentType,
+        sizeBytes: sizeBytes ?? null,
+        analysisStatus: isAudio ? "PENDING" : "READY",
+      },
+    });
+    if (isAudio) {
+      try {
+        const jobId = await enqueueEssentiaAnalysis(created.id, created.s3Key);
+        console.log(
+          `[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${created.id}`,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[library] Failed to enqueue sample analysis:", err);
+        await prisma.sample.update({
+          where: { id: created.id },
+          data: {
+            analysisStatus: "FAILED",
+            analysisError: `Failed to queue analysis: ${message}`,
+          },
+        });
+      }
+    }
 
-  return c.json(
-    {
-      id: ps.sampleId,
-      name: ps.name,
-      packId: ps.packId,
-      ownerId: ps.ownerId,
-      credits: ps.credits,
-      sizeBytes: ps.sample?.sizeBytes ?? null,
-      contentType: ps.sample?.contentType ?? "application/octet-stream",
-      createdAt: ps.createdAt,
-      updatedAt: ps.updatedAt,
-    },
-    201,
-  );
-});
+    const ps = await prisma.packSample.create({
+      data: {
+        packId: pack.id,
+        sampleId: legacyContentId,
+        name: normalizeName(name),
+        ownerId: user.id,
+        credits,
+      },
+      include: {
+        sample: { select: { sizeBytes: true, contentType: true } },
+      },
+    });
+
+    return c.json(
+      {
+        id: ps.sampleId,
+        name: ps.name,
+        packId: ps.packId,
+        ownerId: ps.ownerId,
+        credits: ps.credits,
+        sizeBytes: ps.sample?.sizeBytes ?? null,
+        contentType: ps.sample?.contentType ?? "application/octet-stream",
+        createdAt: ps.createdAt,
+        updatedAt: ps.updatedAt,
+      },
+      201,
+    );
+  },
+);
 
 const updatePackSampleSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
   credits: z.number().int().min(0).optional(),
 });
 
-libraryApp.patch("/packs/:packId/samples/:sampleId", zValidator("json", updatePackSampleSchema), async (c) => {
-  const user = requireUser(c);
-  const packId = c.req.param("packId");
-  const sampleId = c.req.param("sampleId");
-  const { name, credits } = c.req.valid("json");
+libraryApp.patch(
+  "/packs/:packId/samples/:sampleId",
+  zValidator("json", updatePackSampleSchema),
+  async (c) => {
+    const user = requireUser(c);
+    const packId = c.req.param("packId");
+    const sampleId = c.req.param("sampleId");
+    const { name, credits } = c.req.valid("json");
 
-  const ps = await prisma.packSample.findUnique({
-    where: { packId_sampleId: { packId, sampleId } },
-    select: { ownerId: true },
-  });
-  if (!ps) {
-    throw new HTTPException(404, { message: "Sample not found in pack" });
-  }
-  if (ps.ownerId !== user.id) {
-    throw new HTTPException(403, { message: "Only the owner can update this sample" });
-  }
+    const ps = await prisma.packSample.findUnique({
+      where: { packId_sampleId: { packId, sampleId } },
+      select: { ownerId: true },
+    });
+    if (!ps) {
+      throw new HTTPException(404, { message: "Sample not found in pack" });
+    }
+    if (ps.ownerId !== user.id) {
+      throw new HTTPException(403, {
+        message: "Only the owner can update this sample",
+      });
+    }
 
-  const updated = await prisma.packSample.update({
-    where: { packId_sampleId: { packId, sampleId } },
-    data: {
-      ...(name ? { name: normalizeName(name) } : {}),
-      ...(credits !== undefined ? { credits } : {}),
-    },
-    include: {
-      sample: { select: { sizeBytes: true, contentType: true } },
-    },
-  });
+    const updated = await prisma.packSample.update({
+      where: { packId_sampleId: { packId, sampleId } },
+      data: {
+        ...(name ? { name: normalizeName(name) } : {}),
+        ...(credits !== undefined ? { credits } : {}),
+      },
+      include: {
+        sample: { select: { sizeBytes: true, contentType: true } },
+      },
+    });
 
-  return c.json({
-    id: updated.sampleId,
-    name: updated.name,
-    packId: updated.packId,
-    ownerId: updated.ownerId,
-    credits: updated.credits,
-    sizeBytes: updated.sample?.sizeBytes ?? null,
-    contentType: updated.sample?.contentType ?? "application/octet-stream",
-    createdAt: updated.createdAt,
-    updatedAt: updated.updatedAt,
-  });
-});
+    return c.json({
+      id: updated.sampleId,
+      name: updated.name,
+      packId: updated.packId,
+      ownerId: updated.ownerId,
+      credits: updated.credits,
+      sizeBytes: updated.sample?.sizeBytes ?? null,
+      contentType: updated.sample?.contentType ?? "application/octet-stream",
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    });
+  },
+);
 
 libraryApp.post("/samples/:id/add-to-collection", async (c) => {
   const user = requireUser(c);
@@ -1336,7 +1835,9 @@ libraryApp.get("/samples/:id/analysis", async (c) => {
 
   const readable = await canReadSample(user.id, sampleId);
   if (!readable) {
-    throw new HTTPException(403, { message: "You do not have access to this sample" });
+    throw new HTTPException(403, {
+      message: "You do not have access to this sample",
+    });
   }
 
   const sample = await prisma.sample.findUnique({
@@ -1356,7 +1857,9 @@ libraryApp.get("/samples/:id/analysis", async (c) => {
           },
         },
       },
-      embeddings: { select: { model: true, modelVersion: true, dimensions: true } },
+      embeddings: {
+        select: { model: true, modelVersion: true, dimensions: true },
+      },
     },
   });
   if (!sample) {
@@ -1366,7 +1869,11 @@ libraryApp.get("/samples/:id/analysis", async (c) => {
   const attributes: Record<string, number> = {};
   for (const a of sample.attributes) attributes[a.key] = a.value;
 
-  const taxonomy: Array<{ attribute: string; value: string; confidence: number }> = [];
+  const taxonomy: Array<{
+    attribute: string;
+    value: string;
+    confidence: number;
+  }> = [];
   for (const ann of sample.annotations) {
     taxonomy.push({
       attribute: ann.taxonomyValue.attribute.key,
@@ -1400,7 +1907,9 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
 
   const readable = await canReadSample(user.id, sampleId);
   if (!readable) {
-    throw new HTTPException(403, { message: "You do not have access to this sample" });
+    throw new HTTPException(403, {
+      message: "You do not have access to this sample",
+    });
   }
 
   const sample = await prisma.sample.findUnique({
@@ -1425,7 +1934,9 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
 
   try {
     const jobId = await enqueueEssentiaAnalysis(sample.id, sample.s3Key);
-    console.log(`[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${sample.id}`);
+    console.log(
+      `[library] Enqueued sample analysis job ${jobId ?? "unknown"} for sample ${sample.id}`,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[library] Failed to enqueue sample analysis:", err);
@@ -1436,7 +1947,9 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
         analysisError: `Failed to queue analysis: ${message}`,
       },
     });
-    throw new HTTPException(503, { message: "Failed to queue analysis. Please retry." });
+    throw new HTTPException(503, {
+      message: "Failed to queue analysis. Please retry.",
+    });
   }
 
   return c.json({ ok: true });
@@ -1450,7 +1963,9 @@ libraryApp.get("/samples/:id", async (c) => {
     ? await canReadSample(user.id, sampleId)
     : await canAuditionSampleUnauthenticated(sampleId);
   if (!readable) {
-    throw new HTTPException(403, { message: "You do not have access to this sample" });
+    throw new HTTPException(403, {
+      message: "You do not have access to this sample",
+    });
   }
 
   const packSample = await prisma.packSample.findFirst({
@@ -1511,12 +2026,16 @@ libraryApp.get("/samples/:id/download", async (c) => {
     ? await canReadSample(user.id, sampleId)
     : await canAuditionSampleUnauthenticated(sampleId);
   if (!readable) {
-    throw new HTTPException(403, { message: "You do not have access to download this sample" });
+    throw new HTTPException(403, {
+      message: "You do not have access to download this sample",
+    });
   }
 
   const payload = await getFromS3(sample.s3Key);
   if (!payload) {
-    throw new HTTPException(404, { message: "Sample file not found in storage" });
+    throw new HTTPException(404, {
+      message: "Sample file not found in storage",
+    });
   }
 
   const packSample = await prisma.packSample.findFirst({

@@ -13,6 +13,6 @@ export async function assertFilePaneGuidanceCopy(page) {
   const sourceClass = await sourceGuidance.getAttribute("class");
   assert.ok(sourceClass?.includes("text-sm"), "Expected source guidance copy to use larger text.");
 
-  await sourcePanel.getByText("Select your raw samples folder here.").first().waitFor({ state: "visible" });
-  await destPanel.getByText("Select a folder for your converted samples here.").first().waitFor({ state: "visible" });
+  await sourcePanel.getByText("Select your raw (source) samples folder here.").first().waitFor({ state: "visible" });
+  await destPanel.getByText("Select a destination folder for your converted samples here.").first().waitFor({ state: "visible" });
 }

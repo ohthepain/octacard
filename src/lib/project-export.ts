@@ -4,6 +4,7 @@
 import JSZip from "jszip";
 import { hasDirectoryPickerSupport } from "./browserSupport";
 import { fileSystemService } from "./fileSystem";
+import { getCachedBlob } from "./audition-cache";
 import { downloadRemoteSampleBlob } from "./remote-library";
 import { fromTempPath, getFile, isTempPath } from "./temp-files-store";
 import { parseRemoteSampleId } from "./audio-resolver";

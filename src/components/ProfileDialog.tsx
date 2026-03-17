@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { ImagePlus, Loader2, Sparkles, Trash2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +19,7 @@ import {
   updateMyProfile,
   type UserProfileStats,
 } from "@/lib/remote-library";
+import { Link } from "@tanstack/react-router";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
@@ -30,6 +29,7 @@ type ProfileDialogProps = {
   fallbackName: string;
   fallbackEmail: string;
   fallbackImage: string | null;
+  userId: string;
   onSaved: (profile: { name: string; image: string | null }) => void;
 };
 
@@ -87,6 +87,7 @@ export function ProfileDialog({
   fallbackName,
   fallbackEmail,
   fallbackImage,
+  userId,
   onSaved,
 }: ProfileDialogProps) {
   const [name, setName] = useState(fallbackName);
@@ -172,19 +173,21 @@ export function ProfileDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit profile</DialogTitle>
-        </DialogHeader>
+        <DialogHeader />
 
         <div className="space-y-5">
           <div className="space-y-2">
+            <Label htmlFor="profile-display-name" className="sr-only">
+              Display name
+            </Label>
             <Input
               id="profile-display-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your display name"
-              maxLength={20}
+              maxLength={120}
               disabled={loading || saving}
+              className="h-auto border-0 bg-transparent px-0 text-3xl font-semibold tracking-tight shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             />
           </div>
 
@@ -257,7 +260,15 @@ export function ProfileDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Creator stats</Label>
+            <div className="flex items-center justify-between">
+              <Label>Creator stats</Label>
+              <Button variant="link" size="sm" className="h-auto p-0 text-muted-foreground" asChild>
+                <Link to="/profile/$userId" params={{ userId }}>
+                  <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                  View public profile
+                </Link>
+              </Button>
+            </div>
             {loading && !stats ? (
               <div className="text-sm text-muted-foreground">Loading stats...</div>
             ) : (

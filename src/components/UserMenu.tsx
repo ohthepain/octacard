@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LogIn, LogOut, Scale, ToggleLeft, Shield, Database, UserRound } from "lucide-react";
+import { LogIn, LogOut, Scale, ToggleLeft, Shield, Database, UserRound, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -86,6 +86,16 @@ export function UserMenu() {
               <UserRound className="h-4 w-4" />
               Profile
             </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link
+                to="/profile/$userId"
+                params={{ userId: user.id }}
+                className="flex items-center gap-2 cursor-pointer"
+              >
+                <Globe className="h-4 w-4" />
+                Public Profile
+              </Link>
+            </DropdownMenuItem>
             {isAdminOrSuperadmin(session) && (
               <DropdownMenuItem asChild>
                 <Link to="/admin" className="flex items-center gap-2 cursor-pointer">
@@ -163,6 +173,7 @@ export function UserMenu() {
           fallbackName={displayName}
           fallbackEmail={user.email}
           fallbackImage={displayImage}
+          userId={user.id}
           onSaved={(profile) => {
             setProfileNameOverride(profile.name);
             setProfileImageOverride(profile.image);

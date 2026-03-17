@@ -183,7 +183,7 @@ async function yieldToUi(): Promise<void> {
 const Index = () => {
   useUnifiedPlayer();
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { openPack?: string };
+  const search = useSearch({ strict: false }) as { openPack?: string; creator?: string };
   const pendingRequest = useNavigateRequestStore((s) => s.pendingRequest);
   const clearRequest = useNavigateRequestStore((s) => s.clearRequest);
 
@@ -303,9 +303,16 @@ const Index = () => {
     if (packId) {
       setLibraryMode("global");
       setOpenPackId(packId);
-      navigate({ to: "/", search: {} });
+      navigate({ to: "/", search: { creator: search?.creator } });
     }
   }, [search?.openPack, navigate]);
+
+  // When creator filter is in URL, ensure global mode
+  useEffect(() => {
+    if (search?.creator) {
+      setLibraryMode("global");
+    }
+  }, [search?.creator]);
 
   // Handle navigation requests from SampleSourceBadge (Cache, Stack)
   // Pack: OK to switch to global (user can always see server)
@@ -969,11 +976,24 @@ const Index = () => {
           </div>
           {libraryMode === "global" && (
             <div className="flex items-center rounded-md border border-border overflow-visible shrink-0">
+              {search?.creator && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-r-none h-8 px-3 text-xs whitespace-nowrap border-r-0"
+                  onClick={() => navigate({ to: "/", search: {} })}
+                >
+                  View all
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant={globalScope === "mine" ? "secondary" : "ghost"}
-                className="rounded-none h-8 px-3 text-xs whitespace-nowrap"
-                onClick={() => setGlobalScope("mine")}
+                className={search?.creator ? "rounded-none h-8 px-3 text-xs whitespace-nowrap" : "rounded-none h-8 px-3 text-xs whitespace-nowrap"}
+                onClick={() => {
+                  setGlobalScope("mine");
+                  if (search?.creator) navigate({ to: "/", search: {} });
+                }}
               >
                 Mine
               </Button>
@@ -981,7 +1001,10 @@ const Index = () => {
                 size="sm"
                 variant={globalScope === "all" ? "secondary" : "ghost"}
                 className="rounded-none h-8 px-3 text-xs whitespace-nowrap"
-                onClick={() => setGlobalScope("all")}
+                onClick={() => {
+                  setGlobalScope("all");
+                  if (search?.creator) navigate({ to: "/", search: {} });
+                }}
               >
                 All
               </Button>
@@ -989,7 +1012,10 @@ const Index = () => {
                 size="sm"
                 variant={globalScope === "explore" ? "secondary" : "ghost"}
                 className="rounded-none h-8 px-3 text-xs whitespace-nowrap"
-                onClick={() => setGlobalScope("explore")}
+                onClick={() => {
+                  setGlobalScope("explore");
+                  if (search?.creator) navigate({ to: "/", search: {} });
+                }}
               >
                 Explore
               </Button>
@@ -997,7 +1023,10 @@ const Index = () => {
                 size="sm"
                 variant={globalScope === "rooms" ? "secondary" : "ghost"}
                 className="rounded-none h-8 px-3 text-xs whitespace-nowrap relative"
-                onClick={() => setGlobalScope("rooms")}
+                onClick={() => {
+                  setGlobalScope("rooms");
+                  if (search?.creator) navigate({ to: "/", search: {} });
+                }}
                 aria-label={`Rooms${publicRoomsCount > 0 ? ` (${publicRoomsCount} available)` : ""}`}
               >
                 Rooms
@@ -1100,11 +1129,12 @@ const Index = () => {
               ) : libraryMode === "global" ? (
                 <RemoteFilePane
                   key={`source-${sourceRootVersion}`}
-                  title="Global Library"
+                  title={search?.creator ? "Creator's packs" : "Global Library"}
                   scope={globalScope === "rooms" ? "all" : globalScope}
                   onSelectionChange={setSelectedSourceItem}
                   openPackId={openPackId}
                   onOpenPackIdConsumed={() => setOpenPackId(null)}
+                  creatorId={search?.creator ?? undefined}
                 />
               ) : libraryMode === "local" &&
                 (!hasDirectoryPickerSupport() || requestedSourcePath?.startsWith("temp://")) ? (

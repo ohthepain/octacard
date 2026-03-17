@@ -36,7 +36,7 @@ export interface ProjectDocument {
 /** Convert legacy document (slots at top level) to new format */
 export function normalizeProjectDocument(doc: Record<string, unknown>): ProjectDocument {
   if (Array.isArray(doc.stacks) && doc.stacks.length > 0) {
-    return doc as ProjectDocument;
+    return doc as unknown as ProjectDocument;
   }
   const slots = (doc.slots as (StackSample | null)[]) ?? [];
   const activeSlotIndex = typeof doc.activeSlotIndex === "number" ? doc.activeSlotIndex : 0;

@@ -5,6 +5,7 @@ import Index from '@/pages/Index'
 
 const indexSearchSchema = z.object({
   openPack: z.string().optional(),
+  creator: z.string().optional(),
 })
 
 export const indexRoute = createRoute({

@@ -122,7 +122,7 @@ export async function saveProject(project: ProjectDocument): Promise<void> {
       timeSignature: project.timeSignature as { num: number; denom: number } | null,
       transportDefaults: project.transportDefaults as { volume: number; muted: boolean } | null,
       arrangementMetadata: project.arrangementMetadata,
-      formatSettings: project.formatSettings as Record<string, unknown> | null,
+      formatSettings: (project.formatSettings ?? null) as unknown as Record<string, unknown> | null,
     }),
   });
   if (res.ok) return;

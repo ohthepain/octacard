@@ -22,6 +22,8 @@ model User {
   ownedPacks    Pack[]              @relation("PackOwner")
   ownedSamples  PackSample[]       @relation("SampleOwner")
   collection    SampleCollection[]
+  packFavorites PackFavorite[]
+  packHides     PackHide[]
   project       Project?
 
   @@unique([email])
@@ -108,11 +110,39 @@ model Pack {
   parent              Pack?        @relation("PackHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
   children            Pack[]       @relation("PackHierarchy")
   packSamples         PackSample[]
+  favorites           PackFavorite[]
+  hides               PackHide[]
 
   @@index([ownerId])
   @@index([parentId])
   @@index([name])
   @@map("pack")
+}
+
+model PackFavorite {
+  packId     String
+  userId     String
+  createdAt  DateTime  @default(now())
+  pack       Pack      @relation(fields: [packId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([packId, userId])
+  @@index([userId])
+  @@index([packId])
+  @@map("pack_favorite")
+}
+
+model PackHide {
+  packId     String
+  userId     String
+  createdAt  DateTime  @default(now())
+  pack       Pack      @relation(fields: [packId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([packId, userId])
+  @@index([userId])
+  @@index([packId])
+  @@map("pack_hide")
 }
 
 model Project {

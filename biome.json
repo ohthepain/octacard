@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.7/schema.json",
   "css": {
     "parser": {
       "tailwindDirectives": true
@@ -12,6 +12,7 @@
       "!coverage",
       "!.tanstack",
       "!node_modules",
+      "!.vscode",
       "!output",
       "!build",
       "!test-results",

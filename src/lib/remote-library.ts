@@ -8,6 +8,12 @@ export interface RemotePackSummary {
   name: string;
   ownerId: string;
   isOwner: boolean;
+  favoriteCount: number;
+  hideCount: number;
+  isFavoritedByMe: boolean;
+  isHiddenByMe: boolean;
+  canViewHideCount: boolean;
+  canViewLikers: boolean;
   coverImageProxyUrl?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -21,6 +27,12 @@ export interface RemotePackDetails {
   ownerId: string;
   ownerName: string;
   isOwner: boolean;
+  favoriteCount: number;
+  hideCount: number;
+  isFavoritedByMe: boolean;
+  isHiddenByMe: boolean;
+  canViewHideCount: boolean;
+  canViewLikers: boolean;
   coverImageS3Key: string | null;
   coverImageUrl: string | null;
   /** Same-origin proxy URL for embedding (avoids COEP issues in dialogs) */
@@ -37,7 +49,18 @@ export interface RemotePackDetails {
 }
 
 export interface RemotePackContentsResponse {
-  pack: { id: string; name: string; ownerId: string; isOwner: boolean };
+  pack: {
+    id: string;
+    name: string;
+    ownerId: string;
+    isOwner: boolean;
+    favoriteCount: number;
+    hideCount: number;
+    isFavoritedByMe: boolean;
+    isHiddenByMe: boolean;
+    canViewHideCount: boolean;
+    canViewLikers: boolean;
+  };
   packs: RemotePackSummary[];
   samples: RemoteSampleSummary[];
 }
@@ -103,12 +126,14 @@ export async function searchRemoteLibrary(params: {
   scope: RemoteScope;
   types: RemoteSearchType;
   limit?: number;
+  ownerId?: string;
 }): Promise<RemoteSearchResponse> {
   const qs = new URLSearchParams();
   qs.set("scope", params.scope);
   qs.set("types", params.types);
   if (params.q?.trim()) qs.set("q", params.q.trim());
   if (params.limit) qs.set("limit", String(params.limit));
+  if (params.ownerId) qs.set("ownerId", params.ownerId);
 
   const res = await apiFetch(`/api/library/search?${qs.toString()}`);
   if (!res.ok) {
@@ -126,7 +151,11 @@ export interface SampleAnalysisResponse {
   channels: number | null;
   attributes: Record<string, number>;
   taxonomy: Array<{ attribute: string; value: string; confidence: number }>;
-  embeddings?: Array<{ model: string; modelVersion: string; dimensions: number }>;
+  embeddings?: Array<{
+    model: string;
+    modelVersion: string;
+    dimensions: number;
+  }>;
 }
 
 export interface SampleWithPack {
@@ -138,15 +167,21 @@ export interface SampleWithPack {
 }
 
 export async function getSample(sampleId: string): Promise<SampleWithPack> {
-  const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}`);
+  const res = await apiFetch(
+    `/api/library/samples/${encodeURIComponent(sampleId)}`,
+  );
   if (!res.ok) {
     throw new Error(`Failed to fetch sample (${res.status})`);
   }
   return (await res.json()) as SampleWithPack;
 }
 
-export async function getSampleAnalysis(sampleId: string): Promise<SampleAnalysisResponse> {
-  const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/analysis`);
+export async function getSampleAnalysis(
+  sampleId: string,
+): Promise<SampleAnalysisResponse> {
+  const res = await apiFetch(
+    `/api/library/samples/${encodeURIComponent(sampleId)}/analysis`,
+  );
   if (!res.ok) {
     throw new Error(`Failed to fetch sample analysis (${res.status})`);
   }
@@ -154,32 +189,44 @@ export async function getSampleAnalysis(sampleId: string): Promise<SampleAnalysi
 }
 
 export async function retrySampleAnalysis(sampleId: string): Promise<void> {
-  const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/analysis/retry`, {
-    method: "POST",
-  });
+  const res = await apiFetch(
+    `/api/library/samples/${encodeURIComponent(sampleId)}/analysis/retry`,
+    {
+      method: "POST",
+    },
+  );
   if (!res.ok) {
     throw new Error(`Failed to queue sample analysis (${res.status})`);
   }
 }
 
 export async function addSampleToCollection(sampleId: string): Promise<void> {
-  const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/add-to-collection`, {
-    method: "POST",
-  });
+  const res = await apiFetch(
+    `/api/library/samples/${encodeURIComponent(sampleId)}/add-to-collection`,
+    {
+      method: "POST",
+    },
+  );
   if (!res.ok) {
     throw new Error(`Failed to add sample to collection (${res.status})`);
   }
 }
 
-export async function downloadRemoteSampleBlob(sampleId: string): Promise<Blob> {
-  const res = await apiFetch(`/api/library/samples/${encodeURIComponent(sampleId)}/download`);
+export async function downloadRemoteSampleBlob(
+  sampleId: string,
+): Promise<Blob> {
+  const res = await apiFetch(
+    `/api/library/samples/${encodeURIComponent(sampleId)}/download`,
+  );
   if (!res.ok) {
     throw new Error(`Failed to download sample (${res.status})`);
   }
   return await res.blob();
 }
 
-export async function checkSamplesExist(contentHashes: string[]): Promise<{ existing: string[]; missing: string[] }> {
+export async function checkSamplesExist(
+  contentHashes: string[],
+): Promise<{ existing: string[]; missing: string[] }> {
   const res = await apiFetch("/api/library/samples/check-exist", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -262,7 +309,7 @@ export async function createSamplesFromContentBatch(
   if (samples.length === 0) {
     return { created: 0, samples: [] };
   }
-  const chunks: typeof samples[] = [];
+  const chunks: (typeof samples)[] = [];
   for (let i = 0; i < samples.length; i += BATCH_CREATE_MAX) {
     chunks.push(samples.slice(i, i + BATCH_CREATE_MAX));
   }
@@ -338,7 +385,9 @@ export interface UserProfileStats {
   downloadedPacksByOthers: number;
 }
 
-export async function fetchUnsplashRandomPhoto(query?: string): Promise<UnsplashPhotoResult> {
+export async function fetchUnsplashRandomPhoto(
+  query?: string,
+): Promise<UnsplashPhotoResult> {
   const params = new URLSearchParams();
   if (query?.trim()) params.set("query", query.trim());
   params.set("_", String(Date.now())); // cache-bust so each roll gets a fresh image
@@ -360,7 +409,10 @@ export async function getMyProfile(): Promise<UserProfile> {
   return (await res.json()) as UserProfile;
 }
 
-export async function updateMyProfile(input: { name?: string; image?: string | null }): Promise<UserProfile> {
+export async function updateMyProfile(input: {
+  name?: string;
+  image?: string | null;
+}): Promise<UserProfile> {
   const res = await apiFetch("/api/library/profile", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -388,15 +440,37 @@ export async function getMyProfileStats(): Promise<UserProfileStats> {
   return (await res.json()) as UserProfileStats;
 }
 
+export interface PublicProfile {
+  id: string;
+  name: string;
+  image: string | null;
+  publicPacks: number;
+  publicSamples: number;
+  favoritedPacks: number;
+}
+
+export async function getPublicProfile(userId: string): Promise<PublicProfile> {
+  const res = await apiFetch(
+    `/api/library/profile/${encodeURIComponent(userId)}/public`,
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to fetch public profile (${res.status})`);
+  }
+  return (await res.json()) as PublicProfile;
+}
+
 export async function getPackCoverUploadUrl(
   packId: string,
-  contentType: string
+  contentType: string,
 ): Promise<{ key: string; uploadUrl: string; expiresIn: number }> {
-  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}/cover-upload-url`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contentType }),
-  });
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}/cover-upload-url`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contentType }),
+    },
+  );
   if (!res.ok) {
     throw new Error(`Failed to get pack cover upload URL (${res.status})`);
   }
@@ -413,13 +487,16 @@ export async function updatePack(
     isPublic?: boolean;
     priceTokens?: number;
     defaultSampleTokens?: number;
-  }
+  },
 ): Promise<void> {
-  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
   if (!res.ok) {
     throw new Error(`Failed to update pack (${res.status})`);
   }
@@ -430,9 +507,12 @@ export async function updatePack(
  * @throws Error with message describing why deletion failed (e.g. pack must be private, other users have purchased)
  */
 export async function deletePack(packId: string): Promise<void> {
-  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}`, {
-    method: "DELETE",
-  });
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}`,
+    {
+      method: "DELETE",
+    },
+  );
   if (!res.ok) {
     const text = await res.text();
     let message: string | null = null;
@@ -447,30 +527,113 @@ export async function deletePack(packId: string): Promise<void> {
 }
 
 export async function getPack(packId: string): Promise<RemotePackDetails> {
-  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}`);
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}`,
+  );
   if (!res.ok) {
     throw new Error(`Failed to get pack (${res.status})`);
   }
   return (await res.json()) as RemotePackDetails;
 }
 
-export async function getPackContents(packId: string): Promise<RemotePackContentsResponse> {
-  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}/contents`);
+export async function getPackContents(
+  packId: string,
+): Promise<RemotePackContentsResponse> {
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}/contents`,
+  );
   if (!res.ok) {
     throw new Error(`Failed to get pack contents (${res.status})`);
   }
   return (await res.json()) as RemotePackContentsResponse;
 }
 
-export async function getPackDownloadManifest(packId: string): Promise<RemotePackDownloadManifest> {
-  const res = await apiFetch(`/api/library/packs/${encodeURIComponent(packId)}/download-manifest`);
+export async function getPackDownloadManifest(
+  packId: string,
+): Promise<RemotePackDownloadManifest> {
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}/download-manifest`,
+  );
   if (!res.ok) {
     throw new Error(`Failed to get pack manifest (${res.status})`);
   }
   return (await res.json()) as RemotePackDownloadManifest;
 }
 
-export async function createSampleUploadUrl(input: CreateSampleUploadUrlInput): Promise<{
+export interface PackReactionState {
+  packId: string;
+  favoriteCount: number;
+  hideCount: number;
+  isFavoritedByMe: boolean;
+  isHiddenByMe: boolean;
+  canViewHideCount: boolean;
+  canViewLikers: boolean;
+}
+
+export async function setPackFavorite(
+  packId: string,
+  favorite: boolean,
+): Promise<PackReactionState> {
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}/favorite`,
+    {
+      method: favorite ? "PUT" : "DELETE",
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Failed to ${favorite ? "favorite" : "unfavorite"} pack (${res.status})`,
+    );
+  }
+  return (await res.json()) as PackReactionState;
+}
+
+export async function setPackHidden(
+  packId: string,
+  hidden: boolean,
+): Promise<PackReactionState> {
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}/hide`,
+    {
+      method: hidden ? "PUT" : "DELETE",
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Failed to ${hidden ? "hide" : "unhide"} pack (${res.status})`,
+    );
+  }
+  return (await res.json()) as PackReactionState;
+}
+
+export interface PackFavoriter {
+  id: string;
+  name: string;
+  image: string | null;
+  favoritedAt: string;
+}
+
+export interface PackFavoritersResponse {
+  packId: string;
+  total: number;
+  users: PackFavoriter[];
+}
+
+export async function getPackFavoriters(
+  packId: string,
+): Promise<PackFavoritersResponse> {
+  const res = await apiFetch(
+    `/api/library/packs/${encodeURIComponent(packId)}/favorites`,
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to get pack favorites (${res.status})`);
+  }
+  return (await res.json()) as PackFavoritersResponse;
+}
+
+export async function createSampleUploadUrl(
+  input: CreateSampleUploadUrlInput,
+): Promise<{
   key: string;
   uploadUrl: string;
   expiresIn: number;
@@ -483,11 +646,17 @@ export async function createSampleUploadUrl(input: CreateSampleUploadUrlInput): 
   if (!res.ok) {
     throw new Error(`Failed to create sample upload URL (${res.status})`);
   }
-  const payload = (await res.json()) as { key: string; uploadUrl: string; expiresIn: number };
+  const payload = (await res.json()) as {
+    key: string;
+    uploadUrl: string;
+    expiresIn: number;
+  };
   return payload;
 }
 
-export async function completeSampleCreate(input: CreateSampleRecordInput): Promise<RemoteSampleSummary> {
+export async function completeSampleCreate(
+  input: CreateSampleRecordInput,
+): Promise<RemoteSampleSummary> {
   const res = await apiFetch("/api/library/samples", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

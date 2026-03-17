@@ -13,6 +13,7 @@ export function useUnifiedPlayer() {
   const playbackRef = useRef<PlaybackHandle | null>(null);
   const prevIsPlayingRef = useRef(false);
   const prevMultiStackRef = useRef<{ id: string; path: string }[]>([]);
+  const prevSingleFileRef = useRef<{ path: string; paneType: string } | null>(null);
   const prevVolumeRef = useRef<number>(1);
   const prevMutedRef = useRef<boolean>(false);
 
@@ -160,10 +161,58 @@ export function useUnifiedPlayer() {
       if (!state.isPlaying && prevPlaying) {
         playbackRef.current?.stopSilent();
         playbackRef.current = null;
+        prevSingleFileRef.current = null;
         return;
       }
+      // Handle singleFile change while playing (audition next sample: stop previous, start new)
+      if (
+        state.isPlaying &&
+        prevPlaying &&
+        state.mode === "single" &&
+        state.singleFile &&
+        playbackRef.current
+      ) {
+        const prev = prevSingleFileRef.current;
+        const changed =
+          !prev ||
+          prev.path !== state.singleFile.path ||
+          prev.paneType !== state.singleFile.paneType;
+        if (changed) {
+          playbackRef.current.stopSilent();
+          playbackRef.current = null;
+          prevSingleFileRef.current = state.singleFile;
+          const effectiveVolume = state.muted ? 0 : state.volume;
+          startUnifiedPlayback(
+            "single",
+            [
+              {
+                id: state.singleFile.path,
+                path: state.singleFile.path,
+                paneType: state.singleFile.paneType,
+              },
+            ],
+            {
+              volume: effectiveVolume,
+              playbackRate: state.playbackRate,
+              globalTempoBpm: useProjectStore.getState().getActiveStack()?.globalTempoBpm ?? 120,
+              onTimeUpdate: (_, t) => usePlayerStore.getState().setCurrentTime(t),
+              onEnded: () => {
+                playbackRef.current = null;
+              },
+            },
+          )
+            .then((handle) => {
+              playbackRef.current = handle;
+            })
+            .catch((err) => {
+              console.warn("Unified playback (single switch) failed:", err);
+              usePlayerStore.getState().stop();
+            });
+          return;
+        }
+      }
       // Handle volume/mute changes during playback (single mode uses master volume)
-      if (state.isPlaying && playbackRef.current && playbackRef.current.setMasterVolume) {
+      if (state.isPlaying && playbackRef.current?.setMasterVolume) {
         const effectiveVolume = state.muted ? 0 : state.volume;
         const prevEffective = prevMutedRef.current ? 0 : prevVolumeRef.current;
         if (prevEffective !== effectiveVolume) {
@@ -190,6 +239,7 @@ export function useUnifiedPlayer() {
         const setPlayingSamplePosition = useProjectStore.getState().setPlayingSamplePosition;
 
         if (mode === "single" && singleFile) {
+          prevSingleFileRef.current = singleFile;
           const effectiveVolume = state.muted ? 0 : state.volume;
           startUnifiedPlayback("single", [{ id: singleFile.path, path: singleFile.path, paneType: singleFile.paneType }], {
             volume: effectiveVolume,

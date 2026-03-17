@@ -291,7 +291,7 @@ projectsApp.put(
             projectId: id,
             name: s.name,
             sortOrder: s.sortOrder,
-            slots: s.slots,
+            slots: s.slots as Prisma.InputJsonValue,
             activeSlotIndex: s.activeSlotIndex,
             previewMode: s.previewMode,
             bpmAuto: s.bpmAuto,

@@ -1,4 +1,5 @@
 import { ArrowLeft, Folder, Pencil } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
 export interface PackViewProps {
@@ -12,12 +13,14 @@ export interface PackViewProps {
   sampleCount?: number;
   /** Total size in bytes of sample files in the pack */
   totalSizeBytes?: number;
+  reactions?: ReactNode;
 }
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
@@ -30,6 +33,7 @@ export function PackView({
   onEdit,
   sampleCount,
   totalSizeBytes,
+  reactions,
 }: PackViewProps) {
   const statsText =
     sampleCount !== undefined && sampleCount >= 0
@@ -54,7 +58,12 @@ export function PackView({
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <div className="w-20 h-20 rounded-md overflow-hidden bg-muted shrink-0 flex items-center justify-center">
           {coverImageUrl ? (
-            <img src={coverImageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            <img
+              src={coverImageUrl}
+              alt=""
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
           ) : (
             <Folder className="w-5 h-5 text-muted-foreground" />
           )}
@@ -65,6 +74,7 @@ export function PackView({
             {creatorName ? `by ${creatorName}` : "Pack"}
             {statsText && ` · ${statsText}`}
           </div>
+          {reactions ? <div className="mt-2">{reactions}</div> : null}
         </div>
       </div>
       {isOwner && onEdit && (
