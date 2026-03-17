@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 export interface FormatSettings {
   fileFormat: "dont-change" | "WAV";
@@ -295,45 +296,68 @@ interface FormatPresetStoreState {
   hydrateFromProject: (formatSettings?: FormatSettings) => void;
 }
 
-export const useFormatPresetStore = create<FormatPresetStoreState>((set, get) => ({
-  currentPreset: {
-    id: "current",
-    name: USER_SETTINGS_PRESET_LABEL,
-    settings: DEFAULT_FORMAT_SETTINGS,
-  },
-  selectedPresetId: "current",
-  devicePresets: DEVICE_PRESETS,
-  updateCurrentPreset: (settings) =>
-    set((state) => ({
+export const useFormatPresetStore = create<FormatPresetStoreState>()(
+  persist(
+    (set, get) => ({
       currentPreset: {
-        ...state.currentPreset,
-        settings: { ...state.currentPreset.settings, ...settings },
+        id: "current",
+        name: USER_SETTINGS_PRESET_LABEL,
+        settings: DEFAULT_FORMAT_SETTINGS,
       },
       selectedPresetId: "current",
-    })),
-  applyDevicePreset: (presetId) => {
-    const preset = get().devicePresets.find((p) => p.id === presetId);
-    if (!preset) {
-      set({ selectedPresetId: "current" });
-      return;
-    }
+      devicePresets: DEVICE_PRESETS,
+      updateCurrentPreset: (settings) =>
+        set((state) => ({
+          currentPreset: {
+            ...state.currentPreset,
+            settings: { ...state.currentPreset.settings, ...settings },
+          },
+          selectedPresetId: "current",
+        })),
+      applyDevicePreset: (presetId) => {
+        const preset = get().devicePresets.find((p) => p.id === presetId);
+        if (!preset) {
+          set({ selectedPresetId: "current" });
+          return;
+        }
 
-    set((state) => ({
-      selectedPresetId: presetId,
-      currentPreset: {
-        ...state.currentPreset,
-        settings: { ...preset.settings },
+        set((state) => ({
+          selectedPresetId: presetId,
+          currentPreset: {
+            ...state.currentPreset,
+            settings: { ...preset.settings },
+          },
+        }));
       },
-    }));
-  },
-  hydrateFromProject: (formatSettings) => {
-    if (!formatSettings) return;
-    set((state) => ({
-      currentPreset: {
-        ...state.currentPreset,
-        settings: { ...DEFAULT_FORMAT_SETTINGS, ...formatSettings },
+      hydrateFromProject: (formatSettings) => {
+        if (!formatSettings) return;
+        set((state) => ({
+          currentPreset: {
+            ...state.currentPreset,
+            settings: { ...DEFAULT_FORMAT_SETTINGS, ...formatSettings },
+          },
+          selectedPresetId: "current",
+        }));
       },
-      selectedPresetId: "current",
-    }));
-  },
-}));
+    }),
+    {
+      name: "format-preset-store",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        currentPreset: state.currentPreset,
+        selectedPresetId: state.selectedPresetId,
+      }),
+      merge: (persisted, current) => ({
+        ...current,
+        currentPreset:
+          persisted && typeof persisted === "object" && "currentPreset" in persisted
+            ? (persisted as { currentPreset: FormatPreset }).currentPreset
+            : current.currentPreset,
+        selectedPresetId:
+          persisted && typeof persisted === "object" && "selectedPresetId" in persisted
+            ? (persisted as { selectedPresetId: string }).selectedPresetId
+            : current.selectedPresetId,
+      }),
+    },
+  ),
+);

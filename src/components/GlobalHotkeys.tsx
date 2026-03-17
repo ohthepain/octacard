@@ -1,5 +1,5 @@
 import { useHotkey } from "@tanstack/react-hotkeys";
-import { useRoomStore } from "@/stores/room-store";
+import { useProjectStore, setSkipHistoryForUndoRedo } from "@/stores/project-store";
 
 function toggleZenMode() {
   if (document.fullscreenElement) {
@@ -10,22 +10,33 @@ function toggleZenMode() {
 }
 
 export function GlobalHotkeys() {
-  const room = useRoomStore((s) => s.room);
+  const hasProject = Boolean(useProjectStore((s) => s.id));
+  const { undo, redo } = useProjectStore.temporal.getState();
 
   useHotkey("Mod+Enter", toggleZenMode, { preventDefault: true });
   useHotkey(
     "Mod+Z",
     () => {
-      room?.history.undo();
+      setSkipHistoryForUndoRedo(true);
+      try {
+        undo();
+      } finally {
+        setSkipHistoryForUndoRedo(false);
+      }
     },
-    { preventDefault: !!room },
+    { preventDefault: hasProject },
   );
   useHotkey(
     "Mod+Shift+Z",
     () => {
-      room?.history.redo();
+      setSkipHistoryForUndoRedo(true);
+      try {
+        redo();
+      } finally {
+        setSkipHistoryForUndoRedo(false);
+      }
     },
-    { preventDefault: !!room },
+    { preventDefault: hasProject },
   );
 
   return null;

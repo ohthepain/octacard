@@ -14,8 +14,7 @@ export function usePresenceSync(listeningUserId: string | null) {
 
     const broadcastTransport = () => {
       const { isPlaying, currentTime, mode, singleFile, stack, globalTempoBpm } = usePlayerStore.getState();
-      room.updatePresence((prev) => ({
-        ...prev,
+      room.updatePresence({
         transport: {
           isPlaying,
           currentTime,
@@ -24,7 +23,7 @@ export function usePresenceSync(listeningUserId: string | null) {
           stack: stack.map((s) => ({ path: s.path, paneType: s.paneType })),
           globalTempoBpm,
         },
-      }));
+      });
     };
 
     broadcastTransport();

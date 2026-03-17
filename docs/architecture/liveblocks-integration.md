@@ -2,11 +2,18 @@
 
 ## Overview
 
-We use Liveblocks for undo/redo and for user collaboration. Undo/redo does not require the user to be authenticated. We use Liveblocks for free and do not persist any rooms on Liveblocks servers.
+We use Liveblocks for user collaboration.
+We use Liveblocks for free and do not persist any rooms on Liveblocks servers.
+
+We no longer use a liveblocks room automatically for single user editing. The user must turn it on.
+
+We create a Liveblocks room for each project at the user's request.
+To request a liveblocks room the user just needs to turn on the 'live' toggle. The app joins the room (via `ensureProjectRoom`). Room ID is `project-{projectId}`.
 
 ## Single-user undo/redo
 
-We create a Liveblocks room for each project even when a single user is editing. The app auto-joins the room when a project is loaded (via `ensureProjectRoom`). Room ID is `project-{projectId}`. The same room is used for single-user editing and multiplayer collaboration.
+We use zundo for undo/redo
+Undo/redo does not require the user to be authenticated.
 
 **Includes:** Project edits (stack changes, sample edits, pack settings, arrangement).
 

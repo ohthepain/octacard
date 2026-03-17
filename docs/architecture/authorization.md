@@ -14,4 +14,5 @@ The following operations are allowed when the user is not logged in:
 ## Public API endpoints (no auth required)
 
 - `GET /api/library/search` – scope `all` or `explore` (scope `mine` requires auth)
+- `GET /api/library/samples/:id` – sample metadata (name, packId, packName, coverImageProxyUrl) when sample is in a public pack
 - `GET /api/library/samples/:id/download` – for audition (sample must be in a public pack)

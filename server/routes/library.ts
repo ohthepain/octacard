@@ -1348,10 +1348,12 @@ libraryApp.post("/samples/:id/analysis/retry", async (c) => {
 });
 
 libraryApp.get("/samples/:id", async (c) => {
-  const user = requireUser(c);
+  const user = c.get("user");
   const sampleId = c.req.param("id");
 
-  const readable = await canReadSample(user.id, sampleId);
+  const readable = user
+    ? await canReadSample(user.id, sampleId)
+    : await canAuditionSampleUnauthenticated(sampleId);
   if (!readable) {
     throw new HTTPException(403, { message: "You do not have access to this sample" });
   }

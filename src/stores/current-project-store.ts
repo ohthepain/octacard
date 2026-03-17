@@ -4,12 +4,17 @@
 import { create } from "zustand";
 import type { ProjectDocument } from "@/lib/project-document";
 import { getProject, createProject, saveProject } from "@/lib/project-persistence";
-import { useProjectStore } from "./project-store";
+import { useProjectStore, setSkipHistoryForHydrate } from "./project-store";
 import { useSampleEditsStore } from "./sample-edits-store";
 import { useFormatPresetStore } from "./format-preset-store";
 import { useRoomStore } from "./room-store";
 import { hasLiveblocksConfig } from "@/lib/liveblocks-client";
-import { loadProjectFromRoom, saveProjectToRoom } from "@/lib/liveblocks-project-sync";
+import {
+  loadProjectFromRoom,
+  saveProjectToRoom,
+  getProjectJsonFromRoom,
+  isOurSavedProject,
+} from "@/lib/liveblocks-project-sync";
 
 interface CurrentProjectState {
   isHydrating: boolean;
@@ -157,15 +162,24 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
     const { room } = useRoomStore.getState();
     if (room) {
       await saveProjectToRoom(room, doc);
-    } else {
-      await saveProject(doc);
     }
+    // Always persist to API when authenticated (survives refresh, room leave)
+    await saveProject(doc);
     // Don't call setMetadata here - it would trigger useProjectSync and cause an infinite persist loop
   },
 
   loadProjectFromRoomStorage: async () => {
     const { room, roomId } = useRoomStore.getState();
     if (!room || !roomId) return false;
+
+    const projectJson = await getProjectJsonFromRoom(room);
+    if (!projectJson) return false;
+    if (isOurSavedProject(projectJson)) {
+      // #region agent log
+      fetch('http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ec0b9e'},body:JSON.stringify({sessionId:'ec0b9e',location:'current-project-store.ts:loadProjectFromRoomStorage',message:'skipped hydrate (our save)',data:{},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      return false;
+    }
 
     const project = await loadProjectFromRoom(room);
     if (!project) return false;
@@ -175,6 +189,7 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
     const nameToUse = nameInputFocused ? useProjectStore.getState().name : project.name;
 
     set({ isHydrating: true });
+    setSkipHistoryForHydrate(true);
     try {
       useProjectStore.getState().setMetadata({
         id: project.id,
@@ -191,8 +206,10 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
       });
       useSampleEditsStore.getState().hydrateFromProject(project.sampleEdits);
       useFormatPresetStore.getState().hydrateFromProject(project.formatSettings);
+      // Don't clear undo history: user should be able to undo state we've sent to Liveblocks
       return true;
     } finally {
+      setSkipHistoryForHydrate(false);
       set({ isHydrating: false });
     }
   },

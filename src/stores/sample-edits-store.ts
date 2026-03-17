@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 export interface EnvelopePoint {
   time: number;
@@ -32,27 +33,43 @@ interface SampleEditsState {
   hydrateFromProject: (sampleEdits: Record<string, SampleEdits>) => void;
 }
 
-export const useSampleEditsStore = create<SampleEditsState>((set, get) => ({
-  editsByPath: new Map(),
+export const useSampleEditsStore = create<SampleEditsState>()(
+  persist(
+    (set, get) => ({
+      editsByPath: new Map(),
 
-  setEdits: (path, edits) =>
-    set((state) => {
-      const next = new Map(state.editsByPath);
-      next.set(path, edits);
-      return { editsByPath: next };
+      setEdits: (path, edits) =>
+        set((state) => {
+          const next = new Map(state.editsByPath);
+          next.set(path, edits);
+          return { editsByPath: next };
+        }),
+
+      getEdits: (path) => get().editsByPath.get(path),
+
+      clearEdits: (path) =>
+        set((state) => {
+          const next = new Map(state.editsByPath);
+          next.delete(path);
+          return { editsByPath: next };
+        }),
+
+      hydrateFromProject: (sampleEdits) =>
+        set({
+          editsByPath: new Map(Object.entries(sampleEdits ?? {})),
+        }),
     }),
-
-  getEdits: (path) => get().editsByPath.get(path),
-
-  clearEdits: (path) =>
-    set((state) => {
-      const next = new Map(state.editsByPath);
-      next.delete(path);
-      return { editsByPath: next };
-    }),
-
-  hydrateFromProject: (sampleEdits) =>
-    set({
-      editsByPath: new Map(Object.entries(sampleEdits ?? {})),
-    }),
-}));
+    {
+      name: "sample-edits-store",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({ editsByPath: Object.fromEntries(state.editsByPath) }),
+      merge: (persisted, current) => ({
+        ...current,
+        editsByPath:
+          persisted && typeof persisted === "object" && "editsByPath" in persisted
+            ? new Map(Object.entries((persisted as { editsByPath?: Record<string, SampleEdits> }).editsByPath ?? {}))
+            : current.editsByPath,
+      }),
+    },
+  ),
+);

@@ -40,9 +40,6 @@ importers:
       '@liveblocks/client':
         specifier: ^3.15.2
         version: 3.15.2(@types/json-schema@7.0.15)
-      '@liveblocks/zustand':
-        specifier: ^3.15.2
-        version: 3.15.2(@types/json-schema@7.0.15)(zustand@5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)))
       '@prisma/adapter-pg':
         specifier: ^7.5.0
         version: 7.5.0
@@ -211,9 +208,12 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+      zundo:
+        specifier: ^2.3.0
+        version: 2.3.0(zustand@5.0.11(@types/react@19.2.14)(immer@11.1.4)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)))
       zustand:
         specifier: ^5.0.11
-        version: 5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
+        version: 5.0.11(@types/react@19.2.14)(immer@11.1.4)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
     devDependencies:
       '@bgotink/playwright-coverage':
         specifier: ^0.3.2
@@ -1716,11 +1716,6 @@ packages:
     resolution: {integrity: sha512-2RCqC9iTA3LAhrHPqoCDXyL5TteVWqRV9hZYdZOWtoFnDP5DRWk3a3zPuEhDPPArWfq3T8jupaO28+7GTet0ow==}
     peerDependencies:
       '@types/json-schema': ^7
-
-  '@liveblocks/zustand@3.15.2':
-    resolution: {integrity: sha512-+pBjq2YUZ5b4laJ08dHRzRdGG+MHNUyLpZf0yh/cIPGNKws/+GEGJ+WOXvteAjA6BnMn1cCqvouuNfnEM80OfA==}
-    peerDependencies:
-      zustand: ^5.0.1
 
   '@mapbox/node-pre-gyp@2.0.3':
     resolution: {integrity: sha512-uwPAhccfFJlsfCxMYTwOdVfOz3xqyj8xYL3zJj8f0pb30tLohnnFPhLuqp4/qoEz8sNxe4SESZedcBojRefIzg==}
@@ -5027,6 +5022,9 @@ packages:
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
 
+  immer@11.1.4:
+    resolution: {integrity: sha512-XREFCPo6ksxVzP4E0ekD5aMdf8WMwmdNaz6vuvxgI40UaEiu6q3p8X52aU6GdyvLY3XXX/8R7JOTXStz/nBbRw==}
+
   import-meta-resolve@4.2.0:
     resolution: {integrity: sha512-Iqv2fzaTQN28s/FwZAoFq0ZSs/7hMAHJVX+w8PZl3cY19Pxk6jFFalxQoIfW2826i/fDLXv8IiEZRIT0lDuWcg==}
 
@@ -7335,6 +7333,11 @@ packages:
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
+  zundo@2.3.0:
+    resolution: {integrity: sha512-4GXYxXA17SIKYhVbWHdSEU04P697IMyVGXrC2TnzoyohEAWytFNOKqOp5gTGvaW93F/PM5Y0evbGtOPF0PWQwQ==}
+    peerDependencies:
+      zustand: ^4.3.0 || ^5.0.0
+
   zustand@5.0.11:
     resolution: {integrity: sha512-fdZY+dk7zn/vbWNCYmzZULHRrss0jx5pPFiOuMZ/5HJN6Yv3u+1Wswy/4MpZEkEGhtNH+pwxZB8OKgUBPzYAGg==}
     engines: {node: '>=12.20.0'}
@@ -8825,14 +8828,6 @@ snapshots:
   '@liveblocks/core@3.15.2(@types/json-schema@7.0.15)':
     dependencies:
       '@types/json-schema': 7.0.15
-
-  '@liveblocks/zustand@3.15.2(@types/json-schema@7.0.15)(zustand@5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)))':
-    dependencies:
-      '@liveblocks/client': 3.15.2(@types/json-schema@7.0.15)
-      '@liveblocks/core': 3.15.2(@types/json-schema@7.0.15)
-      zustand: 5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
-    transitivePeerDependencies:
-      - '@types/json-schema'
 
   '@mapbox/node-pre-gyp@2.0.3':
     dependencies:
@@ -12934,6 +12929,9 @@ snapshots:
 
   immediate@3.0.6: {}
 
+  immer@11.1.4:
+    optional: true
+
   import-meta-resolve@4.2.0: {}
 
   imurmurhash@0.1.4: {}
@@ -15494,8 +15492,13 @@ snapshots:
 
   zod@4.3.6: {}
 
-  zustand@5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)):
+  zundo@2.3.0(zustand@5.0.11(@types/react@19.2.14)(immer@11.1.4)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))):
+    dependencies:
+      zustand: 5.0.11(@types/react@19.2.14)(immer@11.1.4)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
+
+  zustand@5.0.11(@types/react@19.2.14)(immer@11.1.4)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)):
     optionalDependencies:
       '@types/react': 19.2.14
+      immer: 11.1.4
       react: 19.2.4
       use-sync-external-store: 1.6.0(react@19.2.4)

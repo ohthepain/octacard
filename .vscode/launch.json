@@ -39,17 +39,40 @@
       "skipFiles": ["<node_internals>/**", "${workspaceFolder}/node_modules/**"]
     },
     {
-      "name": "Web: Launch Chrome (Vite)",
+      "name": "Web: Launch Chrome (server already running)",
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:3000",
       "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "runtimeExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "runtimeArgs": [
+        "--remote-debugging-port=9222",
+        "--new-window",
+        "--disable-extensions",
+        "--no-first-run",
+        "--no-default-browser-check"
+      ],
+      "userDataDir": "${workspaceFolder}/.vscode/.chrome"
+    },
+    {
+      "name": "Web: Launch Chrome (Vite)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:3000",
+      "webRoot": "${workspaceFolder}",
       "preLaunchTask": "start:dev",
       "sourceMaps": true,
-      "perScriptSourcemaps": "yes",
-      "skipFiles": ["<node_internals>/**"],
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
       "runtimeExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "runtimeArgs": ["--new-window", "--disable-extensions", "--no-first-run", "--no-default-browser-check"],
+      "runtimeArgs": [
+        "--remote-debugging-port=9222",
+        "--new-window",
+        "--disable-extensions",
+        "--no-first-run",
+        "--no-default-browser-check"
+      ],
       "userDataDir": "${workspaceFolder}/.vscode/.chrome"
     },
     {
@@ -71,7 +94,7 @@
       "port": 9222,
       "webRoot": "${workspaceFolder}",
       "sourceMaps": true,
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
     }
   ],
   "compounds": [

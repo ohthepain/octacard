@@ -275,13 +275,17 @@ const Index = () => {
     }
   }, []);
 
-  // Auto-load project on mount (API when authenticated, IndexedDB when not) or create default if none
+  // Auto-load project on mount (API when authenticated, localStorage when not) or create default if none
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const ok = await useCurrentProjectStore.getState().loadProject();
       if (!ok && !cancelled) {
-        await useCurrentProjectStore.getState().createAndLoadProject("Untitled");
+        // If we have persisted state from localStorage, don't overwrite with new project
+        const hasPersisted = useProjectStore.getState().id != null;
+        if (!hasPersisted) {
+          await useCurrentProjectStore.getState().createAndLoadProject("Untitled");
+        }
       }
     })();
     return () => {

@@ -4,7 +4,7 @@
     {
       "label": "start:dev",
       "type": "shell",
-      "command": "npm",
+      "command": "pnpm",
       "args": ["run", "dev"],
       "isBackground": true,
       "problemMatcher": {
@@ -17,7 +17,7 @@
         "background": {
           "activeOnStart": true,
           "beginsPattern": ".*",
-          "endsPattern": ".*http://(localhost|127\\.0\\.0\\.1):3000.*"
+          "endsPattern": ".*(ready in|Local:.*http://).*"
         }
       },
       "presentation": {

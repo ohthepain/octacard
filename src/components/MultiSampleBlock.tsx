@@ -44,7 +44,15 @@ interface MultiSampleBlockProps {
   className?: string;
 }
 
-export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSample, onClick, className }: MultiSampleBlockProps) => {
+export const MultiSampleBlock = ({
+  sample,
+  index,
+  isActive,
+  onRemove,
+  onDropSample,
+  onClick,
+  className,
+}: MultiSampleBlockProps) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,7 +71,28 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
   const volume = sample.volume ?? 1;
   const muted = sample.muted ?? false;
 
+  // During drag, use local state for display; persist to store on commit only (one undo step).
+  const [localVolume, setLocalVolume] = useState<number | null>(null);
+  const displayVolume = localVolume ?? volume;
+
+  const userJustSetVolumeRef = useRef(false);
+  const [sliderSyncKey, setSliderSyncKey] = useState(0);
+  const prevVolumeRef = useRef(volume);
+  if (prevVolumeRef.current !== volume && !userJustSetVolumeRef.current) {
+    setSliderSyncKey((k) => k + 1);
+    setLocalVolume(null);
+  }
+  prevVolumeRef.current = volume;
+  useEffect(() => {
+    if (!userJustSetVolumeRef.current) return;
+    const id = setTimeout(() => {
+      userJustSetVolumeRef.current = false;
+    }, 150);
+    return () => clearTimeout(id);
+  });
+
   const handleBlockClick = () => {
+    if (userJustSetVolumeRef.current) return;
     useProjectStore.getState().setActiveSlotIndex(index);
     onClick?.();
     useWaveformEditorStore.getState().openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
@@ -216,13 +245,23 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
         wavesurferRef.current = null;
       }
     };
-  }, [sample.path, sample.paneType, sample.name, sample.id, index, updateSampleBars, setPlayingSamplePosition, sample.bpm]);
+  }, [
+    sample.path,
+    sample.paneType,
+    sample.name,
+    sample.id,
+    index,
+    updateSampleBars,
+    setPlayingSamplePosition,
+    sample.bpm,
+  ]);
 
   // Sync playhead from unified player: multi uses playingSamplePositions/playingSamplePosition, single uses playerCurrentTime when this sample matches
   const currentTime =
     playerMode === "single" && isPlaying && singleFile?.path === sample.path
       ? playerCurrentTime
-      : playingSamplePositions[sample.id] ?? (playingSamplePosition?.sampleId === sample.id ? playingSamplePosition.currentTime : null);
+      : (playingSamplePositions[sample.id] ??
+        (playingSamplePosition?.sampleId === sample.id ? playingSamplePosition.currentTime : null));
   useEffect(() => {
     const ws = wavesurferRef.current;
     if (!ws || currentTime == null) return;
@@ -239,7 +278,7 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
         "flex flex-col border border-border rounded-lg bg-card overflow-hidden transition-colors cursor-pointer",
         isDragOver && "border-primary bg-primary/5",
         isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-        className
+        className,
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -268,28 +307,34 @@ export const MultiSampleBlock = ({ sample, index, isActive, onRemove, onDropSamp
           <X className="w-3 h-3" />
         </Button>
       </div>
-      <div className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            userJustSetVolumeRef.current = true;
             setSampleMuted(index, !muted);
           }}
           className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded"
           aria-label={muted ? "Unmute" : "Mute"}
         >
-          {muted ? (
-            <VolumeX className="w-3 h-3" />
-          ) : (
-            <Volume2 className="w-3 h-3" />
-          )}
+          {muted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
         </button>
         <Slider
-          value={[volume]}
+          key={`${sample.id}-sync-${sliderSyncKey}`}
+          value={[displayVolume]}
           max={1}
           step={0.01}
           onValueChange={(value) => {
+            userJustSetVolumeRef.current = true;
+            setLocalVolume(value[0]);
+          }}
+          onValueCommit={(value) => {
+            setLocalVolume(null);
             setSampleVolume(index, value[0]);
           }}
           className="cursor-pointer flex-1"
