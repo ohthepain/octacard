@@ -10,6 +10,7 @@ import { ConversionConfirmDialog } from "@/components/ConversionConfirmDialog";
 import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +50,7 @@ import { CacheDebugPanel } from "@/components/CacheDebugPanel";
 import { ReleaseTourPointer } from "@/components/ReleaseTourPointer";
 import { HomeFooter } from "@/components/HomeFooter";
 import { useReleaseTourStore } from "@/stores/release-tour-store";
+import { useHotkey } from "@tanstack/react-hotkeys";
 import { useUnifiedPlayer } from "@/hooks/useUnifiedPlayer";
 import { useProjectSync } from "@/hooks/useProjectSync";
 import { useRoomStorageSync } from "@/hooks/useRoomStorageSync";
@@ -222,12 +224,14 @@ const Index = () => {
   const waveformEditor = useWaveformEditorStore(
     useShallow((s) => ({
       isOpen: s.isOpen,
+      enabled: s.enabled,
       filePath: s.filePath,
       fileName: s.fileName,
       paneType: s.paneType,
       isEmptyState: s.isEmptyState,
       multiSampleId: s.multiSampleId,
       close: s.close,
+      setEnabled: s.setEnabled,
     })),
   );
   const [conversionConfirmOpen, setConversionConfirmOpen] = useState(false);
@@ -847,6 +851,36 @@ const Index = () => {
     [setPreviewMode, addSamplesToStack, selectedSourceItem, selectedDestItem],
   );
 
+  const handleWaveformToggle = useCallback(() => {
+    const we = useWaveformEditorStore.getState();
+    if (we.enabled) {
+      we.setEnabled(false);
+      return;
+    }
+    we.setEnabled(true);
+    if (previewMode === "multi") {
+      const active = useProjectStore.getState().getActiveStack();
+      const slots = active?.slots ?? [];
+      const activeSlotIndex = active?.activeSlotIndex ?? 0;
+      const sample = slots[activeSlotIndex];
+      if (sample && isAudioFile(sample.name)) {
+        we.openWithFileFromMulti(sample.path, sample.name, sample.paneType, sample.id);
+        return;
+      }
+    }
+    if (selectedSourceItem?.type === "file" && isAudioFile(selectedSourceItem.name)) {
+      we.openWithFile(selectedSourceItem.path, selectedSourceItem.name, "source");
+      return;
+    }
+    if (selectedDestItem?.type === "file" && isAudioFile(selectedDestItem.name)) {
+      we.openWithFile(selectedDestItem.path, selectedDestItem.name, "dest");
+      return;
+    }
+    we.open();
+  }, [previewMode, selectedSourceItem, selectedDestItem]);
+
+  useHotkey("Mod+W", handleWaveformToggle, { preventDefault: true });
+
   const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
     const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
     if (result.success && result.data) {
@@ -888,16 +922,24 @@ const Index = () => {
           >
             Stack
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label="Waveform editor"
-            data-testid="waveform-editor-button"
-            onClick={() => useWaveformEditorStore.getState().open()}
-          >
-            <Activity className="w-4 h-4 mr-1" />
-            Waveform
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={waveformEditor.enabled ? "default" : "outline"}
+                size="sm"
+                aria-label="Waveform editor"
+                aria-pressed={waveformEditor.enabled ? "true" : "false"}
+                data-testid="waveform-editor-button"
+                onClick={handleWaveformToggle}
+              >
+                <Activity className="w-4 h-4 mr-1" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Show waveform when selecting samples</p>
+              <p className="text-muted-foreground text-xs">⌘W</p>
+            </TooltipContent>
+          </Tooltip>
           {previewMode === "multi" && <ExportPackButton />}
           <BpmInput
             value={globalTempoBpm}
