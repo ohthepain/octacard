@@ -109,6 +109,13 @@ async function ensureMainViewReady(page, baseUrl, outputDir) {
   );
 }
 
+async function ensureLocalFileMode(page) {
+  const localModeButton = page.getByRole("button", { name: "Local files mode" });
+  if (await localModeButton.isVisible().catch(() => false)) {
+    await localModeButton.click();
+  }
+}
+
 page.on("console", (message) => {
   const text = message.text();
   if (message.type() === "error") {
@@ -320,6 +327,7 @@ try {
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "OctaCard" }).waitFor({ state: "visible" });
   await assertHeaderDoesNotShowSelectDirectory(page);
+  await ensureLocalFileMode(page);
   await page.evaluate(() => {
     const sourcePanel = document.querySelector('[data-testid="panel-source"]');
     if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found after reload");
