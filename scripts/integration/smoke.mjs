@@ -24,6 +24,7 @@ import { assertWaveformButtonOpensEmptyState } from "../../tests/waveform-button
 import { assertFilePaneKeyboardNavigation } from "../../tests/filepane-keyboard-navigation.mjs";
 import { assertSearchModesAllFoldersFiles } from "../../tests/search-modes-all-folders-files.mjs";
 import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-folder-does-not-auto-select-dest.mjs";
+import { assertFilePaneGuidanceCopy } from "../../tests/filepane-guidance-copy.mjs";
 import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils.mjs";
 import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
 import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
@@ -187,6 +188,7 @@ try {
   const destPanel = page.getByTestId("panel-dest");
   await sourcePanel.waitFor({ state: "visible" });
   await destPanel.waitFor({ state: "visible" });
+  await assertFilePaneGuidanceCopy(page);
   const sourceBox = await sourcePanel.boundingBox();
   const destBox = await destPanel.boundingBox();
   if (!sourceBox || !destBox) {
