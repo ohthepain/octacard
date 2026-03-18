@@ -1084,17 +1084,16 @@ const Index = () => {
 
       <ReleaseTourPointer />
 
-      {/* Main Content: Flat 4-panel layout so favorites and browser dividers are independent */}
+      {/* Main Content: Source favorites + source browser + editor */}
       <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <ResizablePanelGroup
           orientation="horizontal"
           className="flex-1 min-h-0 min-w-0"
           id="main-layout"
           defaultLayout={{
-            "left-fav": 20,
-            "source-browser": 30,
-            "dest-browser": 30,
-            "right-fav": 20,
+            "left-fav": 22,
+            "source-browser": 38,
+            editor: 40,
           }}
         >
           {/* Left: Source Favorites - only this separator affects favorites vs center. Hidden when no FS API. */}
@@ -1181,69 +1180,22 @@ const Index = () => {
           </ResizablePanel>
           <ResizableHandle withHandle />
 
-          {/* Dest Browser - center separator only affects source vs dest */}
-          <ResizablePanel id="dest-browser" defaultSize="30%" minSize="15%">
-            <div className="h-full min-h-0" data-testid="panel-dest">
-              {hasDirectoryPickerSupport() ? (
-                <FilePane
-                  key={`dest-${destRootVersion}`}
-                  paneName="dest"
-                  title="Destination"
-                  onFileTransfer={handleFileTransfer}
-                  showSidebar={false}
-                  onPathChange={handleDestPathChange}
-                  onSelectionChange={setSelectedDestItem}
-                  onRequestedPathHandled={handleRequestedDestPathHandled}
-                  requestedPath={requestedDestPath}
-                  onRequestedRevealPathHandled={handleRequestedDestRevealPathHandled}
-                  requestedRevealPath={requestedDestRevealPath}
-                  dropMode="navigate"
-                  sampleRate={formatSettings.sampleRate}
-                  sampleDepth={formatSettings.sampleDepth}
-                  fileFormat={formatSettings.fileFormat}
-                  pitch={formatSettings.pitch}
-                  sanitizeFilename={formatSettings.sanitizeFilename}
-                  shortenFilename={formatSettings.shortenFilename}
-                  shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
-                  mono={formatSettings.mono}
-                  normalize={formatSettings.normalize}
-                  trimStart={formatSettings.trim}
-                  autoNavigateToCard={true}
-                  convertFiles={true}
-                  showEjectButton={true}
-                  showNewFolderButton={true}
-                  onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
-                  refreshToken={destRefreshToken}
-                />
-              ) : (
-                <TempFilesPane
-                  paneName="dest"
-                  title="Temp Files"
-                  onSelectionChange={setSelectedDestItem}
-                  onPathChange={(path) => handleDestPathChange(path, "_default")}
-                  refreshToken={destRefreshToken}
-                />
-              )}
-            </div>
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-
-          {/* Right: Dest Favorites - hidden when no FS API */}
-          <ResizablePanel id="right-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            {hasDirectoryPickerSupport() ? (
-              <FavoritesColumn
-                paneType="dest"
-                volumeId={destVolumeId}
-                currentPath={destPath}
-                onNavigate={(path) => setRequestedDestPath(path)}
-                onBrowseFromFavorite={(path) => handleBrowseFromFavorite("dest", path)}
-                title="Dest Favorites"
-              />
-            ) : (
-              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
-                Temp Files mode. Add files or folders in the destination pane.
+          {/* Editor */}
+          <ResizablePanel id="editor" defaultSize="40%" minSize="20%">
+            <div className="h-full min-h-0 border border-border rounded-lg bg-card flex flex-col" data-testid="panel-editor">
+              <div className="px-4 py-3 border-b border-border">
+                <h2 className="text-sm font-semibold">Editor</h2>
               </div>
-            )}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {previewMode === "multi" ? (
+                  <MultiSampleStack className="h-full border-t-0 bg-transparent p-4" rootReloadToken={`${sourceRootVersion}:${destRootVersion}`} />
+                ) : (
+                  <div className="h-full flex items-center justify-center px-6 text-sm text-muted-foreground text-center">
+                    Switch to Multi mode to edit and arrange your sample stack.
+                  </div>
+                )}
+              </div>
+            </div>
           </ResizablePanel>
         </ResizablePanelGroup>
         {waveformEditor.isOpen && (
@@ -1259,9 +1211,6 @@ const Index = () => {
               else setDestRefreshToken((t) => t + 1);
             }}
           />
-        )}
-        {previewMode === "multi" && (
-          <MultiSampleStack className="shrink-0" rootReloadToken={`${sourceRootVersion}:${destRootVersion}`} />
         )}
       </div>
 
