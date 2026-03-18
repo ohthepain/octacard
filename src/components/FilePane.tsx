@@ -4711,28 +4711,30 @@ export const FilePane = ({
 
         {/* File Tree */}
         <ScrollArea className="flex-1 min-h-0" data-testid={`file-tree-scroll-${paneName}`}>
-          <div
-            className={`p-2 h-full min-h-full ${isDraggingOverRoot ? "bg-primary/5" : ""}`}
-            onDragOver={handleContainerDragOver}
-            onDragLeave={handleContainerDragLeave}
-            onDrop={(e) => {
-              // Only handle drop on empty space if we're not dropping on a folder
-              // The folder's drop handler will stop propagation if it handles the drop
-              if (!dragOverPath) {
-                e.stopPropagation();
-                handleDrop(e);
-              }
-            }}
-            onClick={(e) => {
-              // Clear selection when clicking on empty space (not on a file/folder item)
-              const target = e.target as HTMLElement;
-              if (target === e.currentTarget || (!target.closest('[draggable="true"]') && !target.closest("button"))) {
-                setSelectedItems(new Set());
-                // Also clear selections in other panes
-                handlePaneClick();
-              }
-            }}
-          >
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div
+                className={`p-2 h-full min-h-full ${isDraggingOverRoot ? "bg-primary/5" : ""}`}
+                onDragOver={handleContainerDragOver}
+                onDragLeave={handleContainerDragLeave}
+                onDrop={(e) => {
+                  // Only handle drop on empty space if we're not dropping on a folder
+                  // The folder's drop handler will stop propagation if it handles the drop
+                  if (!dragOverPath) {
+                    e.stopPropagation();
+                    handleDrop(e);
+                  }
+                }}
+                onClick={(e) => {
+                  // Clear selection when clicking on empty space (not on a file/folder item)
+                  const target = e.target as HTMLElement;
+                  if (target === e.currentTarget || (!target.closest('[draggable="true"]') && !target.closest("button"))) {
+                    setSelectedItems(new Set());
+                    // Also clear selections in other panes
+                    handlePaneClick();
+                  }
+                }}
+              >
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -4839,8 +4841,48 @@ export const FilePane = ({
             {isDraggingOverRoot && !dragOverPath && !isDraggingOverBreadcrumb && activeTreeNodes.length > 0 && (
               <div className="mt-3 h-20 rounded-lg border border-dashed border-primary/40 bg-primary/5 pointer-events-none" />
             )}
-          </div>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem
+                onSelect={() => setNewFolderDialogOpen(true)}
+                disabled={!fileSystemService.hasRootForPane(paneType) || !currentRootPath}
+              >
+                <FolderPlus className="w-4 h-4 mr-2" />
+                Create folder
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         </ScrollArea>
+
+        {/* Footer: Refresh and New Folder - shown when viewing a directory */}
+        {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
+            <div className="flex items-center gap-2 px-4 py-2 border-t border-border shrink-0 bg-muted/30">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => refreshCurrentDirectory()}
+                title="Refresh"
+                disabled={loading}
+              >
+                <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => setNewFolderDialogOpen(true)}
+                title="Create new folder"
+              >
+                <FolderPlus className="w-4 h-4" />
+                New Folder
+              </Button>
+            </div>
+          )}
 
         {/* Video Preview */}
         {selectedVideoFile && (
