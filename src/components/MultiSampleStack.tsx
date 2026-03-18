@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { Play, Pause, Square, Plus, Minus, GripVertical } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { Play, Pause, Square, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProjectStore, EMPTY_SLOTS } from "@/stores/project-store";
 import { useShallow } from "zustand/react/shallow";
@@ -11,8 +11,6 @@ import { getPackDownloadManifest } from "@/lib/remote-library";
 import { resolveFileDrop } from "@/lib/resolveFileDrop";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { SLOT_ROW_SIZE } from "@/stores/project-store";
-
 type DirectoryHandleWithEntries = FileSystemDirectoryHandle & {
   entries: () => AsyncIterable<[string, FileSystemHandle]>;
 };
@@ -57,7 +55,7 @@ function EmptyBlock({ slotIndex, isActive, onDrop, onClick }: EmptyBlockProps) {
       tabIndex={0}
       data-testid={`empty-slot-${slotIndex}`}
       className={cn(
-        "flex flex-col items-center justify-center border border-dashed rounded-lg min-h-[100px] text-muted-foreground transition-colors cursor-pointer",
+        "flex flex-col items-center justify-center border border-dashed rounded-md min-h-[76px] text-muted-foreground transition-colors cursor-pointer",
         isDragOver ? "border-primary bg-primary/5" : "border-border bg-muted/30",
         isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
@@ -103,13 +101,9 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
   const removeFromStack = useProjectStore((s) => s.removeFromStack);
   const addToStack = useProjectStore((s) => s.addToStack);
   const addSamplesToStack = useProjectStore((s) => s.addSamplesToStack);
-  const addSlotRowAt = useProjectStore((s) => s.addSlotRowAt);
-  const removeSlotRow = useProjectStore((s) => s.removeSlotRow);
-  const moveSlotRow = useProjectStore((s) => s.moveSlotRow);
   const replaceSampleAt = useProjectStore((s) => s.replaceSampleAt);
   const closeWaveform = useWaveformEditorStore((s) => s.close);
-  const [draggingRowIndex, setDraggingRowIndex] = useState<number | null>(null);
-  const [dragOverRowIndex, setDragOverRowIndex] = useState<number | null>(null);
+  const [volumeMode, setVolumeMode] = useState(false);
 
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const playMulti = usePlayerStore((s) => s.playMulti);
@@ -119,6 +113,22 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
   const handleStop = useCallback(() => {
     stop();
   }, [stop]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const isEditable =
+        tag === "input" || tag === "textarea" || tag === "select" || Boolean(target?.isContentEditable);
+      if (isEditable) return;
+      if (event.metaKey && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        setVolumeMode((previous) => !previous);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const togglePlay = useCallback(() => {
     if (stack.length === 0) return;
@@ -293,159 +303,94 @@ export const MultiSampleStack = ({ className, rootReloadToken = "0:0" }: MultiSa
     [addToStack, addSamplesToStack, openWaveformForActiveSlot],
   );
 
-  const rowCount = Math.max(1, Math.ceil(slots.length / SLOT_ROW_SIZE));
-  const rows = Array.from({ length: rowCount }, (_, rowIndex) =>
-    slots.slice(rowIndex * SLOT_ROW_SIZE, (rowIndex + 1) * SLOT_ROW_SIZE),
-  );
+  const filledSlots = slots.flatMap((sample, slotIndex) => (sample ? [{ sample, slotIndex }] : []));
+  const lastOccupiedIndex = slots.reduce((last, sample, index) => (sample ? index : last), -1);
+  const nextInsertIndex = lastOccupiedIndex + 1;
 
   return (
-    <div className={cn("border-t border-border bg-card p-3", className)}>
-      <div className="mb-3">
+    <div className={cn("border-t border-border bg-card p-2", className)}>
+      <div className="mb-2">
         {/* Global Transport Block */}
         <div
-          className="flex flex-col gap-2 border border-border rounded-lg bg-muted/30 p-3 w-full max-w-[240px]"
+          className="flex flex-wrap items-center gap-2 border border-border rounded-md bg-muted/30 p-2 w-full max-w-[620px]"
           data-testid="stack-transport"
         >
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transport</div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 p-0"
-              onClick={togglePlay}
-              disabled={stack.length === 0}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 p-0"
-              onClick={handleStop}
-              disabled={stack.length === 0}
-              aria-label="Stop"
-            >
-              <Square className="w-4 h-4" />
-            </Button>
-          </div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mr-2">Transport</div>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 w-8 p-0"
+            onClick={togglePlay}
+            disabled={stack.length === 0}
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 w-8 p-0"
+            onClick={handleStop}
+            disabled={stack.length === 0}
+            aria-label="Stop"
+          >
+            <Square className="w-4 h-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant={volumeMode ? "default" : "secondary"}
+            className="h-8 gap-2"
+            onClick={() => setVolumeMode((previous) => !previous)}
+            aria-pressed={volumeMode}
+            aria-label="Toggle volume mode"
+            data-testid="stack-volume-mode-toggle"
+          >
+            <Volume2 className="w-4 h-4" />
+            Volume Mode
+            <span className="text-[10px] uppercase tracking-wide opacity-70">Cmd+V</span>
+          </Button>
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 min-w-0">
-        {rows.map((rowSlots, rowIndex) => (
-          <div
-            key={rowSlots[rowIndex]?.id ?? `stack-row-${rowIndex}`}
-            className={cn(
-              "grid grid-cols-[44px_repeat(4,minmax(0,1fr))] gap-3 min-w-0",
-              dragOverRowIndex === rowIndex && "outline-1 outline-primary/60 rounded-md p-1",
-            )}
-            onDragOver={(e) => {
-              e.preventDefault();
-              if (draggingRowIndex != null) {
-                setDragOverRowIndex(rowIndex);
+      <div className="flex flex-col gap-2 min-w-0 w-full max-w-[620px]">
+        {filledSlots.map(({ sample, slotIndex }) => (
+          <MultiSampleBlock
+            key={`${sample.id}-${rootReloadToken}`}
+            sample={sample}
+            index={slotIndex}
+            isActive={activeSlotIndex === slotIndex}
+            showVolumeOverlay={volumeMode}
+            onRemove={() => {
+              if (slotIndex === activeSlotIndex) closeWaveform();
+              removeFromStack(slotIndex);
+            }}
+            onDropSample={(s) => {
+              replaceSampleAt(slotIndex, s);
+              if (slotIndex === activeSlotIndex) {
+                const currentSlots = useProjectStore.getState().getActiveStack()?.slots ?? [];
+                const updated = currentSlots[activeSlotIndex];
+                if (updated) {
+                  setActiveSample(updated.id);
+                  useWaveformEditorStore
+                    .getState()
+                    .openWithFileFromMulti(updated.path, updated.name, updated.paneType, updated.id);
+                }
               }
             }}
-            onDragLeave={() => {
-              if (dragOverRowIndex === rowIndex) {
-                setDragOverRowIndex(null);
-              }
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (draggingRowIndex != null && draggingRowIndex !== rowIndex) {
-                moveSlotRow(draggingRowIndex, rowIndex);
-              }
-              setDraggingRowIndex(null);
-              setDragOverRowIndex(null);
-            }}
-          >
-            <div
-              className="flex flex-col items-center justify-start gap-1 border border-border rounded-lg bg-muted/30 p-1"
-              data-testid={`stack-row-controls-${rowIndex}`}
-            >
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 w-7 p-0"
-                onClick={() => addSlotRowAt(rowIndex)}
-                aria-label="Add row above"
-                data-testid={rowIndex === 0 ? "stack-add-row-button" : `stack-row-add-${rowIndex}`}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 w-7 p-0"
-                onClick={() => removeSlotRow(rowIndex)}
-                aria-label="Delete row"
-                disabled={rowCount <= 1}
-                data-testid={`stack-row-delete-${rowIndex}`}
-              >
-                <Minus className="w-4 h-4" />
-              </Button>
-              <button
-                type="button"
-                className="h-7 w-7 rounded-md border border-border bg-background flex items-center justify-center text-muted-foreground cursor-grab active:cursor-grabbing"
-                aria-label="Drag row to reorder"
-                data-testid={`stack-row-drag-${rowIndex}`}
-                draggable
-                onDragStart={() => {
-                  setDraggingRowIndex(rowIndex);
-                  setDragOverRowIndex(rowIndex);
-                }}
-                onDragEnd={() => {
-                  setDraggingRowIndex(null);
-                  setDragOverRowIndex(null);
-                }}
-              >
-                <GripVertical className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {rowSlots.map((sample, colIndex) => {
-              const slotIndex = rowIndex * SLOT_ROW_SIZE + colIndex;
-              return sample ? (
-                <MultiSampleBlock
-                  key={`${sample.id}-${rootReloadToken}`}
-                  sample={sample}
-                  index={slotIndex}
-                  isActive={activeSlotIndex === slotIndex}
-                  onRemove={() => {
-                    if (slotIndex === activeSlotIndex) closeWaveform();
-                    removeFromStack(slotIndex);
-                  }}
-                  onDropSample={(s) => {
-                    replaceSampleAt(slotIndex, s);
-                    if (slotIndex === activeSlotIndex) {
-                      const slots = useProjectStore.getState().getActiveStack()?.slots ?? [];
-                      const updated = slots[activeSlotIndex];
-                      if (updated) {
-                        setActiveSample(updated.id);
-                        useWaveformEditorStore
-                          .getState()
-                          .openWithFileFromMulti(updated.path, updated.name, updated.paneType, updated.id);
-                      }
-                    }
-                  }}
-                  onClick={() => setActiveSample(sample.id)}
-                />
-              ) : (
-                <EmptyBlock
-                  key={`empty-slot-${slotIndex}`}
-                  slotIndex={slotIndex}
-                  isActive={activeSlotIndex === slotIndex}
-                  onDrop={(e) => {
-                    setActiveSlotIndex(slotIndex);
-                    handleMultiDrop(e);
-                  }}
-                  onClick={() => handleEmptySlotClick(slotIndex)}
-                />
-              );
-            })}
-          </div>
+            onClick={() => setActiveSample(sample.id)}
+          />
         ))}
+
+        <EmptyBlock
+          key={`empty-slot-${nextInsertIndex}`}
+          slotIndex={nextInsertIndex}
+          isActive={activeSlotIndex === nextInsertIndex}
+          onDrop={(e) => {
+            setActiveSlotIndex(nextInsertIndex);
+            handleMultiDrop(e);
+          }}
+          onClick={() => handleEmptySlotClick(nextInsertIndex)}
+        />
       </div>
     </div>
   );

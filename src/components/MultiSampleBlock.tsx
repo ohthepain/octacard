@@ -38,6 +38,7 @@ interface MultiSampleBlockProps {
   sample: StackSample;
   index: number;
   isActive?: boolean;
+  showVolumeOverlay?: boolean;
   onRemove: () => void;
   onDropSample?: (sample: { path: string; name: string; paneType: PaneType }) => void;
   onClick?: () => void;
@@ -48,6 +49,7 @@ export const MultiSampleBlock = ({
   sample,
   index,
   isActive,
+  showVolumeOverlay = false,
   onRemove,
   onDropSample,
   onClick,
@@ -186,7 +188,7 @@ export const MultiSampleBlock = ({
           barWidth: 2,
           barRadius: 2,
           barGap: 1,
-          height: 60,
+          height: 50,
           backend: "MediaElement",
           mediaControls: false,
           interact: false,
@@ -275,7 +277,7 @@ export const MultiSampleBlock = ({
   return (
     <div
       className={cn(
-        "flex flex-col border border-border rounded-lg bg-card overflow-hidden transition-colors cursor-pointer",
+        "relative flex flex-col border border-border rounded-sm bg-card overflow-hidden transition-colors cursor-pointer",
         isDragOver && "border-primary bg-primary/5",
         isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background",
         className,
@@ -285,7 +287,7 @@ export const MultiSampleBlock = ({
       onDrop={handleDrop}
       onClick={handleBlockClick}
     >
-      <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0 gap-1">
+      <div className="flex items-center justify-between px-2 py-0.5 border-b border-border shrink-0 gap-1">
         <SampleSourceBadge
           source={sampleSourceFromPath(sample.path, sample.paneType)}
           filename={sample.name}
@@ -307,52 +309,55 @@ export const MultiSampleBlock = ({
           <X className="w-3 h-3" />
         </Button>
       </div>
-      <div
-        className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            userJustSetVolumeRef.current = true;
-            setSampleMuted(index, !muted);
-          }}
-          className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded"
-          aria-label={muted ? "Unmute" : "Mute"}
-        >
-          {muted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-        </button>
-        <Slider
-          key={`${sample.id}-sync-${sliderSyncKey}`}
-          value={[displayVolume]}
-          max={1}
-          step={0.01}
-          onValueChange={(value) => {
-            userJustSetVolumeRef.current = true;
-            setLocalVolume(value[0]);
-          }}
-          onValueCommit={(value) => {
-            setLocalVolume(null);
-            setSampleVolume(index, value[0]);
-          }}
-          className="cursor-pointer flex-1"
-          data-testid={`volume-slider-${index}`}
-        />
-      </div>
-      <div className="flex-1 min-h-[60px] relative">
+      <div className="relative h-[50px] shrink-0">
         {errorMessage ? (
           <div className="p-2 text-xs text-destructive">{errorMessage}</div>
         ) : (
-          <>
-            <div ref={waveformRef} className="w-full h-[60px]" />
+          <div className="absolute inset-0">
+            <div ref={waveformRef} className="w-full h-full" />
+            {showVolumeOverlay && (
+              <div
+                className="absolute inset-x-1.5 top-1 z-20 flex items-center gap-2 rounded-md border border-border bg-background/90 backdrop-blur-sm px-2 py-1"
+                onClick={(e) => e.stopPropagation()}
+                data-testid={`volume-overlay-${index}`}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    userJustSetVolumeRef.current = true;
+                    setSampleMuted(index, !muted);
+                  }}
+                  className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded"
+                  aria-label={muted ? "Unmute" : "Mute"}
+                >
+                  {muted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                </button>
+                <Slider
+                  key={`${sample.id}-sync-${sliderSyncKey}`}
+                  value={[displayVolume]}
+                  max={1}
+                  step={0.01}
+                  onValueChange={(value) => {
+                    userJustSetVolumeRef.current = true;
+                    setLocalVolume(value[0]);
+                  }}
+                  onValueCommit={(value) => {
+                    setLocalVolume(null);
+                    setSampleVolume(index, value[0]);
+                  }}
+                  className="cursor-pointer flex-1"
+                  data-testid={`volume-slider-${index}`}
+                />
+              </div>
+            )}
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-background/50">
                 <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>

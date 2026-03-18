@@ -273,11 +273,17 @@ export const useProjectStore = create<ProjectState>()(
             const bpm = getBpmFromSample(sample.name, sample.path);
             const newSample: StackSample = { id: crypto.randomUUID(), ...sample, bpm };
             const newSlots = [...active.slots];
-            newSlots[active.activeSlotIndex] = newSample;
+            const lastOccupiedIndex = newSlots.reduce((last, slot, index) => (slot ? index : last), -1);
+            let insertIndex = lastOccupiedIndex + 1;
+            while (insertIndex >= newSlots.length) {
+              newSlots.push(...Array.from({ length: SLOT_ROW_SIZE }, () => null));
+            }
+            newSlots[insertIndex] = newSample;
             const newStack = slotsToStack(newSlots);
             const newTempo = active.bpmAuto && newStack.length === 1 ? bpm : active.globalTempoBpm;
             return updateActiveStack(state, () => ({
               slots: newSlots,
+              activeSlotIndex: insertIndex,
               globalTempoBpm: newTempo,
             }));
           }),
@@ -292,11 +298,15 @@ export const useProjectStore = create<ProjectState>()(
               bpm: getBpmFromSample(s.name, s.path),
             }));
             const newSlots = [...active.slots];
-            let slotIdx = active.activeSlotIndex;
+            const lastOccupiedIndex = newSlots.reduce((last, slot, index) => (slot ? index : last), -1);
+            let slotIdx = lastOccupiedIndex + 1;
+            let lastInsertedIndex = active.activeSlotIndex;
             for (const s of toAdd) {
-              while (slotIdx < newSlots.length && newSlots[slotIdx] != null) slotIdx++;
-              if (slotIdx >= newSlots.length) break;
+              while (slotIdx >= newSlots.length) {
+                newSlots.push(...Array.from({ length: SLOT_ROW_SIZE }, () => null));
+              }
               newSlots[slotIdx] = s;
+              lastInsertedIndex = slotIdx;
               slotIdx++;
             }
             const newStack = slotsToStack(newSlots);
@@ -306,6 +316,7 @@ export const useProjectStore = create<ProjectState>()(
                 : active.globalTempoBpm;
             return updateActiveStack(state, () => ({
               slots: newSlots,
+              activeSlotIndex: lastInsertedIndex,
               globalTempoBpm: newTempo,
             }));
           }),
