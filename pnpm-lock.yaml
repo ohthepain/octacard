@@ -38,8 +38,8 @@ importers:
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.8)(zod@4.3.6)
       '@liveblocks/client':
-        specifier: ^3.15.2
-        version: 3.15.2(@types/json-schema@7.0.15)
+        specifier: ^3.15.3
+        version: 3.15.3(@types/json-schema@7.0.15)
       '@prisma/adapter-pg':
         specifier: ^7.5.0
         version: 7.5.0
@@ -497,6 +497,7 @@ packages:
   '@aws-sdk/xml-builder@3.972.12':
     resolution: {integrity: sha512-xjyucfn+F+kMf25c+LIUnvX3oyLSlj9T0Vncs5WMQI6G36JdnSwC8g0qf8RajfmSClXr660EpTz7FFKluZ4BqQ==}
     engines: {node: '>=20.0.0'}
+    deprecated: Upgrade @aws-sdk/xml-builder to v3.972.13 or higher to fix a fast-xml-parser configuration issue, see https://github.com/aws/aws-sdk-js-v3/issues/7867
 
   '@aws/lambda-invoke-store@0.2.4':
     resolution: {integrity: sha512-iY8yvjE0y651BixKNPgmv1WrQc+GZ142sb0z4gYnChDDY2YqI4P/jsSopBWrKfAt7LOJAkOXt7rC/hms+WclQQ==}
@@ -1720,11 +1721,11 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@liveblocks/client@3.15.2':
-    resolution: {integrity: sha512-+rAOO2Z+eCM93FRwVhfiwNUMg3zjUhFC4ZiUsp4Jgk8+gcy5irxtq+nGPrGQVlarCewvT3C96Ur/h6uLO57JgQ==}
+  '@liveblocks/client@3.15.3':
+    resolution: {integrity: sha512-pyGlVsP7sK7pSDj2KkPBaHD01VJk1/WqiJoBBUMs4mAcohH/jwosUP/hx2yMSPpdatw5cfGyacpFhm/USsMpiA==}
 
-  '@liveblocks/core@3.15.2':
-    resolution: {integrity: sha512-2RCqC9iTA3LAhrHPqoCDXyL5TteVWqRV9hZYdZOWtoFnDP5DRWk3a3zPuEhDPPArWfq3T8jupaO28+7GTet0ow==}
+  '@liveblocks/core@3.15.3':
+    resolution: {integrity: sha512-4nTxjybOSGEbE06rHwJeHOo2iWtwS2dgt4K3iXNhT4bjGSeaQgOuhoyANfwtFeHUj6pf+H/FwXlhj2STX1lspg==}
     peerDependencies:
       '@types/json-schema': ^7
 
@@ -8839,13 +8840,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@liveblocks/client@3.15.2(@types/json-schema@7.0.15)':
+  '@liveblocks/client@3.15.3(@types/json-schema@7.0.15)':
     dependencies:
-      '@liveblocks/core': 3.15.2(@types/json-schema@7.0.15)
+      '@liveblocks/core': 3.15.3(@types/json-schema@7.0.15)
     transitivePeerDependencies:
       - '@types/json-schema'
 
-  '@liveblocks/core@3.15.2(@types/json-schema@7.0.15)':
+  '@liveblocks/core@3.15.3(@types/json-schema@7.0.15)':
     dependencies:
       '@types/json-schema': 7.0.15
 
