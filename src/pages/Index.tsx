@@ -195,6 +195,7 @@ const Index = () => {
   const globalTempoBpm = useProjectStore((s) => s.getActiveStack()?.globalTempoBpm ?? 120);
   const setGlobalTempoBpm = useProjectStore((s) => s.setGlobalTempoBpm);
   const bpmAuto = useProjectStore((s) => s.getActiveStack()?.bpmAuto ?? true);
+  const currentEditorName = previewMode === "multi" ? "STACKS" : "PACK";
   const setBpmAuto = useProjectStore((s) => s.setBpmAuto);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -251,6 +252,9 @@ const Index = () => {
   const conversionCancelRequestedRef = useRef(false);
   const conversionAbortControllerRef = useRef<AbortController | null>(null);
   const overwriteChoiceResolverRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
+  const handleBrowseForFolderRef = useRef<
+    (paneType: "source" | "dest", currentPath?: string) => Promise<void>
+  >(async () => {});
 
   const promptOverwriteChoice = useCallback((): Promise<OverwriteChoice> => {
     setOverwriteConfirmOpen(true);
@@ -328,6 +332,9 @@ const Index = () => {
       } else {
         setRequestedDestPath(pendingRequest.path);
       }
+    } else if (pendingRequest.type === "selectRoot") {
+      setLibraryMode("local");
+      void handleBrowseForFolderRef.current(pendingRequest.paneType, "/");
     }
     clearRequest();
   }, [pendingRequest, clearRequest, libraryMode]);
@@ -818,6 +825,7 @@ const Index = () => {
       }
     }
   };
+  handleBrowseForFolderRef.current = handleBrowseForFolder;
 
   const handlePreviewModeChange = useCallback(
     (value: string) => {
@@ -989,7 +997,11 @@ const Index = () => {
               <Button
                 size="sm"
                 variant={globalScope === "mine" ? "secondary" : "ghost"}
-                className={search?.creator ? "rounded-none h-8 px-3 text-xs whitespace-nowrap" : "rounded-none h-8 px-3 text-xs whitespace-nowrap"}
+                className={
+                  search?.creator
+                    ? "rounded-none h-8 px-3 text-xs whitespace-nowrap"
+                    : "rounded-none h-8 px-3 text-xs whitespace-nowrap"
+                }
                 onClick={() => {
                   setGlobalScope("mine");
                   if (search?.creator) navigate({ to: "/", search: {} });
@@ -1150,7 +1162,7 @@ const Index = () => {
                 <FilePane
                   key={`source-${sourceRootVersion}`}
                   paneName="source"
-                  title="Source"
+                  title="Local Files"
                   showSidebar={false}
                   onPathChange={handleSourcePathChange}
                   onSelectionChange={setSelectedSourceItem}
@@ -1182,13 +1194,13 @@ const Index = () => {
 
           {/* Editor */}
           <ResizablePanel id="editor" defaultSize="40%" minSize="20%">
-            <div className="h-full min-h-0 border border-border rounded-lg bg-card flex flex-col" data-testid="panel-editor">
-              <div className="px-4 py-3 border-b border-border">
-                <h2 className="text-sm font-semibold">Editor</h2>
+            <div className="h-full min-h-0 border border-border bg-card flex flex-col" data-testid="panel-editor">
+              <div className="px-4 py-3">
+                <h2 className="text-sm font-semibold">{currentEditorName}</h2>
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 {previewMode === "multi" ? (
-                  <MultiSampleStack className="h-full border-t-0 bg-transparent p-4" rootReloadToken={`${sourceRootVersion}:${destRootVersion}`} />
+                  <MultiSampleStack rootReloadToken={`${sourceRootVersion}:${destRootVersion}`} />
                 ) : (
                   <div className="h-full flex items-center justify-center px-6 text-sm text-muted-foreground text-center">
                     Switch to Multi mode to edit and arrange your sample stack.

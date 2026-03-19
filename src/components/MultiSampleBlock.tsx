@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState } from "react";
-import { X, Volume2, VolumeX } from "lucide-react";
+import { useRef, useEffect, useState, useCallback } from "react";
+import { X, Volume2, VolumeX, Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import WaveSurfer from "wavesurfer.js";
@@ -13,7 +13,14 @@ import { usePlayerStore } from "@/stores/player-store";
 import type { StackSample, PaneType } from "@/stores/project-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 import { SampleSourceBadge, sampleSourceFromPath } from "@/components/SampleSourceBadge";
+import { useNavigateRequestStore } from "@/stores/navigate-request-store";
 import { cn } from "@/lib/utils";
+
+function isNoRootDirectoryError(msg: string): boolean {
+  return (
+    msg.includes("No root directory handle set") || msg.includes("No root directory selected")
+  );
+}
 
 const AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
 function isAudioFile(name: string): boolean {
@@ -92,6 +99,11 @@ export const MultiSampleBlock = ({
     }, 150);
     return () => clearTimeout(id);
   });
+
+  const requestNavigate = useNavigateRequestStore((s) => s.requestNavigate);
+  const handleRequestRoot = useCallback(() => {
+    requestNavigate({ type: "selectRoot", paneType: sample.paneType });
+  }, [requestNavigate, sample.paneType]);
 
   const handleBlockClick = () => {
     if (userJustSetVolumeRef.current) return;
@@ -293,6 +305,7 @@ export const MultiSampleBlock = ({
           filename={sample.name}
           size="sm"
           showFilename={true}
+          onRequestRoot={isNoRootDirectoryError(errorMessage) ? handleRequestRoot : undefined}
           className="flex-1 min-w-0"
         />
         <Button
@@ -311,7 +324,29 @@ export const MultiSampleBlock = ({
       </div>
       <div className="relative h-[50px] shrink-0">
         {errorMessage ? (
-          <div className="p-2 text-xs text-destructive">{errorMessage}</div>
+          isNoRootDirectoryError(errorMessage) ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRequestRoot();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleRequestRoot();
+                }
+              }}
+              className="flex items-center gap-2 p-2 text-xs text-destructive hover:text-destructive/90 hover:bg-muted/50 rounded cursor-pointer w-full text-left transition-colors"
+              title="Click to select root folder"
+            >
+              <Folder className="w-4 h-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </button>
+          ) : (
+            <div className="p-2 text-xs text-destructive">{errorMessage}</div>
+          )
         ) : (
           <div className="absolute inset-0">
             <div ref={waveformRef} className="w-full h-full" />

@@ -4469,8 +4469,11 @@ export const FilePane = ({
       <div className="flex flex-col flex-1 min-w-0 h-full bg-background overflow-hidden">
         {/* Header */}
         <div className="border-b border-border flex flex-col shrink-0">
-          <div className="p-4 pb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="border-b border-border p-4 pb-2">
+            <div className="text-sm font-medium">{title}</div>
+          </div>
+          <div className="p-4 pt-2 pb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
               {onBrowseForFolder && (
                 <Button
                   size="sm"

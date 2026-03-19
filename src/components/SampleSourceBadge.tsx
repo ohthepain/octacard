@@ -27,6 +27,8 @@ interface SampleSourceBadgeProps {
   useLink?: boolean;
   /** Pack ID for Link - only used when useLink and source is remote with pack */
   packId?: string;
+  /** When provided and source is local, use instead of folder navigation (e.g. to open root picker) */
+  onRequestRoot?: () => void;
   className?: string;
 }
 
@@ -40,6 +42,7 @@ export function SampleSourceBadge({
   showFilename = true,
   useLink = false,
   packId,
+  onRequestRoot,
   className,
 }: SampleSourceBadgeProps) {
   const requestNavigate = useNavigateRequestStore((s) => s.requestNavigate);
@@ -59,12 +62,14 @@ export function SampleSourceBadge({
       if (source.type === "remote") {
         const id = sampleData?.packId;
         if (id) requestNavigate({ type: "pack", packId: id });
+      } else if (onRequestRoot) {
+        onRequestRoot();
       } else {
         const folderPath = dirname(source.path);
         if (folderPath) requestNavigate({ type: "folder", path: folderPath, paneType: source.paneType });
       }
     },
-    [source, sampleData?.packId, requestNavigate],
+    [source, sampleData?.packId, requestNavigate, onRequestRoot],
   );
 
   const handleKeyDown = useCallback(
@@ -75,13 +80,15 @@ export function SampleSourceBadge({
         if (source.type === "remote") {
           const id = sampleData?.packId;
           if (id) requestNavigate({ type: "pack", packId: id });
+        } else if (onRequestRoot) {
+          onRequestRoot();
         } else {
           const folderPath = dirname(source.path);
           if (folderPath) requestNavigate({ type: "folder", path: folderPath, paneType: source.paneType });
         }
       }
     },
-    [source, sampleData?.packId, requestNavigate],
+    [source, sampleData?.packId, requestNavigate, onRequestRoot],
   );
 
   const hasNavTarget =
@@ -119,7 +126,9 @@ export function SampleSourceBadge({
     ? source.type === "remote" && sampleData?.packName
       ? `Open pack: ${sampleData.packName}`
       : source.type === "local"
-        ? "Open folder"
+        ? onRequestRoot
+          ? "Select root folder"
+          : "Open folder"
         : "Open pack"
     : "Sample source";
 
