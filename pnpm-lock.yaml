@@ -203,8 +203,8 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.2.1)
       wavesurfer.js:
-        specifier: ^7.12.3
-        version: 7.12.3(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
+        specifier: ^7.12.4
+        version: 7.12.4(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -497,6 +497,7 @@ packages:
   '@aws-sdk/xml-builder@3.972.12':
     resolution: {integrity: sha512-xjyucfn+F+kMf25c+LIUnvX3oyLSlj9T0Vncs5WMQI6G36JdnSwC8g0qf8RajfmSClXr660EpTz7FFKluZ4BqQ==}
     engines: {node: '>=20.0.0'}
+    deprecated: Upgrade @aws-sdk/xml-builder to v3.972.13 or higher to fix a fast-xml-parser configuration issue, see https://github.com/aws/aws-sdk-js-v3/issues/7867
 
   '@aws/lambda-invoke-store@0.2.4':
     resolution: {integrity: sha512-iY8yvjE0y651BixKNPgmv1WrQc+GZ142sb0z4gYnChDDY2YqI4P/jsSopBWrKfAt7LOJAkOXt7rC/hms+WclQQ==}
@@ -7169,8 +7170,8 @@ packages:
     engines: {node: '>=20.0.0'}
     hasBin: true
 
-  wavesurfer.js@7.12.3:
-    resolution: {integrity: sha512-+QtFRftd/AktiQJerW7pa9jA8g/LZmMJjBDHDQtDa0PwCX+047KOUZqfvoQb5CClVSwNilhoABIYupUymqfjhw==}
+  wavesurfer.js@7.12.4:
+    resolution: {integrity: sha512-b/+XnWfJejNdvNUmtm4M5QzQepHhUbTo+62wYybwdV1B/Sn9vHhgb1xckRm0rGY2ZefJwLkE7lYcKnLfIia4cQ==}
 
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
@@ -15275,7 +15276,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  wavesurfer.js@7.12.3(patch_hash=sqsbq5b6btklpv35vnneopl5w4): {}
+  wavesurfer.js@7.12.4(patch_hash=sqsbq5b6btklpv35vnneopl5w4): {}
 
   web-streams-polyfill@3.3.3: {}
 
