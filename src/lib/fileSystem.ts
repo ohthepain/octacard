@@ -1,8 +1,9 @@
 // Web-based file system API wrapper
 // Uses File System Access API (showDirectoryPicker) for folder selection in the browser
+
+import { hasDirectoryPickerSupport } from "./browserSupport";
 import { sanitizeFilename, sanitizeFilenameMinimal } from "./filename";
 import { shortenFilename, shortenFilenames } from "./filename-shortener";
-import { hasDirectoryPickerSupport } from "./browserSupport";
 
 type DirectoryHandleWithEntries = FileSystemDirectoryHandle & {
   entries: () => AsyncIterable<[string, FileSystemHandle]>;
@@ -27,8 +28,13 @@ type OctacardWindow = Window & {
     startIn?: FileSystemDirectoryHandle,
     options?: { id: string },
   ) => Promise<FileSystemDirectoryHandle>;
-  showDirectoryPicker?: (options: { id: string; startIn?: FileSystemDirectoryHandle }) => Promise<FileSystemDirectoryHandle>;
-  chooseFileSystemEntries?: (options: { type: "open-directory" }) => Promise<FileSystemDirectoryHandle>;
+  showDirectoryPicker?: (options: {
+    id: string;
+    startIn?: FileSystemDirectoryHandle;
+  }) => Promise<FileSystemDirectoryHandle>;
+  chooseFileSystemEntries?: (options: {
+    type: "open-directory";
+  }) => Promise<FileSystemDirectoryHandle>;
   __octacardTestHooks?: OctacardTestHooks;
   __octacardRevealInFinder?: (args: {
     virtualPath: string;
@@ -87,7 +93,9 @@ interface OctacardTestHooks {
   listAudioFilesRecursively?: (args: {
     startPath: string;
     paneType: PaneType;
-  }) => Promise<FileSystemResult<FileSystemEntry[]>> | FileSystemResult<FileSystemEntry[]>;
+  }) =>
+    | Promise<FileSystemResult<FileSystemEntry[]>>
+    | FileSystemResult<FileSystemEntry[]>;
   convertAndCopyFile?: (args: {
     sourceVirtualPath: string;
     destVirtualPath: string;
@@ -135,7 +143,9 @@ class HandleRegistry {
     return this.rootHandle !== null;
   }
 
-  async getDirectoryHandle(virtualPath: string): Promise<FileSystemDirectoryHandle> {
+  async getDirectoryHandle(
+    virtualPath: string,
+  ): Promise<FileSystemDirectoryHandle> {
     if (!this.rootHandle) {
       throw new Error("No root directory handle set");
     }
@@ -163,7 +173,9 @@ class HandleRegistry {
     return currentHandle;
   }
 
-  getCachedDirectoryHandle(virtualPath: string): FileSystemDirectoryHandle | null {
+  getCachedDirectoryHandle(
+    virtualPath: string,
+  ): FileSystemDirectoryHandle | null {
     if (!this.rootHandle) {
       return null;
     }
@@ -172,7 +184,9 @@ class HandleRegistry {
   }
 
   /** Ensure directory path exists, creating any missing segments */
-  async ensureDirectory(virtualPath: string): Promise<FileSystemDirectoryHandle> {
+  async ensureDirectory(
+    virtualPath: string,
+  ): Promise<FileSystemDirectoryHandle> {
     if (!this.rootHandle) {
       throw new Error("No root directory handle set");
     }
@@ -191,7 +205,9 @@ class HandleRegistry {
       if (this.handles.has(currentPath)) {
         currentHandle = this.handles.get(currentPath)!;
       } else {
-        currentHandle = await currentHandle.getDirectoryHandle(part, { create: true });
+        currentHandle = await currentHandle.getDirectoryHandle(part, {
+          create: true,
+        });
         this.handles.set(currentPath, currentHandle);
         this.handleToPath.set(currentHandle, currentPath);
       }
@@ -223,7 +239,9 @@ class HandleRegistry {
     return this.handleToPath.get(handle) || null;
   }
 
-  async resolvePathFromRoot(handle: FileSystemDirectoryHandle): Promise<string | null> {
+  async resolvePathFromRoot(
+    handle: FileSystemDirectoryHandle,
+  ): Promise<string | null> {
     if (!this.rootHandle) {
       return null;
     }
@@ -255,15 +273,16 @@ class HandleRegistry {
         if (typeof entriesFn !== "function") {
           return null;
         }
-        for await (const [name, childHandle] of entriesFn.call(currentHandle) as AsyncIterable<
-          [string, FileSystemHandle]
-        >) {
+        for await (const [name, childHandle] of entriesFn.call(
+          currentHandle,
+        ) as AsyncIterable<[string, FileSystemHandle]>) {
           if (childHandle.kind !== "directory") {
             continue;
           }
 
           const childDirHandle = childHandle as FileSystemDirectoryHandle;
-          const childPath = currentPath === "/" ? `/${name}` : `${currentPath}/${name}`;
+          const childPath =
+            currentPath === "/" ? `/${name}` : `${currentPath}/${name}`;
 
           if (await childDirHandle.isSameEntry(handle)) {
             return childPath;
@@ -315,7 +334,10 @@ export type PaneType = "source" | "dest";
 class FileSystemService {
   private sourceRegistry = new HandleRegistry();
   private destRegistry = new HandleRegistry();
-  private searchIndexesByRoot = new WeakMap<FileSystemDirectoryHandle, RootSearchIndex>();
+  private searchIndexesByRoot = new WeakMap<
+    FileSystemDirectoryHandle,
+    RootSearchIndex
+  >();
 
   private getRegistry(paneType: PaneType): HandleRegistry {
     return paneType === "source" ? this.sourceRegistry : this.destRegistry;
@@ -338,10 +360,15 @@ class FileSystemService {
     const normalizedBase = this.normalizeVirtualPath(basePath);
     const normalizedCandidate = this.normalizeVirtualPath(candidatePath);
     if (normalizedBase === "/") return true;
-    return normalizedCandidate === normalizedBase || normalizedCandidate.startsWith(`${normalizedBase}/`);
+    return (
+      normalizedCandidate === normalizedBase ||
+      normalizedCandidate.startsWith(`${normalizedBase}/`)
+    );
   }
 
-  private getRootHandleForPane(paneType: PaneType): FileSystemDirectoryHandle | null {
+  private getRootHandleForPane(
+    paneType: PaneType,
+  ): FileSystemDirectoryHandle | null {
     return this.getRegistry(paneType).getRoot();
   }
 
@@ -352,7 +379,9 @@ class FileSystemService {
     if (typeof entriesFn !== "function") {
       return;
     }
-    for await (const entry of entriesFn.call(directoryHandle) as AsyncIterable<[string, FileSystemHandle]>) {
+    for await (const entry of entriesFn.call(directoryHandle) as AsyncIterable<
+      [string, FileSystemHandle]
+    >) {
       yield entry;
     }
   }
@@ -398,7 +427,10 @@ class FileSystemService {
     }
   }
 
-  private async rebuildSearchIndex(paneType: PaneType, index: RootSearchIndex): Promise<void> {
+  private async rebuildSearchIndex(
+    paneType: PaneType,
+    index: RootSearchIndex,
+  ): Promise<void> {
     const collected: SearchIndexEntry[] = [];
     await this.collectSearchEntriesRecursive("/", paneType, collected);
 
@@ -410,7 +442,9 @@ class FileSystemService {
     index.version += 1;
   }
 
-  async ensureSearchIndex(paneType: PaneType = "source"): Promise<FileSystemResult> {
+  async ensureSearchIndex(
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult> {
     if (!this.hasRootForPane(paneType)) {
       return {
         success: false,
@@ -452,14 +486,18 @@ class FileSystemService {
     }
   }
 
-  async clearSearchIndexForPaneRoot(paneType: PaneType = "source"): Promise<void> {
+  async clearSearchIndexForPaneRoot(
+    paneType: PaneType = "source",
+  ): Promise<void> {
     const rootHandle = this.getRootHandleForPane(paneType);
     if (!rootHandle) return;
     this.searchIndexesByRoot.delete(rootHandle);
   }
 
   /** Returns all folder paths that contain pack.json, using the search index (full traversal). */
-  async getPackFolderPaths(paneType: PaneType = "source"): Promise<FileSystemResult<Set<string>>> {
+  async getPackFolderPaths(
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<Set<string>>> {
     const ensured = await this.ensureSearchIndex(paneType);
     if (!ensured.success) {
       return { success: false, error: ensured.error };
@@ -477,7 +515,10 @@ class FileSystemService {
     return { success: true, data: packFolders };
   }
 
-  async reindexSubtree(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
+  async reindexSubtree(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult> {
     const ensured = await this.ensureSearchIndex(paneType);
     if (!ensured.success) {
       return ensured;
@@ -604,7 +645,9 @@ class FileSystemService {
   }
 
   /** Request root directory - sets BOTH source and dest to the same folder (for initial setup) */
-  async requestRootDirectory(): Promise<FileSystemResult<FileSystemDirectoryHandle>> {
+  async requestRootDirectory(): Promise<
+    FileSystemResult<FileSystemDirectoryHandle>
+  > {
     console.log("requestRootDirectory");
     if (!hasDirectoryPickerSupport()) {
       return {
@@ -702,6 +745,66 @@ class FileSystemService {
     }
   }
 
+  /**
+   * Pick a folder to pin as a local shortcut. The folder must lie inside the current source
+   * library root (unlike requestDirectoryForPane, this never replaces the root).
+   */
+  async pickDirectoryForSourceFavoritePin(
+    startInPath?: string,
+  ): Promise<FileSystemResult<{ path: string; name: string }>> {
+    if (!hasDirectoryPickerSupport()) {
+      return {
+        success: false,
+        error: "File System Access API not supported in this browser",
+      };
+    }
+
+    const registry = this.sourceRegistry;
+    if (!registry.hasRoot()) {
+      return {
+        success: false,
+        error: "No library folder selected yet",
+      };
+    }
+
+    try {
+      let startIn: FileSystemDirectoryHandle | undefined;
+      if (startInPath) {
+        try {
+          startIn = await registry.getDirectoryHandle(startInPath);
+        } catch {
+          // Path may not exist; fall back to default picker location
+        }
+      }
+
+      const handle = await this.pickDirectoryHandle("source", startIn);
+      const virtualPath = await registry.resolvePathFromRoot(handle);
+      if (!virtualPath) {
+        return {
+          success: false,
+          error: "Choose a folder inside your current library root",
+        };
+      }
+
+      void this.ensureSearchIndex("source");
+      return {
+        success: true,
+        data: { path: virtualPath, name: handle.name },
+      };
+    } catch (error: unknown) {
+      if (hasErrorName(error, "AbortError")) {
+        return {
+          success: false,
+          error: "User cancelled directory selection",
+        };
+      }
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  }
+
   hasRootDirectory(): boolean {
     return this.sourceRegistry.hasRoot() || this.destRegistry.hasRoot();
   }
@@ -723,7 +826,9 @@ class FileSystemService {
     if (typeof window === "undefined") return false;
     const testHooks = this.getTestHooks();
     if (testHooks?.revealInFinder) return true;
-    return typeof (window as OctacardWindow).__octacardRevealInFinder === "function";
+    return (
+      typeof (window as OctacardWindow).__octacardRevealInFinder === "function"
+    );
   }
 
   async revealInFinder(
@@ -733,7 +838,11 @@ class FileSystemService {
   ): Promise<FileSystemResult> {
     const testHooks = this.getTestHooks();
     if (testHooks?.revealInFinder) {
-      return await testHooks.revealInFinder({ virtualPath, paneType, isDirectory });
+      return await testHooks.revealInFinder({
+        virtualPath,
+        paneType,
+        isDirectory,
+      });
     }
 
     const revealFn = (window as OctacardWindow).__octacardRevealInFinder;
@@ -754,19 +863,31 @@ class FileSystemService {
     if (paneType) {
       return this.getRegistry(paneType).getRoot()?.name || "Selected Directory";
     }
-    return this.sourceRegistry.getRoot()?.name || this.destRegistry.getRoot()?.name || "Selected Directory";
+    return (
+      this.sourceRegistry.getRoot()?.name ||
+      this.destRegistry.getRoot()?.name ||
+      "Selected Directory"
+    );
   }
 
   /** Get virtual path for a directory handle (if it's under our root and we've seen it) */
-  getVirtualPath(handle: FileSystemDirectoryHandle, paneType?: PaneType): string | null {
+  getVirtualPath(
+    handle: FileSystemDirectoryHandle,
+    paneType?: PaneType,
+  ): string | null {
     if (paneType) {
       return this.getRegistry(paneType).getVirtualPath(handle);
     }
-    return this.sourceRegistry.getVirtualPath(handle) ?? this.destRegistry.getVirtualPath(handle);
+    return (
+      this.sourceRegistry.getVirtualPath(handle) ??
+      this.destRegistry.getVirtualPath(handle)
+    );
   }
 
   // In the web app, "home" is the root of the user-selected directory.
-  async getHomeDirectory(paneType: PaneType = "source"): Promise<FileSystemResult<string>> {
+  async getHomeDirectory(
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<string>> {
     if (!this.getRegistry(paneType).hasRoot()) {
       return { success: false, error: "No root directory selected" };
     }
@@ -778,16 +899,20 @@ class FileSystemService {
     paneType: PaneType = "source",
   ): Promise<FileSystemResult<FileSystemEntry[]>> {
     try {
-      const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
+      const dirHandle =
+        await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
       const entries: FileSystemEntry[] = [];
 
-      for await (const [name, handle] of this.iterateDirectoryEntries(dirHandle)) {
+      for await (const [name, handle] of this.iterateDirectoryEntries(
+        dirHandle,
+      )) {
         // Skip hidden files/folders
         if (name.startsWith(".") || name.startsWith("~")) {
           continue;
         }
 
-        const entryPath = virtualPath === "/" ? `/${name}` : `${virtualPath}/${name}`;
+        const entryPath =
+          virtualPath === "/" ? `/${name}` : `${virtualPath}/${name}`;
 
         if (handle.kind === "directory") {
           entries.push({
@@ -842,7 +967,9 @@ class FileSystemService {
   async getFileStats(
     virtualPath: string,
     paneType: PaneType = "source",
-  ): Promise<FileSystemResult<{ size: number; isDirectory: boolean; isFile: boolean }>> {
+  ): Promise<
+    FileSystemResult<{ size: number; isDirectory: boolean; isFile: boolean }>
+  > {
     try {
       const registry = this.getRegistry(paneType);
       // Try as file first
@@ -883,7 +1010,8 @@ class FileSystemService {
     paneType: PaneType = "source",
   ): Promise<FileSystemResult> {
     try {
-      const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
+      const dirHandle =
+        await this.getRegistry(paneType).getDirectoryHandle(virtualPath);
       await dirHandle.getDirectoryHandle(folderName, { create: true });
       await this.reindexSubtree(virtualPath, paneType);
       return { success: true };
@@ -895,11 +1023,15 @@ class FileSystemService {
     }
   }
 
-  async deleteFile(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
+  async deleteFile(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult> {
     try {
       const registry = this.getRegistry(paneType);
       await registry.getFileHandle(virtualPath);
-      const dirPath = virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
+      const dirPath =
+        virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
       const dirHandle = await registry.getDirectoryHandle(dirPath);
       const fileName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
       await dirHandle.removeEntry(fileName);
@@ -913,13 +1045,19 @@ class FileSystemService {
     }
   }
 
-  async deleteFolder(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult> {
+  async deleteFolder(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult> {
     try {
       const registry = this.getRegistry(paneType);
       await registry.getDirectoryHandle(virtualPath);
-      const parentPath = virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
+      const parentPath =
+        virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
       const parentHandle = await registry.getDirectoryHandle(parentPath);
-      const folderName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
+      const folderName = virtualPath.substring(
+        virtualPath.lastIndexOf("/") + 1,
+      );
       await parentHandle.removeEntry(folderName, { recursive: true });
       await this.reindexSubtree(parentPath, paneType);
       return { success: true };
@@ -939,10 +1077,12 @@ class FileSystemService {
     destPane: PaneType = "dest",
   ): Promise<FileSystemResult> {
     try {
-      const sourceFileHandle = await this.getRegistry(sourcePane).getFileHandle(sourceVirtualPath);
+      const sourceFileHandle =
+        await this.getRegistry(sourcePane).getFileHandle(sourceVirtualPath);
       const sourceFile = await sourceFileHandle.getFile();
 
-      const destDirHandle = await this.getRegistry(destPane).getDirectoryHandle(destVirtualPath);
+      const destDirHandle =
+        await this.getRegistry(destPane).getDirectoryHandle(destVirtualPath);
       const finalFileName = fileName || sourceFile.name;
 
       // Check if file already exists and remove it
@@ -953,7 +1093,9 @@ class FileSystemService {
       }
 
       // Create new file handle and write
-      const destFileHandle = await destDirHandle.getFileHandle(finalFileName, { create: true });
+      const destFileHandle = await destDirHandle.getFileHandle(finalFileName, {
+        create: true,
+      });
       const writable = await destFileHandle.createWritable();
       await writable.write(sourceFile);
       await writable.close();
@@ -975,12 +1117,21 @@ class FileSystemService {
     destPane: PaneType = "dest",
   ): Promise<FileSystemResult> {
     try {
-      const sourceDirHandle = await this.getRegistry(sourcePane).getDirectoryHandle(sourceVirtualPath);
-      const folderName = sourceVirtualPath.substring(sourceVirtualPath.lastIndexOf("/") + 1);
-      const destDirHandle = await this.getRegistry(destPane).getDirectoryHandle(destVirtualPath);
+      const sourceDirHandle =
+        await this.getRegistry(sourcePane).getDirectoryHandle(
+          sourceVirtualPath,
+        );
+      const folderName = sourceVirtualPath.substring(
+        sourceVirtualPath.lastIndexOf("/") + 1,
+      );
+      const destDirHandle =
+        await this.getRegistry(destPane).getDirectoryHandle(destVirtualPath);
 
       // Create destination folder
-      const newFolderHandle = await destDirHandle.getDirectoryHandle(folderName, { create: true });
+      const newFolderHandle = await destDirHandle.getDirectoryHandle(
+        folderName,
+        { create: true },
+      );
 
       // Recursively copy all entries
       await this.copyFolderRecursive(sourceDirHandle, newFolderHandle);
@@ -999,14 +1150,23 @@ class FileSystemService {
     sourceHandle: FileSystemDirectoryHandle,
     destHandle: FileSystemDirectoryHandle,
   ): Promise<void> {
-    for await (const [name, handle] of this.iterateDirectoryEntries(sourceHandle)) {
+    for await (const [name, handle] of this.iterateDirectoryEntries(
+      sourceHandle,
+    )) {
       if (handle.kind === "directory") {
-        const subFolderHandle = await destHandle.getDirectoryHandle(name, { create: true });
-        await this.copyFolderRecursive(handle as FileSystemDirectoryHandle, subFolderHandle);
+        const subFolderHandle = await destHandle.getDirectoryHandle(name, {
+          create: true,
+        });
+        await this.copyFolderRecursive(
+          handle as FileSystemDirectoryHandle,
+          subFolderHandle,
+        );
       } else {
         const fileHandle = handle as FileSystemFileHandle;
         const file = await fileHandle.getFile();
-        const destFileHandle = await destHandle.getFileHandle(name, { create: true });
+        const destFileHandle = await destHandle.getFileHandle(name, {
+          create: true,
+        });
         const writable = await destFileHandle.createWritable();
         await writable.write(file);
         await writable.close();
@@ -1014,9 +1174,13 @@ class FileSystemService {
     }
   }
 
-  async getFileBlob(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult<string>> {
+  async getFileBlob(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<string>> {
     try {
-      const fileHandle = await this.getRegistry(paneType).getFileHandle(virtualPath);
+      const fileHandle =
+        await this.getRegistry(paneType).getFileHandle(virtualPath);
       const file = await fileHandle.getFile();
       const blob = new Blob([file], { type: file.type });
 
@@ -1035,7 +1199,10 @@ class FileSystemService {
     }
   }
 
-  async getAudioFileBlob(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult<string>> {
+  async getAudioFileBlob(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<string>> {
     return this.getFileBlob(virtualPath, paneType);
   }
 
@@ -1043,14 +1210,20 @@ class FileSystemService {
   async writeBlobToPath(
     virtualPath: string,
     blob: Blob,
-    paneType: PaneType = "source"
+    paneType: PaneType = "source",
   ): Promise<FileSystemResult> {
     try {
-      const dirPath = virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
-      const rawFileName = virtualPath.substring(virtualPath.lastIndexOf("/") + 1);
+      const dirPath =
+        virtualPath.substring(0, virtualPath.lastIndexOf("/")) || "/";
+      const rawFileName = virtualPath.substring(
+        virtualPath.lastIndexOf("/") + 1,
+      );
       const fileName = sanitizeFilenameMinimal(rawFileName) || "export.wav";
-      const dirHandle = await this.getRegistry(paneType).getDirectoryHandle(dirPath);
-      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      const dirHandle =
+        await this.getRegistry(paneType).getDirectoryHandle(dirPath);
+      const fileHandle = await dirHandle.getFileHandle(fileName, {
+        create: true,
+      });
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
@@ -1066,10 +1239,13 @@ class FileSystemService {
 
   /** Pick a directory via the system picker (e.g. for Save As). Returns the handle or error/cancelled. */
   async pickDirectoryForSaveAs(
-    startIn?: FileSystemDirectoryHandle
+    startIn?: FileSystemDirectoryHandle,
   ): Promise<FileSystemResult<FileSystemDirectoryHandle>> {
     if (!hasDirectoryPickerSupport()) {
-      return { success: false, error: "File System Access API not supported in this browser" };
+      return {
+        success: false,
+        error: "File System Access API not supported in this browser",
+      };
     }
     try {
       const handle = await this.pickDirectoryHandle("saveAs", startIn);
@@ -1086,11 +1262,13 @@ class FileSystemService {
   async writeBlobToDirectoryHandle(
     dirHandle: FileSystemDirectoryHandle,
     filename: string,
-    blob: Blob
+    blob: Blob,
   ): Promise<FileSystemResult> {
     try {
       const safeName = sanitizeFilenameMinimal(filename) || "export.wav";
-      const fileHandle = await dirHandle.getFileHandle(safeName, { create: true });
+      const fileHandle = await dirHandle.getFileHandle(safeName, {
+        create: true,
+      });
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
@@ -1103,7 +1281,10 @@ class FileSystemService {
     }
   }
 
-  async getVideoFileBlob(virtualPath: string, paneType: PaneType = "source"): Promise<FileSystemResult<string>> {
+  async getVideoFileBlob(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<FileSystemResult<string>> {
     return this.getFileBlob(virtualPath, paneType);
   }
 
@@ -1126,7 +1307,10 @@ class FileSystemService {
     signal?: AbortSignal,
     shortenTargetFilename?: boolean,
     shortenTargetFilenameMaxLength?: number,
-    sampleEdits?: { region?: { start: number; end: number } | null; envelopePoints?: { time: number; volume: number }[] },
+    sampleEdits?: {
+      region?: { start: number; end: number } | null;
+      envelopePoints?: { time: number; volume: number }[];
+    },
   ): Promise<FileSystemResult> {
     if (signal?.aborted) {
       return {
@@ -1246,9 +1430,13 @@ class FileSystemService {
             ? { targetTempo, sourceTempo }
             : {}),
           ...(sampleEdits?.region
-            ? { regionStart: sampleEdits.region.start, regionEnd: sampleEdits.region.end }
+            ? {
+                regionStart: sampleEdits.region.start,
+                regionEnd: sampleEdits.region.end,
+              }
             : {}),
-          ...(sampleEdits?.envelopePoints && sampleEdits.envelopePoints.length > 0
+          ...(sampleEdits?.envelopePoints &&
+          sampleEdits.envelopePoints.length > 0
             ? { envelopePoints: sampleEdits.envelopePoints }
             : {}),
         });
@@ -1262,9 +1450,13 @@ class FileSystemService {
         finalFile = convertedBlob;
       }
 
-      if (shortenTargetFilename && typeof shortenTargetFilenameMaxLength === "number") {
+      if (
+        shortenTargetFilename &&
+        typeof shortenTargetFilenameMaxLength === "number"
+      ) {
         const sourceParts = sourceVirtualPath.split("/").filter(Boolean);
-        const folderName = sourceParts.length >= 2 ? sourceParts[sourceParts.length - 2] : "";
+        const folderName =
+          sourceParts.length >= 2 ? sourceParts[sourceParts.length - 2] : "";
         finalFileName = shortenFilename({
           folderName,
           filename: finalFileName,
@@ -1287,7 +1479,8 @@ class FileSystemService {
       }
 
       // Write to destination (ensure nested dirs exist)
-      const destDirHandle = await this.getRegistry(destPane).ensureDirectory(destVirtualPath);
+      const destDirHandle =
+        await this.getRegistry(destPane).ensureDirectory(destVirtualPath);
 
       // Remove existing file if it exists
       try {
@@ -1296,7 +1489,9 @@ class FileSystemService {
         // File doesn't exist, that's fine
       }
 
-      const destFileHandle = await destDirHandle.getFileHandle(finalFileName, { create: true });
+      const destFileHandle = await destDirHandle.getFileHandle(finalFileName, {
+        create: true,
+      });
       const writable = await destFileHandle.createWritable();
 
       if (finalFile instanceof File) {
@@ -1344,7 +1539,8 @@ class FileSystemService {
     return this.searchFilesIndexed(query, searchPath, paneType);
   }
 
-  private static readonly AUDIO_EXT = /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
+  private static readonly AUDIO_EXT =
+    /\.(wav|aiff|aif|mp3|flac|ogg|m4a|aac|wma)$/i;
 
   async listAudioFilesRecursively(
     startPath: string,
@@ -1390,9 +1586,13 @@ class FileSystemService {
   }
 
   // Helper method to get File object from virtual path
-  async getFile(virtualPath: string, paneType: PaneType = "source"): Promise<File | null> {
+  async getFile(
+    virtualPath: string,
+    paneType: PaneType = "source",
+  ): Promise<File | null> {
     try {
-      const fileHandle = await this.getRegistry(paneType).getFileHandle(virtualPath);
+      const fileHandle =
+        await this.getRegistry(paneType).getFileHandle(virtualPath);
       return await fileHandle.getFile();
     } catch {
       return null;
@@ -1407,13 +1607,19 @@ class FileSystemService {
   ): Promise<FileSystemResult<string>> {
     try {
       const safeName = sanitizeFilenameMinimal(file.name) || "upload";
-      const destDirHandle = await this.getRegistry(paneType).getDirectoryHandle(destVirtualPath);
-      const fileHandle = await destDirHandle.getFileHandle(safeName, { create: true });
+      const destDirHandle =
+        await this.getRegistry(paneType).getDirectoryHandle(destVirtualPath);
+      const fileHandle = await destDirHandle.getFileHandle(safeName, {
+        create: true,
+      });
       const writable = await fileHandle.createWritable();
       await writable.write(file);
       await writable.close();
 
-      const newPath = destVirtualPath === "/" ? `/${safeName}` : `${destVirtualPath}/${safeName}`;
+      const newPath =
+        destVirtualPath === "/"
+          ? `/${safeName}`
+          : `${destVirtualPath}/${safeName}`;
       await this.reindexSubtree(destVirtualPath, paneType);
 
       return {

@@ -244,15 +244,125 @@ export function CreatePackDialog({
     setUnsplashAttribution(null);
   }, [defaultName]);
 
+  const savePackEdits = useCallback(async (): Promise<boolean> => {
+    if (!editPackId || createAsCopy) return false;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error("Enter a pack name");
+      return false;
+    }
+    setLoading(true);
+    setUploadProgress(null);
+    try {
+      let coverImageS3Key: string | undefined;
+      let coverImageUrl: string | null | undefined;
+      let squareBlob: Blob | null = null;
+      if (unsplashImageUrl) {
+        coverImageUrl = unsplashImageUrl;
+        coverImageS3Key = undefined;
+      } else if (imageFile) {
+        setUploadProgress({ current: 0, total: 1, phase: "Uploading cover image…" });
+        squareBlob = await cropImageToSquare(imageFile);
+        const { uploadUrl, key } = await getPackCoverUploadUrl(editPackId, "image/jpeg");
+        const res = await fetch(uploadUrl, {
+          method: "PUT",
+          body: squareBlob,
+          headers: { "Content-Type": "image/jpeg" },
+        });
+        if (!res.ok) throw new Error("Failed to upload cover image");
+        coverImageS3Key = key;
+        coverImageUrl = null;
+      }
+      await updatePack(editPackId, {
+        name: trimmed,
+        isPublic,
+        priceTokens,
+        defaultSampleTokens,
+        ...(coverImageS3Key !== undefined && { coverImageS3Key }),
+        ...(coverImageUrl !== undefined && { coverImageUrl }),
+      });
+      setUploadProgress(null);
+
+      if (folderPath && paneType && (imageFile || unsplashImageUrl)) {
+        try {
+          const ownerName = session?.user?.name ?? "Unknown";
+          const joinPath = (base: string, file: string) => base.replace(/\/$/, "") + (base ? "/" : "") + file;
+          const packJsonPath = joinPath(folderPath, "pack.json");
+          const existingFile = await getFileForPath(packJsonPath, paneType);
+          let packJson: Record<string, unknown> = {
+            packId: editPackId,
+            name: trimmed,
+            coverImageS3Key: coverImageS3Key ?? null,
+            ownerName,
+            ...(unsplashImageUrl && { coverImageUrl: unsplashImageUrl }),
+          };
+          if (existingFile) {
+            try {
+              const existing = JSON.parse(await existingFile.text()) as Record<string, unknown>;
+              packJson = { ...existing, ...packJson };
+            } catch {
+              // use new packJson
+            }
+          }
+          packJson.name = trimmed;
+          if (coverImageS3Key) packJson.coverImageS3Key = coverImageS3Key;
+          if (unsplashImageUrl) {
+            packJson.coverImageUrl = unsplashImageUrl;
+            delete packJson.coverImage;
+          } else if (imageFile && squareBlob) {
+            const ext = imageFile.type?.includes("png") ? "png" : "jpg";
+            const coverImage = `cover.${ext}`;
+            packJson.coverImage = coverImage;
+            await writeBlobForPath(joinPath(folderPath, coverImage), squareBlob, paneType);
+          }
+          await writeBlobForPath(
+            packJsonPath,
+            new Blob([JSON.stringify(packJson, null, 2)], { type: "application/json" }),
+            paneType,
+          );
+        } catch (err) {
+          console.warn("Failed to write pack to folder:", err);
+        }
+      }
+
+      toast.success("Pack updated");
+      onCreated?.(editPackId);
+      return true;
+    } catch (err) {
+      setUploadProgress(null);
+      toast.error(err instanceof Error ? err.message : "Failed to update pack");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    editPackId,
+    createAsCopy,
+    name,
+    isPublic,
+    priceTokens,
+    defaultSampleTokens,
+    imageFile,
+    unsplashImageUrl,
+    folderPath,
+    paneType,
+    session?.user?.name,
+    onCreated,
+  ]);
+
   const handleOpenChange = useCallback(
-    (next: boolean) => {
+    async (next: boolean) => {
       if (!next) {
+        if (isEditMode && editPackId && !createAsCopy && !editLoadError) {
+          const ok = await savePackEdits();
+          if (!ok) return;
+        }
         reset();
         setDeleteConfirmOpen(false);
       }
       onOpenChange(next);
     },
-    [onOpenChange, reset],
+    [onOpenChange, reset, isEditMode, editPackId, createAsCopy, editLoadError, savePackEdits],
   );
 
   const handleDelete = useCallback(async () => {
@@ -444,81 +554,12 @@ export function CreatePackDialog({
       let packId: string;
 
       if (isEditMode && editPackId && !createAsCopy) {
-        packId = editPackId;
-        let coverImageS3Key: string | undefined;
-        let coverImageUrl: string | null | undefined;
-        let squareBlob: Blob | null = null;
-        if (unsplashImageUrl) {
-          coverImageUrl = unsplashImageUrl;
-          coverImageS3Key = undefined;
-        } else if (imageFile) {
-          setUploadProgress({ current: 0, total: 1, phase: "Uploading cover image…" });
-          squareBlob = await cropImageToSquare(imageFile);
-          const { uploadUrl, key } = await getPackCoverUploadUrl(packId, "image/jpeg");
-          const res = await fetch(uploadUrl, {
-            method: "PUT",
-            body: squareBlob,
-            headers: { "Content-Type": "image/jpeg" },
-          });
-          if (!res.ok) throw new Error("Failed to upload cover image");
-          coverImageS3Key = key;
-          coverImageUrl = null;
+        const ok = await savePackEdits();
+        if (ok) {
+          reset();
+          setDeleteConfirmOpen(false);
+          onOpenChange(false);
         }
-        await updatePack(packId, {
-          name: trimmed,
-          isPublic,
-          priceTokens,
-          defaultSampleTokens,
-          ...(coverImageS3Key !== undefined && { coverImageS3Key }),
-          ...(coverImageUrl !== undefined && { coverImageUrl }),
-        });
-        setUploadProgress(null);
-
-        if (folderPath && paneType && (imageFile || unsplashImageUrl)) {
-          try {
-            const ownerName = session?.user?.name ?? "Unknown";
-            const joinPath = (base: string, file: string) => base.replace(/\/$/, "") + (base ? "/" : "") + file;
-            const packJsonPath = joinPath(folderPath, "pack.json");
-            const existingFile = await getFileForPath(packJsonPath, paneType);
-            let packJson: Record<string, unknown> = {
-              packId,
-              name: trimmed,
-              coverImageS3Key: coverImageS3Key ?? null,
-              ownerName,
-              ...(unsplashImageUrl && { coverImageUrl: unsplashImageUrl }),
-            };
-            if (existingFile) {
-              try {
-                const existing = JSON.parse(await existingFile.text()) as Record<string, unknown>;
-                packJson = { ...existing, ...packJson };
-              } catch {
-                // use new packJson
-              }
-            }
-            packJson.name = trimmed;
-            if (coverImageS3Key) packJson.coverImageS3Key = coverImageS3Key;
-            if (unsplashImageUrl) {
-              packJson.coverImageUrl = unsplashImageUrl;
-              delete packJson.coverImage;
-            } else if (imageFile && squareBlob) {
-              const ext = imageFile.type?.includes("png") ? "png" : "jpg";
-              const coverImage = `cover.${ext}`;
-              packJson.coverImage = coverImage;
-              await writeBlobForPath(joinPath(folderPath, coverImage), squareBlob, paneType);
-            }
-            await writeBlobForPath(
-              packJsonPath,
-              new Blob([JSON.stringify(packJson, null, 2)], { type: "application/json" }),
-              paneType,
-            );
-          } catch (err) {
-            console.warn("Failed to write pack to folder:", err);
-          }
-        }
-
-        toast.success("Pack updated");
-        handleOpenChange(false);
-        onCreated?.(packId);
         return;
       }
 
@@ -709,11 +750,14 @@ export function CreatePackDialog({
     folderPath,
     paneType,
     handleOpenChange,
+    onOpenChange,
     onCreated,
+    reset,
     isEditMode,
     editPackId,
     createAsCopy,
     session?.user?.name,
+    savePackEdits,
   ]);
 
   return (
@@ -725,7 +769,7 @@ export function CreatePackDialog({
             {createAsCopy
               ? "Pack not found in this environment. Saving will create a copy with the samples from this folder. Analysis will run on the samples."
               : isEditMode
-                ? "Update pack metadata and cover image."
+                ? "Changes save when you close. Use undo (Ctrl+Z) to revert edits."
                 : folderPath
                   ? "Create a pack from this folder. Files are deduplicated by content hash."
                   : "Create a pack. Add a cover image (optional) — it will be cropped to square."}
@@ -901,22 +945,22 @@ export function CreatePackDialog({
             </Button>
           )}
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
-            Cancel
+            {isEditMode && !createAsCopy ? "Close" : "Cancel"}
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || Boolean(editLoadError)}>
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {createAsCopy ? "Creating…" : isEditMode ? "Saving…" : "Creating…"}
-              </>
-            ) : createAsCopy ? (
-              "Create copy"
-            ) : isEditMode ? (
-              "Save"
-            ) : (
-              "Create pack"
-            )}
-          </Button>
+          {!(isEditMode && !createAsCopy) && (
+            <Button onClick={handleSubmit} disabled={loading || Boolean(editLoadError)}>
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {createAsCopy ? "Creating…" : "Creating…"}
+                </>
+              ) : createAsCopy ? (
+                "Create copy"
+              ) : (
+                "Create pack"
+              )}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>

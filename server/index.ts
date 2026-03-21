@@ -99,8 +99,8 @@ app.route("/api/upload", uploadApp);
 // /api/rooms/* - no auth for public list
 app.route("/api/rooms", roomsApp);
 
-// /api/projects/* - requires auth
-app.use("/api/projects/*", requireAuth);
+// /api/projects/* - optional auth; POST/PUT/DELETE require auth via route middleware
+app.use("/api/projects/*", optionalAuth);
 app.route("/api/projects", projectsApp);
 
 // /api/admin/* - admin/superadmin only

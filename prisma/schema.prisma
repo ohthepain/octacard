@@ -24,7 +24,7 @@ model User {
   collection    SampleCollection[]
   packFavorites PackFavorite[]
   packHides     PackHide[]
-  project       Project?
+  projects      Project[]
 
   @@unique([email])
   @@map("user")
@@ -147,7 +147,7 @@ model PackHide {
 
 model Project {
   id                  String         @id @default(cuid())
-  userId              String         @unique
+  userId              String
   name                String         @default("Untitled")
   coverImageS3Key     String?
   coverImageUrl       String?        // Unsplash hotlink or external URL
@@ -164,8 +164,66 @@ model Project {
 
   user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   stacks              ProjectStack[]
+  localPacks          ProjectPack[]
 
+  @@index([userId])
   @@map("project")
+}
+
+model ProjectPack {
+  id              String   @id @default(cuid())
+  projectId       String
+  name            String
+  coverImageS3Key String?
+  coverImageUrl   String? // Unsplash hotlink or external URL
+  rootPath        String? // Deprecated: structure now in ProjectPackFolder + ProjectPackEntry
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folders   ProjectPackFolder[]
+  entries   ProjectPackEntry[]
+
+  @@index([projectId])
+  @@map("project_pack")
+}
+
+model ProjectPackFolder {
+  id        String   @id @default(cuid())
+  packId    String
+  parentId  String?  // null = root
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pack      ProjectPack         @relation(fields: [packId], references: [id], onDelete: Cascade)
+  parent    ProjectPackFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  ProjectPackFolder[] @relation("FolderHierarchy")
+  entries   ProjectPackEntry[]
+
+  @@index([packId])
+  @@index([parentId])
+  @@map("project_pack_folder")
+}
+
+model ProjectPackEntry {
+  id          String   @id @default(cuid())
+  packId      String
+  folderId    String?
+  displayName String   // Required before export; default: sourceBasename + " " + n
+  sourceRef   String   // temp://, remote://, local virtual path, or dest:/path when file lives on dest pane
+  regionStart Float    // seconds
+  regionEnd   Float    // seconds
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pack   ProjectPack        @relation(fields: [packId], references: [id], onDelete: Cascade)
+  folder ProjectPackFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([packId])
+  @@index([folderId])
+  @@map("project_pack_entry")
 }
 
 model ProjectStack {

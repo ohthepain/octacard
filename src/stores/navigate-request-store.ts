@@ -3,6 +3,7 @@ import { create } from "zustand";
 export type NavigateRequest =
   | { type: "pack"; packId: string }
   | { type: "folder"; path: string; paneType: "source" | "dest" }
+  | { type: "selectRoot"; paneType: "source" | "dest" }
   | null;
 
 interface NavigateRequestState {

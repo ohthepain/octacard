@@ -147,6 +147,9 @@ interface ProjectState {
   setBpmAuto: (enabled: boolean) => void;
   setPlayingSamplePosition: (pos: PlayingSamplePosition | null) => void;
   setPlayingSamplePositions: (positions: PlayingSamplePositions) => void;
+  setActiveStackId: (stackId: string) => void;
+  duplicateActiveStack: () => void;
+  clearStackById: (stackId: string) => void;
   setActiveSlotIndex: (index: number) => void;
   putSampleInActiveSlot: (sample: { path: string; name: string; paneType: PaneType }) => void;
   addToStack: (sample: { path: string; name: string; paneType: PaneType }) => void;
@@ -241,6 +244,54 @@ export const useProjectStore = create<ProjectState>()(
         setBpmAuto: (enabled) => set((s) => updateActiveStack(s, () => ({ bpmAuto: enabled }))),
         setPlayingSamplePosition: (pos) => set({ playingSamplePosition: pos }),
         setPlayingSamplePositions: (positions) => set({ playingSamplePositions: positions }),
+        setActiveStackId: (stackId) =>
+          set((state) => ({
+            activeStackId: state.stacks.some((stack) => stack.id === stackId) ? stackId : state.activeStackId,
+          })),
+
+        duplicateActiveStack: () =>
+          set((state) => {
+            const activeIndex = state.stacks.findIndex((stack) => stack.id === state.activeStackId);
+            const sourceIndex = activeIndex >= 0 ? activeIndex : Math.max(0, state.stacks.length - 1);
+            const source = state.stacks[sourceIndex];
+            if (!source) return {};
+            const copiedSlots = source.slots.map((slot) =>
+              slot
+                ? {
+                    ...slot,
+                    id: crypto.randomUUID(),
+                  }
+                : null,
+            );
+            const inserted: ProjectStackState = {
+              ...source,
+              id: crypto.randomUUID(),
+              name: `Stack ${state.stacks.length + 1}`,
+              sortOrder: source.sortOrder + 1,
+              slots: copiedSlots,
+            };
+            const nextStacks = [...state.stacks];
+            nextStacks.splice(sourceIndex + 1, 0, inserted);
+            return {
+              stacks: nextStacks.map((stack, index) => ({ ...stack, sortOrder: index })),
+              activeStackId: inserted.id,
+            };
+          }),
+
+        clearStackById: (stackId) =>
+          set((state) => {
+            const stackIndex = state.stacks.findIndex((stack) => stack.id === stackId);
+            if (stackIndex < 0) return {};
+            const nextStacks = [...state.stacks];
+            const target = nextStacks[stackIndex];
+            if (!target) return {};
+            nextStacks[stackIndex] = {
+              ...target,
+              slots: target.slots.map(() => null),
+              activeSlotIndex: 0,
+            };
+            return { stacks: nextStacks };
+          }),
 
         setActiveSlotIndex: (index) =>
           set((state) => {
@@ -268,35 +319,63 @@ export const useProjectStore = create<ProjectState>()(
 
         addToStack: (sample) =>
           set((state) => {
-            const active = state.stacks.find((s) => s.id === state.activeStackId) ?? state.stacks[0];
+            const activeIndex = state.stacks.findIndex((s) => s.id === state.activeStackId);
+            const resolvedActiveIndex = activeIndex >= 0 ? activeIndex : 0;
+            const active = state.stacks[resolvedActiveIndex];
             if (!active) return {};
             const bpm = getBpmFromSample(sample.name, sample.path);
             const newSample: StackSample = { id: crypto.randomUUID(), ...sample, bpm };
-            const newSlots = [...active.slots];
-            newSlots[active.activeSlotIndex] = newSample;
+            const nextStacks = state.stacks.map((stack) => ({
+              ...stack,
+              slots: [...stack.slots],
+            }));
+            const newSlots = nextStacks[resolvedActiveIndex]?.slots;
+            if (!newSlots) return {};
+            const lastOccupiedIndex = newSlots.reduce((last, slot, index) => (slot ? index : last), -1);
+            let insertIndex = lastOccupiedIndex + 1;
+            while (insertIndex >= newSlots.length) {
+              nextStacks.forEach((stack) => {
+                stack.slots.push(null);
+              });
+            }
+            newSlots[insertIndex] = newSample;
             const newStack = slotsToStack(newSlots);
             const newTempo = active.bpmAuto && newStack.length === 1 ? bpm : active.globalTempoBpm;
-            return updateActiveStack(state, () => ({
-              slots: newSlots,
-              globalTempoBpm: newTempo,
-            }));
+            const updatedActive = nextStacks[resolvedActiveIndex];
+            if (!updatedActive) return {};
+            updatedActive.activeSlotIndex = insertIndex;
+            updatedActive.globalTempoBpm = newTempo;
+            return { stacks: nextStacks };
           }),
 
         addSamplesToStack: (samples, maxCount = 8) =>
           set((state) => {
-            const active = state.stacks.find((s) => s.id === state.activeStackId) ?? state.stacks[0];
+            const activeIndex = state.stacks.findIndex((s) => s.id === state.activeStackId);
+            const resolvedActiveIndex = activeIndex >= 0 ? activeIndex : 0;
+            const active = state.stacks[resolvedActiveIndex];
             if (!active) return {};
             const toAdd = samples.slice(0, maxCount).map((s) => ({
               id: crypto.randomUUID(),
               ...s,
               bpm: getBpmFromSample(s.name, s.path),
             }));
-            const newSlots = [...active.slots];
-            let slotIdx = active.activeSlotIndex;
+            const nextStacks = state.stacks.map((stack) => ({
+              ...stack,
+              slots: [...stack.slots],
+            }));
+            const newSlots = nextStacks[resolvedActiveIndex]?.slots;
+            if (!newSlots) return {};
+            const lastOccupiedIndex = newSlots.reduce((last, slot, index) => (slot ? index : last), -1);
+            let slotIdx = lastOccupiedIndex + 1;
+            let lastInsertedIndex = active.activeSlotIndex;
             for (const s of toAdd) {
-              while (slotIdx < newSlots.length && newSlots[slotIdx] != null) slotIdx++;
-              if (slotIdx >= newSlots.length) break;
+              while (slotIdx >= newSlots.length) {
+                nextStacks.forEach((stack) => {
+                  stack.slots.push(null);
+                });
+              }
               newSlots[slotIdx] = s;
+              lastInsertedIndex = slotIdx;
               slotIdx++;
             }
             const newStack = slotsToStack(newSlots);
@@ -304,10 +383,11 @@ export const useProjectStore = create<ProjectState>()(
               active.bpmAuto && newStack.length > 0 && slotsToStack(active.slots).length === 0
                 ? toAdd[0].bpm
                 : active.globalTempoBpm;
-            return updateActiveStack(state, () => ({
-              slots: newSlots,
-              globalTempoBpm: newTempo,
-            }));
+            const updatedActive = nextStacks[resolvedActiveIndex];
+            if (!updatedActive) return {};
+            updatedActive.activeSlotIndex = lastInsertedIndex;
+            updatedActive.globalTempoBpm = newTempo;
+            return { stacks: nextStacks };
           }),
 
         addSlotRow: () =>

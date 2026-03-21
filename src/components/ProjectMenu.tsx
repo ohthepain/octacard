@@ -56,6 +56,7 @@ export function ProjectMenu() {
   const setIsPublic = useProjectStore((s) => s.setIsPublic);
   const persistToProject = useCurrentProjectStore((s) => s.persistToProject);
   const createNewProject = useCurrentProjectStore((s) => s.createNewProject);
+  const saveDraftAsProject = useCurrentProjectStore((s) => s.saveDraftAsProject);
 
   const [isSaving, setIsSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -211,6 +212,52 @@ export function ProjectMenu() {
     }
   };
 
+  const handleSaveDraft = async () => {
+    const name = (projectName?.trim() || "Untitled").slice(0, 120);
+    setIsSaving(true);
+    try {
+      const coverUrl = imagePreview?.startsWith("http") ? imagePreview : null;
+      const project = await saveDraftAsProject(name, null, coverUrl);
+      if (project) {
+        if (imageFile) {
+          setIsUploadingCover(true);
+          try {
+            if (isAuthenticated) {
+              const squareBlob = await cropImageToSquare(imageFile);
+              const { uploadUrl, key } = await getProjectCoverUploadUrl(project.id, "image/jpeg");
+              const res = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: { "Content-Type": "image/jpeg" },
+                body: squareBlob,
+              });
+              if (!res.ok) throw new Error("Failed to upload cover image");
+              useProjectStore.getState().setCoverImage(key, null);
+            } else {
+              const squareBlob = await cropImageToSquare(imageFile);
+              const reader = new FileReader();
+              const dataUrl = await new Promise<string>((resolve, reject) => {
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(squareBlob);
+              });
+              useProjectStore.getState().setCoverImage(null, dataUrl);
+            }
+            await persistToProject();
+          } finally {
+            setIsUploadingCover(false);
+          }
+        }
+        setImageFile(null);
+        setDialogOpen(false);
+        toast.success("Project saved");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save project");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleCreateNew = async () => {
     setDialogOpen(false);
     try {
@@ -257,6 +304,7 @@ export function ProjectMenu() {
         </DialogHeader>
         <div className="space-y-6">
           {projectId ? (
+            /* Existing project: edit name, image, visibility, save */
             <>
               <div className="space-y-2">
                 <Label htmlFor="project-name">Project name</Label>
@@ -388,7 +436,112 @@ export function ProjectMenu() {
                 {isSaving ? "Saving…" : "Save project"}
               </Button>
             </>
-          ) : null}
+          ) : (
+            /* No project: save current work as new project with name and image */
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="project-name-draft">Project name</Label>
+                <Input
+                  id="project-name-draft"
+                  value={projectName}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Untitled"
+                  maxLength={120}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Project image</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Search for random image (e.g. music, abstract)"
+                    value={imageSearchQuery}
+                    onChange={(e) => setImageSearchQuery(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="h-9 w-9 shrink-0"
+                    onClick={() => void handleUnsplashRandom()}
+                    disabled={unsplashLoading}
+                    title="Generate random image from Unsplash"
+                    aria-label="Generate random image"
+                  >
+                    {unsplashLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Dices className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-20 h-20 rounded-lg border border-border overflow-hidden bg-muted shrink-0">
+                    {imagePreview || coverDisplayUrl ? (
+                      <img
+                        src={imagePreview ?? coverDisplayUrl ?? undefined}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="flex w-full h-full cursor-pointer items-center justify-center text-muted-foreground hover:bg-muted/80 transition-colors"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <span className="flex flex-col items-center gap-1">
+                          <ImagePlus className="w-6 h-6" />
+                          <span className="text-xs">Upload</span>
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 min-w-0">
+                    {!(imagePreview || coverDisplayUrl) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingCover}
+                      >
+                        Choose image
+                      </Button>
+                    )}
+                    {(imagePreview || coverDisplayUrl) && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploadingCover}
+                        >
+                          {imageFile ? "Change" : "Upload different"}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={IMAGE_TYPES.join(",")}
+                  className="hidden"
+                  onChange={handleCoverFileChange}
+                />
+              </div>
+              <Button
+                onClick={() => void handleSaveDraft()}
+                disabled={isSaving || isUploadingCover}
+                className="w-full"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {isSaving || isUploadingCover ? "Saving…" : "Save project"}
+              </Button>
+            </>
+          )}
           <Button variant="outline" onClick={handleCreateNew} className="w-full">
             <FilePlus className="w-4 h-4 mr-2" />
             Create new project

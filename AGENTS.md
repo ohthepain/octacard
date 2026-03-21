@@ -1,5 +1,18 @@
 # Octacard Agent Notes
 
+## UX documentation (main layout)
+
+For the three-column shell and what each column is responsible for, see **`docs/ux/`**:
+
+| Doc | Scope |
+| --- | --- |
+| `docs/ux/main-layout.md` | Columns + optional wave editor |
+| `docs/ux/project-pane.md` | Left: `ProjectColumn`, packs, pins |
+| `docs/ux/navigation-pane.md` | Center browser / navigation |
+| `docs/ux/editor-pane.md` | Right editor |
+
+Cursor also loads **`.cursor/rules/ux-documentation.mdc`** when relevant files are in context (see that file’s `globs`). To surface these docs in **every** chat, set `alwaysApply: true` in that rule’s frontmatter.
+
 ## Request Manager Rule
 
 - Route **all client -> server** requests through `src/lib/api-client.ts` (`apiFetch`).

@@ -3,7 +3,10 @@ import { usePlayerStore } from "./player-store";
 
 interface WaveformEditorState {
   isOpen: boolean;
-  /** When true, selecting a sample opens the waveform editor */
+  /**
+   * Header toggle / ⌘E: enables empty editor and closes the panel when turned off.
+   * Opening a specific file always uses {@link openWithFile} / {@link openWithFileFromMulti} regardless of this flag.
+   */
   enabled: boolean;
   /** True when opened from header button (empty state) */
   isEmptyState: boolean;
@@ -43,7 +46,6 @@ export const useWaveformEditorStore = create<WaveformEditorState>((set, get) => 
   },
 
   openWithFile: (filePath, fileName, paneType) => {
-    if (!get().enabled) return;
     const player = usePlayerStore.getState();
     if (player.mode === "single" && player.isPlaying) {
       player.stop();
@@ -60,7 +62,6 @@ export const useWaveformEditorStore = create<WaveformEditorState>((set, get) => 
   },
 
   openWithFileFromMulti: (filePath, fileName, paneType, sampleId) => {
-    if (!get().enabled) return;
     set({
       isOpen: true,
       isEmptyState: false,

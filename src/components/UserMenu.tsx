@@ -29,7 +29,7 @@ export function UserMenu() {
     () => profileNameOverride ?? user?.name ?? user?.email ?? "User",
     [profileNameOverride, user?.email, user?.name],
   );
-  const displayImage = profileImageOverride !== undefined ? profileImageOverride : user?.image ?? null;
+  const displayImage = profileImageOverride !== undefined ? profileImageOverride : (user?.image ?? null);
 
   useEffect(() => {
     if (!user) {
@@ -38,30 +38,32 @@ export function UserMenu() {
     }
   }, [user]);
 
-  const initials = isPending
-    ? "…"
-    : displayName
-      ? displayName
-          .split(" ")
-          .map((n) => n[0])
-          .join("")
-          .toUpperCase()
-          .slice(0, 2)
-      : user?.email?.[0]?.toUpperCase() ?? "?";
+  const initials = user
+    ? displayName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2) ||
+      user.email?.[0]?.toUpperCase() ||
+      "?"
+    : null;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-full"
-          aria-label="User menu"
-          data-testid="user-menu"
-        >
+        <Button variant="ghost" size="icon" className="rounded-full" aria-label="User menu" data-testid="user-menu">
           <Avatar className="h-8 w-8">
-            <AvatarImage src={displayImage ?? undefined} alt={displayName} />
-            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+            {displayImage ? <AvatarImage src={displayImage} alt={displayName} referrerPolicy="no-referrer" /> : null}
+            <AvatarFallback className="text-xs">
+              {isPending ? (
+                <span className="text-muted-foreground">…</span>
+              ) : user ? (
+                initials
+              ) : (
+                <UserRound className="h-4 w-4 text-muted-foreground" aria-hidden />
+              )}
+            </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
@@ -111,14 +113,6 @@ export function UserMenu() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => setDevMode(!devMode)}
-              className="flex items-center gap-2 cursor-pointer"
-              data-testid="dev-mode-button"
-            >
-              <ToggleLeft className={`h-4 w-4 ${devMode ? "text-orange-500" : ""}`} />
-              Dev Mode {devMode ? "On" : "Off"}
-            </DropdownMenuItem>
-            <DropdownMenuItem
               onClick={() => openCacheDebug()}
               className="flex items-center gap-2 cursor-pointer text-violet-600 focus:text-violet-600"
               data-testid="cache-debug-button"
@@ -127,7 +121,10 @@ export function UserMenu() {
               Cache Debug
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut()} className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              onClick={() => signOut()}
+              className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+            >
               <LogOut className="h-4 w-4" />
               Sign out
             </DropdownMenuItem>

@@ -2,7 +2,15 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { FilePane } from "@/components/FilePane";
 import { RemoteFilePane } from "@/components/RemoteFilePane";
 import { TempFilesPane } from "@/components/TempFilesPane";
-import { FavoritesColumn } from "@/components/FavoritesColumn";
+import { ProjectColumn } from "@/components/ProjectColumn";
+import {
+  LocalPackEditorDialog,
+  type LocalPackEditorState,
+} from "@/components/LocalPackEditorDialog";
+import {
+  PackStructurePane,
+  type PackEntryOpenPayload,
+} from "@/components/PackStructurePane";
 import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
 import { Link, useSearch, useNavigate } from "@tanstack/react-router";
@@ -11,6 +19,12 @@ import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/Overw
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import MiddleEllipsis from "@/components/MiddleEllipsis";
 import { Progress } from "@/components/ui/progress";
-import { Play, HelpCircle, Activity, Globe, House, Radio } from "lucide-react";
+import { Play, HelpCircle, Activity, Globe, House, Radio, Download, Loader2 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useProjectStore } from "@/stores/project-store";
@@ -61,6 +75,20 @@ import { setCurrentPack } from "@/lib/current-pack";
 import { useNavigateRequestStore } from "@/stores/navigate-request-store";
 import { useCurrentProjectStore } from "@/stores/current-project-store";
 import { useFollowListenStore } from "@/stores/follow-listen-store";
+import { useFavorites } from "@/hooks/use-favorites";
+import { useProjectColumn } from "@/stores/project-column-store";
+import {
+  deleteProjectPack as deleteLocalProjectPack,
+  getProjectLocalPackCoverDisplayUrl,
+  listProjectPacks,
+  type ProjectLocalPack,
+} from "@/lib/project-packs";
+import {
+  exportLocalPackFolderToFolder,
+  exportLocalPackFolderToZip,
+  exportProjectPackStructureToFolder,
+  exportProjectPackStructureToZip,
+} from "@/lib/project-export";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -189,12 +217,15 @@ const Index = () => {
 
   const [aboutOpen, setAboutOpen] = useState(false);
   const [openPackId, setOpenPackId] = useState<string | null>(null);
+  const [editorMode, setEditorMode] = useState<"stack" | "pack">("stack");
+  const [packEditorRequestedPath, setPackEditorRequestedPath] = useState<string | null>(null);
   const previewMode = useProjectStore((s) => s.getActiveStack()?.previewMode ?? "single");
   const setPreviewMode = useProjectStore((s) => s.setPreviewMode);
   const addSamplesToStack = useProjectStore((s) => s.addSamplesToStack);
   const globalTempoBpm = useProjectStore((s) => s.getActiveStack()?.globalTempoBpm ?? 120);
   const setGlobalTempoBpm = useProjectStore((s) => s.setGlobalTempoBpm);
   const bpmAuto = useProjectStore((s) => s.getActiveStack()?.bpmAuto ?? true);
+  const currentEditorName = editorMode === "pack" ? "PACK EDITOR" : previewMode === "multi" ? "STACKS" : "PACK";
   const setBpmAuto = useProjectStore((s) => s.setBpmAuto);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -220,6 +251,14 @@ const Index = () => {
   const [destRefreshToken, setDestRefreshToken] = useState(0);
   const [libraryMode, setLibraryMode] = useState<"local" | "global">("global");
   const [globalScope, setGlobalScope] = useState<"mine" | "all" | "explore" | "rooms">("all");
+  const projectId = useProjectStore((s) => s.id);
+  const [localProjectPacks, setLocalProjectPacks] = useState<ProjectLocalPack[]>([]);
+  const [localPackEditor, setLocalPackEditor] = useState<LocalPackEditorState | null>(null);
+  const [activeLocalPackId, setActiveLocalPackId] = useState<string | null>(null);
+  const [exportingLocalPack, setExportingLocalPack] = useState(false);
+  const { favorites: sourceLocalFolders, addFavorite, removeFavorite } = useFavorites("source", sourceVolumeId);
+  const { globalPacks, addGlobalPack, removeGlobalPack } = useProjectColumn(projectId);
+  const activeLocalPack = localProjectPacks.find((pack) => pack.id === activeLocalPackId) ?? null;
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const waveformEditor = useWaveformEditorStore(
     useShallow((s) => ({
@@ -251,6 +290,9 @@ const Index = () => {
   const conversionCancelRequestedRef = useRef(false);
   const conversionAbortControllerRef = useRef<AbortController | null>(null);
   const overwriteChoiceResolverRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
+  const handleBrowseForFolderRef = useRef<(paneType: "source" | "dest", currentPath?: string) => Promise<void>>(
+    async () => {},
+  );
 
   const promptOverwriteChoice = useCallback((): Promise<OverwriteChoice> => {
     setOverwriteConfirmOpen(true);
@@ -297,6 +339,33 @@ const Index = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!projectId) {
+      setLocalProjectPacks([]);
+      setActiveLocalPackId(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const packs = await listProjectPacks(projectId);
+        if (!cancelled) {
+          setLocalProjectPacks(packs);
+          setActiveLocalPackId((current) => (current && packs.some((pack) => pack.id === current) ? current : null));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error("Failed to load local packs", {
+            description: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   // Handle openPack from URL (e.g. from Admin Queue dashboard)
   useEffect(() => {
     const packId = search?.openPack;
@@ -328,6 +397,9 @@ const Index = () => {
       } else {
         setRequestedDestPath(pendingRequest.path);
       }
+    } else if (pendingRequest.type === "selectRoot") {
+      setLibraryMode("local");
+      void handleBrowseForFolderRef.current(pendingRequest.paneType, "/");
     }
     clearRequest();
   }, [pendingRequest, clearRequest, libraryMode]);
@@ -449,19 +521,16 @@ const Index = () => {
     }
   }, []);
 
-  const handleDestPathChange = useCallback((path: string, volumeId: string) => {
-    setDestPath(path);
-    setDestVolumeId(volumeId);
-  }, []);
-
   const handleRequestedSourcePathHandled = useCallback(() => setRequestedSourcePath(null), []);
-  const handleRequestedDestPathHandled = useCallback(() => setRequestedDestPath(null), []);
   const handleRequestedSourceRevealPathHandled = useCallback(() => setRequestedSourceRevealPath(null), []);
-  const handleRequestedDestRevealPathHandled = useCallback(() => setRequestedDestRevealPath(null), []);
 
-  const handleFileTransfer = (sourcePath: string, destinationPath: string) => {
-    console.log("File transfer completed:", { sourcePath, destinationPath });
-  };
+  const handlePackEntryOpen = useCallback((payload: PackEntryOpenPayload) => {
+    if (payload.paneType === "dest") {
+      setSelectedDestItem({ path: payload.path, type: "file", name: payload.name });
+    } else {
+      setSelectedSourceItem({ path: payload.path, type: "file", name: payload.name });
+    }
+  }, []);
 
   const handleStartConversion = async () => {
     if (!fileSystemService.hasRootForPane("source") || !fileSystemService.hasRootForPane("dest")) {
@@ -818,6 +887,7 @@ const Index = () => {
       }
     }
   };
+  handleBrowseForFolderRef.current = handleBrowseForFolder;
 
   const handlePreviewModeChange = useCallback(
     (value: string) => {
@@ -886,30 +956,188 @@ const Index = () => {
     we.open();
   }, [previewMode, selectedSourceItem, selectedDestItem]);
 
-  const handleBrowseFromFavorite = async (paneType: "source" | "dest", favoritePath: string) => {
-    const result = await fileSystemService.requestDirectoryForPane(paneType, favoritePath);
-    if (result.success && result.data) {
-      applyBrowseSelection(paneType, result.data);
-      if (result.warning) {
-        toast.warning("Same Folder Selected", {
-          description: result.warning,
-          duration: 6000,
-        });
-      }
-    } else if (!result.success) {
-      if (isUnsupportedBrowser()) {
-        toast.error("Browser Not Supported", {
-          description:
-            "OctaCard supports Brave, Chrome, and other Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
-          duration: 8000,
-        });
-      } else if (result.error !== "User cancelled directory selection") {
-        toast.error("Failed to Browse Folder", {
-          description: result.error || "Unable to open folder picker. Please try again.",
-        });
-      }
+  const handlePickLocalFolderShortcut = useCallback(async () => {
+    if (isUnsupportedBrowser()) {
+      toast.error("Browser Not Supported", {
+        description:
+          "OctaCard supports Brave, Chrome, and other Chromium-based browsers (including ChatGPT Atlas). Safari, Firefox, and other non-Chromium browsers are not supported.",
+        duration: 8000,
+      });
+      return;
     }
-  };
+    if (!fileSystemService.hasRootForPane("source")) {
+      toast.error("No library folder", {
+        description: "Choose a library folder in Local mode first, then you can pin shortcuts here.",
+        duration: 6000,
+      });
+      return;
+    }
+    const result = await fileSystemService.pickDirectoryForSourceFavoritePin(sourcePath || undefined);
+    if (result.success && result.data) {
+      addFavorite(result.data.path, result.data.name);
+    } else if (!result.success && result.error !== "User cancelled directory selection") {
+      toast.error("Could not add shortcut", {
+        description: result.error || "Try again or drag a folder from the file list.",
+        duration: 6000,
+      });
+    }
+  }, [addFavorite, sourcePath]);
+
+  const handleBrowseGlobalPacksFromColumn = useCallback(() => {
+    setLibraryMode("global");
+    setGlobalScope("all");
+    if (search?.creator) {
+      void navigate({ to: "/", search: {} });
+    }
+  }, [navigate, search?.creator]);
+
+  const handleCreateProjectPack = useCallback(() => {
+    if (!projectId) {
+      toast.error("No active project");
+      return;
+    }
+    const nextIndex = localProjectPacks.length + 1;
+    setLocalPackEditor({
+      mode: "create",
+      suggestedName: `Local Pack ${nextIndex}`,
+    });
+  }, [projectId, localProjectPacks.length]);
+
+  const handleEditProjectPack = useCallback(
+    (packId: string) => {
+      const pack = localProjectPacks.find((entry) => entry.id === packId);
+      if (pack) setLocalPackEditor({ mode: "edit", pack });
+    },
+    [localProjectPacks],
+  );
+
+  const handleLocalPackSaved = useCallback((pack: ProjectLocalPack, saveMode: "create" | "edit") => {
+    if (saveMode === "create") {
+      setLocalProjectPacks((current) => [pack, ...current]);
+      setEditorMode("pack");
+      setActiveLocalPackId(pack.id);
+      setPackEditorRequestedPath(null);
+      setRequestedSourcePath(null);
+    } else {
+      setLocalProjectPacks((current) => current.map((p) => (p.id === pack.id ? pack : p)));
+    }
+  }, []);
+
+  const handleOpenProjectPack = useCallback(
+    (packId: string) => {
+      const pack = localProjectPacks.find((entry) => entry.id === packId);
+      if (!pack) return;
+      setEditorMode("pack");
+      setActiveLocalPackId(pack.id);
+      setPackEditorRequestedPath(null);
+      setRequestedSourcePath(null);
+    },
+    [localProjectPacks],
+  );
+
+  const handleOpenGlobalProjectPack = useCallback((packId: string) => {
+    setLibraryMode("global");
+    setOpenPackId(packId);
+  }, []);
+
+  /** Open a project-pinned local folder in the source FilePane; does not change editor column mode or selection. */
+  const handleOpenProjectLocalFolder = useCallback(async (path: string) => {
+    setLibraryMode("local");
+    setPackEditorRequestedPath(null);
+
+    if (!fileSystemService.hasRootForPane("source")) {
+      // Without a source root, FilePane cannot list the pin path (empty tree + misleading copy).
+      await handleBrowseForFolderRef.current("source", path);
+      if (fileSystemService.hasRootForPane("source")) {
+        setRequestedSourcePath(path);
+      }
+      return;
+    }
+
+    setRequestedSourcePath(path);
+  }, []);
+
+  const handleRemoveProjectPack = useCallback(
+    async (packId: string) => {
+      if (!projectId) return;
+      try {
+        await deleteLocalProjectPack(projectId, packId);
+        setLocalProjectPacks((current) => current.filter((pack) => pack.id !== packId));
+        if (activeLocalPackId === packId) {
+          setActiveLocalPackId(null);
+          setPackEditorRequestedPath(null);
+          setEditorMode("stack");
+        }
+      } catch (error) {
+        toast.error("Failed to delete local pack", {
+          description: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    },
+    [projectId, activeLocalPackId],
+  );
+
+  const handleExportLocalPackToZip = useCallback(async () => {
+    if (!activeLocalPack || !projectId) {
+      toast.error("Select a local pack first");
+      return;
+    }
+    setExportingLocalPack(true);
+    try {
+      const result = activeLocalPack.rootPath
+        ? await exportLocalPackFolderToZip(activeLocalPack.name, activeLocalPack.rootPath, "source")
+        : await exportProjectPackStructureToZip(projectId, activeLocalPack.id, activeLocalPack.name);
+      if (!result.success) {
+        toast.error(result.error ?? "Export failed");
+        return;
+      }
+      toast.success(`Downloaded ${result.count ?? 0} files`);
+    } finally {
+      setExportingLocalPack(false);
+    }
+  }, [activeLocalPack, projectId]);
+
+  const handleExportLocalPackToFolder = useCallback(async () => {
+    if (!activeLocalPack || !projectId) {
+      toast.error("Select a local pack first");
+      return;
+    }
+
+    const pickResult = await fileSystemService.requestDirectoryForPane("dest");
+    if (!pickResult.success || !pickResult.data) {
+      if (!pickResult.cancelled) {
+        toast.error(pickResult.error ?? "No destination selected");
+      }
+      return;
+    }
+
+    const destinationParent = pickResult.data.virtualPath || "/";
+    setExportingLocalPack(true);
+    try {
+      const result = activeLocalPack.rootPath
+        ? await exportLocalPackFolderToFolder(
+            activeLocalPack.name,
+            activeLocalPack.rootPath,
+            destinationParent,
+            "source",
+            "dest",
+          )
+        : await exportProjectPackStructureToFolder(
+            projectId,
+            activeLocalPack.id,
+            activeLocalPack.name,
+            destinationParent,
+            "dest",
+          );
+      if (!result.success) {
+        toast.error(result.error ?? "Export failed");
+        return;
+      }
+      toast.success(`Exported ${result.count ?? 0} files to folder`);
+    } finally {
+      setExportingLocalPack(false);
+    }
+  }, [activeLocalPack, projectId]);
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -919,14 +1147,31 @@ const Index = () => {
           <ProjectMenu />
           <LiveToggle />
           <Button
-            variant={previewMode === "multi" ? "default" : "outline"}
+            variant={editorMode === "stack" && previewMode === "multi" ? "default" : "outline"}
             size="sm"
-            aria-pressed={previewMode === "multi" ? "true" : "false"}
+            aria-pressed={editorMode === "stack" && previewMode === "multi" ? "true" : "false"}
             aria-label="Multi preview"
             data-testid="multi-mode-toggle"
-            onClick={() => handlePreviewModeChange(previewMode === "multi" ? "single" : "multi")}
+            onClick={() => {
+              setEditorMode("stack");
+              handlePreviewModeChange(previewMode === "multi" ? "single" : "multi");
+            }}
           >
             Stack
+          </Button>
+          <Button
+            variant={editorMode === "pack" ? "default" : "outline"}
+            size="sm"
+            aria-pressed={editorMode === "pack" ? "true" : "false"}
+            aria-label="Pack editor mode"
+            onClick={() => {
+              setEditorMode("pack");
+              if (sourcePath) {
+                setPackEditorRequestedPath(sourcePath);
+              }
+            }}
+          >
+            Pack
           </Button>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -942,10 +1187,31 @@ const Index = () => {
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Show waveform when selecting samples (⌘E)</p>
+              <p>Waveform editor panel (⌘E). Tap any sample to open it even when this is off.</p>
             </TooltipContent>
           </Tooltip>
-          {previewMode === "multi" && <ExportPackButton />}
+          {editorMode === "pack" && activeLocalPack ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={exportingLocalPack} aria-label="Export local pack">
+                  {exportingLocalPack ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {hasDirectoryPickerSupport() && (
+                  <DropdownMenuItem onClick={() => void handleExportLocalPackToFolder()} disabled={exportingLocalPack}>
+                    Export to folder...
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => void handleExportLocalPackToZip()} disabled={exportingLocalPack}>
+                  Download as zip
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : previewMode === "multi" ? (
+            <ExportPackButton />
+          ) : null}
           <BpmInput
             value={globalTempoBpm}
             onChange={setGlobalTempoBpm}
@@ -989,7 +1255,11 @@ const Index = () => {
               <Button
                 size="sm"
                 variant={globalScope === "mine" ? "secondary" : "ghost"}
-                className={search?.creator ? "rounded-none h-8 px-3 text-xs whitespace-nowrap" : "rounded-none h-8 px-3 text-xs whitespace-nowrap"}
+                className={
+                  search?.creator
+                    ? "rounded-none h-8 px-3 text-xs whitespace-nowrap"
+                    : "rounded-none h-8 px-3 text-xs whitespace-nowrap"
+                }
                 onClick={() => {
                   setGlobalScope("mine");
                   if (search?.creator) navigate({ to: "/", search: {} });
@@ -1084,40 +1354,54 @@ const Index = () => {
 
       <ReleaseTourPointer />
 
-      {/* Main Content: Flat 4-panel layout so favorites and browser dividers are independent */}
+      <LocalPackEditorDialog
+        open={localPackEditor !== null}
+        onOpenChange={(open) => {
+          if (!open) setLocalPackEditor(null);
+        }}
+        projectId={projectId}
+        state={localPackEditor}
+        onSaved={handleLocalPackSaved}
+      />
+
+      {/* Main Content: Source favorites + source browser + editor */}
       <div className="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <ResizablePanelGroup
           orientation="horizontal"
           className="flex-1 min-h-0 min-w-0"
           id="main-layout"
           defaultLayout={{
-            "left-fav": 20,
-            "source-browser": 30,
-            "dest-browser": 30,
-            "right-fav": 20,
+            "left-fav": 22,
+            "source-browser": 38,
+            editor: 40,
           }}
         >
           {/* Left: Source Favorites - only this separator affects favorites vs center. Hidden when no FS API. */}
           <ResizablePanel id="left-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            {hasDirectoryPickerSupport() && libraryMode === "local" ? (
-              <FavoritesColumn
-                paneType="source"
-                volumeId={sourceVolumeId}
-                currentPath={sourcePath}
-                onNavigate={setRequestedSourcePath}
-                onBrowseFromFavorite={(path) => handleBrowseFromFavorite("source", path)}
-                title="Source Favorites"
-                showTempFilesButton
-              />
-            ) : libraryMode === "global" ? (
-              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
-                Global library mode is active. Drag packs or samples into the destination pane to download.
-              </div>
-            ) : (
-              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
-                Temp Files mode. Add files or folders to get started.
-              </div>
-            )}
+            <ProjectColumn
+              currentPath={sourcePath}
+              projectPacks={localProjectPacks.map((pack) => ({
+                id: pack.id,
+                name: pack.name,
+                coverImageProxyUrl: projectId
+                  ? getProjectLocalPackCoverDisplayUrl(projectId, pack)
+                  : undefined,
+              }))}
+              localFolders={sourceLocalFolders}
+              globalPacks={globalPacks}
+              onCreatePack={handleCreateProjectPack}
+              onEditProjectPack={handleEditProjectPack}
+              onOpenProjectPack={handleOpenProjectPack}
+              onRemoveProjectPack={(packId) => void handleRemoveProjectPack(packId)}
+              onOpenGlobalPack={handleOpenGlobalProjectPack}
+              onAddGlobalPack={addGlobalPack}
+              onRemoveGlobalPack={removeGlobalPack}
+              onOpenLocalFolder={handleOpenProjectLocalFolder}
+              onAddLocalFolder={addFavorite}
+              onRemoveLocalFolder={removeFavorite}
+              onPickLocalFolderShortcut={hasDirectoryPickerSupport() ? handlePickLocalFolderShortcut : undefined}
+              onBrowseGlobalPacks={handleBrowseGlobalPacksFromColumn}
+            />
           </ResizablePanel>
           <ResizableHandle withHandle />
 
@@ -1137,7 +1421,8 @@ const Index = () => {
                   creatorId={search?.creator ?? undefined}
                 />
               ) : libraryMode === "local" &&
-                (!hasDirectoryPickerSupport() || requestedSourcePath?.startsWith("temp://")) ? (
+                (!hasDirectoryPickerSupport() ||
+                  requestedSourcePath?.startsWith("temp://")) ? (
                 <TempFilesPane
                   paneName="source"
                   title="Temp Files"
@@ -1151,7 +1436,7 @@ const Index = () => {
                 <FilePane
                   key={`source-${sourceRootVersion}`}
                   paneName="source"
-                  title="Source"
+                  title="Local Files"
                   showSidebar={false}
                   onPathChange={handleSourcePathChange}
                   onSelectionChange={setSelectedSourceItem}
@@ -1181,69 +1466,33 @@ const Index = () => {
           </ResizablePanel>
           <ResizableHandle withHandle />
 
-          {/* Dest Browser - center separator only affects source vs dest */}
-          <ResizablePanel id="dest-browser" defaultSize="30%" minSize="15%">
-            <div className="h-full min-h-0" data-testid="panel-dest">
-              {hasDirectoryPickerSupport() ? (
-                <FilePane
-                  key={`dest-${destRootVersion}`}
-                  paneName="dest"
-                  title="Destination"
-                  onFileTransfer={handleFileTransfer}
-                  showSidebar={false}
-                  onPathChange={handleDestPathChange}
-                  onSelectionChange={setSelectedDestItem}
-                  onRequestedPathHandled={handleRequestedDestPathHandled}
-                  requestedPath={requestedDestPath}
-                  onRequestedRevealPathHandled={handleRequestedDestRevealPathHandled}
-                  requestedRevealPath={requestedDestRevealPath}
-                  dropMode="navigate"
-                  sampleRate={formatSettings.sampleRate}
-                  sampleDepth={formatSettings.sampleDepth}
-                  fileFormat={formatSettings.fileFormat}
-                  pitch={formatSettings.pitch}
-                  sanitizeFilename={formatSettings.sanitizeFilename}
-                  shortenFilename={formatSettings.shortenFilename}
-                  shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
-                  mono={formatSettings.mono}
-                  normalize={formatSettings.normalize}
-                  trimStart={formatSettings.trim}
-                  autoNavigateToCard={true}
-                  convertFiles={true}
-                  showEjectButton={true}
-                  showNewFolderButton={true}
-                  onBrowseForFolder={(path) => handleBrowseForFolder("dest", path)}
-                  refreshToken={destRefreshToken}
-                />
-              ) : (
-                <TempFilesPane
-                  paneName="dest"
-                  title="Temp Files"
-                  onSelectionChange={setSelectedDestItem}
-                  onPathChange={(path) => handleDestPathChange(path, "_default")}
-                  refreshToken={destRefreshToken}
-                />
-              )}
-            </div>
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-
-          {/* Right: Dest Favorites - hidden when no FS API */}
-          <ResizablePanel id="right-fav" defaultSize="20%" minSize="10%" maxSize="30%">
-            {hasDirectoryPickerSupport() ? (
-              <FavoritesColumn
-                paneType="dest"
-                volumeId={destVolumeId}
-                currentPath={destPath}
-                onNavigate={(path) => setRequestedDestPath(path)}
-                onBrowseFromFavorite={(path) => handleBrowseFromFavorite("dest", path)}
-                title="Dest Favorites"
-              />
-            ) : (
-              <div className="h-full border border-border rounded-lg p-4 text-sm text-muted-foreground bg-card">
-                Temp Files mode. Add files or folders in the destination pane.
+          {/* Editor */}
+          <ResizablePanel id="editor" defaultSize="40%" minSize="20%">
+            <div className="h-full min-h-0 border border-border bg-card flex flex-col" data-testid="panel-editor">
+              <div className="px-4 py-3">
+                <h2 className="text-sm font-semibold">{currentEditorName}</h2>
               </div>
-            )}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {editorMode === "pack" && projectId && activeLocalPackId ? (
+                  <PackStructurePane
+                    projectId={projectId}
+                    packId={activeLocalPackId}
+                    packDisplayName={activeLocalPack?.name ?? "Pack"}
+                    onPackEntryOpen={handlePackEntryOpen}
+                  />
+                ) : editorMode === "pack" ? (
+                  <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground text-center">
+                    Select a pack from Local Packs to edit.
+                  </div>
+                ) : previewMode === "multi" ? (
+                  <MultiSampleStack rootReloadToken={`${sourceRootVersion}:${destRootVersion}`} />
+                ) : (
+                  <div className="h-full flex items-center justify-center px-6 text-sm text-muted-foreground text-center">
+                    Switch to Multi mode to edit and arrange your sample stack.
+                  </div>
+                )}
+              </div>
+            </div>
           </ResizablePanel>
         </ResizablePanelGroup>
         {waveformEditor.isOpen && (
@@ -1259,9 +1508,6 @@ const Index = () => {
               else setDestRefreshToken((t) => t + 1);
             }}
           />
-        )}
-        {previewMode === "multi" && (
-          <MultiSampleStack className="shrink-0" rootReloadToken={`${sourceRootVersion}:${destRootVersion}`} />
         )}
       </div>
 

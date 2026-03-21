@@ -21,6 +21,12 @@ export function requireUser(c: Context<{ Variables: AppVariables }>): User {
   return user;
 }
 
+/** Middleware: ensures user is in context, then calls next(). Use after requireAuth. */
+export const requireUserMiddleware: MiddlewareHandler = async (c, next) => {
+  requireUser(c);
+  await next();
+};
+
 export const requireAuth: MiddlewareHandler = async (c, next) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session?.user) {
