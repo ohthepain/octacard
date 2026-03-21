@@ -1310,6 +1310,8 @@ export const AudioPreview = ({
     audioUrl,
     normalize,
     filePath,
+    /** Same file can get a new stack slot id on each pack tap (multi preview); filePath effect destroys WS when this changes. */
+    multiSampleId,
     setEdits,
     debouncedWaveformHeight,
     stopPlayer,

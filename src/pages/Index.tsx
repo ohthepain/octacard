@@ -94,6 +94,7 @@ import {
   exportProjectPackStructureToFolder,
   exportProjectPackStructureToZip,
 } from "@/lib/project-export";
+import { cn } from "@/lib/utils";
 
 function dirname(filePath: string): string {
   const parts = filePath.split("/").filter(Boolean);
@@ -238,7 +239,7 @@ const Index = () => {
   const globalTempoBpm = useProjectStore((s) => s.getActiveStack()?.globalTempoBpm ?? 120);
   const setGlobalTempoBpm = useProjectStore((s) => s.setGlobalTempoBpm);
   const bpmAuto = useProjectStore((s) => s.getActiveStack()?.bpmAuto ?? true);
-  const currentEditorName = editorMode === "pack" ? "PACK EDITOR" : previewMode === "multi" ? "STACKS" : "PACK";
+  const stackEditorPaneTitle = previewMode === "multi" ? "STACKS" : "PACK";
   const setBpmAuto = useProjectStore((s) => s.setBpmAuto);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
@@ -277,6 +278,10 @@ const Index = () => {
   );
   const { globalPacks, addGlobalPack, removeGlobalPack } = useProjectColumn(projectId);
   const activeLocalPack = localProjectPacks.find((pack) => pack.id === activeLocalPackId) ?? null;
+  const packEditorCoverDisplayUrl =
+    editorMode === "pack" && projectId && activeLocalPack
+      ? getProjectLocalPackCoverDisplayUrl(projectId, activeLocalPack)
+      : null;
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
   const waveformEditor = useWaveformEditorStore(
     useShallow((s) => ({
@@ -1660,7 +1665,32 @@ const Index = () => {
           <ResizablePanel id="editor" defaultSize="40%" minSize="20%">
             <div className="h-full min-h-0 border border-border bg-card flex flex-col" data-testid="panel-editor">
               <div className="px-4 py-3">
-                <h2 className="text-sm font-semibold">{currentEditorName}</h2>
+                {editorMode === "pack" && activeLocalPack ? (
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={cn(
+                        "w-9 h-9 rounded-md shrink-0 overflow-hidden flex items-center justify-center bg-muted/30",
+                        !packEditorCoverDisplayUrl &&
+                          "border-2 border-dashed border-muted-foreground/45",
+                      )}
+                      aria-hidden={packEditorCoverDisplayUrl ? undefined : true}
+                    >
+                      {packEditorCoverDisplayUrl ? (
+                        <img
+                          src={packEditorCoverDisplayUrl}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : null}
+                    </div>
+                    <h2 className="text-sm font-semibold truncate min-w-0">{activeLocalPack.name}</h2>
+                  </div>
+                ) : (
+                  <h2 className="text-sm font-semibold">
+                    {editorMode === "pack" ? "Pack" : stackEditorPaneTitle}
+                  </h2>
+                )}
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 {editorMode === "pack" && projectId && activeLocalPackId ? (
