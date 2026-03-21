@@ -4,7 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../types.js";
 import { requireUser, requireUserMiddleware } from "../middleware/auth-guard.js";
-import { Prisma } from "../../generated/prisma/client.js";
+import type { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../db.js";
 import { getFromS3, getPresignedUploadUrl } from "../s3.js";
 

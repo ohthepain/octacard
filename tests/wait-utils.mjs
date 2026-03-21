@@ -20,14 +20,13 @@ export async function waitForPageCondition(page, expression, options = {}) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     try {
-      const result = await page.evaluate(
-        (expr) => {
-          // Expression from trusted test code only; evaluated in page context
-          // biome-ignore lint/security/noGlobalEval: test-only; expr from test code, not user input
-          return (0, eval)(expr);
-        },
-        expression,
-      );
+      const result = await page.evaluate((expr) => {
+        // Expression from trusted test code only; evaluated in page context.
+        // Indirect eval (alias) so behavior matches (0, eval)(expr) without the comma operator.
+        // biome-ignore lint/security/noGlobalEval: test-only; expr from test code, not user input
+        const indirectEval = eval;
+        return indirectEval(expr);
+      }, expression);
       if (result) return;
     } catch {
       // Expression may throw before condition is ready
@@ -51,18 +50,16 @@ export async function waitForAriaPressed(page, testId, value, options = {}) {
   const start = Date.now();
   let lastActual;
   while (Date.now() - start < timeout) {
-    const result = await page.evaluate(
-      (id) => {
-        const el = document.querySelector(`[data-testid="${id}"]`);
-        if (!el) return { aria: null, hasBgPrimary: false, hasBorderInput: false };
-        return {
-          aria: el.getAttribute("aria-pressed") ?? null,
-          hasBgPrimary: el.classList.contains("bg-primary"),
-          hasBorderInput: el.classList.contains("border-input"),
-        };
-      },
-      testId,
-    );
+    const result = await page.evaluate((id) => {
+      const el = document.querySelector(`[data-testid="${id}"]`);
+      if (!el)
+        return { aria: null, hasBgPrimary: false, hasBorderInput: false };
+      return {
+        aria: el.getAttribute("aria-pressed") ?? null,
+        hasBgPrimary: el.classList.contains("bg-primary"),
+        hasBorderInput: el.classList.contains("border-input"),
+      };
+    }, testId);
     lastActual = result.aria;
     const normalized = lastActual ?? (value === "false" ? "false" : lastActual);
     if (normalized === value) return;
@@ -70,5 +67,7 @@ export async function waitForAriaPressed(page, testId, value, options = {}) {
     if (value === "false" && result.hasBorderInput) return;
     await new Promise((r) => setTimeout(r, pollInterval));
   }
-  throw new Error(`Expected aria-pressed="${value}" but got "${lastActual}" within ${timeout}ms`);
+  throw new Error(
+    `Expected aria-pressed="${value}" but got "${lastActual}" within ${timeout}ms`,
+  );
 }

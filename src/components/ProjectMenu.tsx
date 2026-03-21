@@ -6,13 +6,7 @@ import { FilePlus, Save, Globe, Lock, ImagePlus, Trash2, Dices, Loader2 } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { fetchUnsplashRandomPhoto } from "@/lib/remote-library";
 import { useProjectStore } from "@/stores/project-store";
@@ -29,7 +23,7 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 function getProjectCoverDisplayUrl(
   projectId: string | null,
   coverImageS3Key: string | null,
-  coverImageUrl: string | null
+  coverImageUrl: string | null,
 ): string | null {
   if (coverImageS3Key && projectId) {
     return `/api/projects/${encodeURIComponent(projectId)}/cover?v=${encodeURIComponent(coverImageS3Key)}`;
@@ -283,12 +277,7 @@ export function ProjectMenu() {
           aria-label="Project settings"
         >
           {coverDisplayUrl ? (
-            <img
-              src={coverDisplayUrl}
-              alt=""
-              className="w-8 h-8 rounded object-cover"
-              aria-hidden
-            />
+            <img src={coverDisplayUrl} alt="" className="w-8 h-8 rounded object-cover" aria-hidden />
           ) : (
             <>
               <img src="/favicon.png" alt="" className="w-8 h-8 dark:hidden" aria-hidden />
@@ -335,11 +324,7 @@ export function ProjectMenu() {
                     title="Generate random image from Unsplash"
                     aria-label="Generate random image"
                   >
-                    {unsplashLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Dices className="h-4 w-4" />
-                    )}
+                    {unsplashLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Dices className="h-4 w-4" />}
                   </Button>
                 </div>
                 <input
@@ -468,11 +453,7 @@ export function ProjectMenu() {
                     title="Generate random image from Unsplash"
                     aria-label="Generate random image"
                   >
-                    {unsplashLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Dices className="h-4 w-4" />
-                    )}
+                    {unsplashLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Dices className="h-4 w-4" />}
                   </Button>
                 </div>
                 <div className="flex items-start gap-3">
@@ -510,17 +491,15 @@ export function ProjectMenu() {
                       </Button>
                     )}
                     {(imagePreview || coverDisplayUrl) && (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={isUploadingCover}
-                        >
-                          {imageFile ? "Change" : "Upload different"}
-                        </Button>
-                      </>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingCover}
+                      >
+                        {imageFile ? "Change" : "Upload different"}
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -532,11 +511,7 @@ export function ProjectMenu() {
                   onChange={handleCoverFileChange}
                 />
               </div>
-              <Button
-                onClick={() => void handleSaveDraft()}
-                disabled={isSaving || isUploadingCover}
-                className="w-full"
-              >
+              <Button onClick={() => void handleSaveDraft()} disabled={isSaving || isUploadingCover} className="w-full">
                 <Save className="w-4 h-4 mr-2" />
                 {isSaving || isUploadingCover ? "Saving…" : "Save project"}
               </Button>

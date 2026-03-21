@@ -60,11 +60,7 @@ async function getFileForPath(path: string, paneType: "source" | "dest"): Promis
   return fileSystemService.getFile(path, paneType);
 }
 
-async function writeBlobForPath(
-  path: string,
-  blob: Blob,
-  paneType: "source" | "dest",
-): Promise<boolean> {
+async function writeBlobForPath(path: string, blob: Blob, paneType: "source" | "dest"): Promise<boolean> {
   if (isTempPath(path)) {
     const vp = fromTempPath(path);
     if (!vp) return false;
@@ -551,8 +547,6 @@ export function CreatePackDialog({
     setUploadProgress(null);
 
     try {
-      let packId: string;
-
       if (isEditMode && editPackId && !createAsCopy) {
         const ok = await savePackEdits();
         if (ok) {
@@ -570,7 +564,6 @@ export function CreatePackDialog({
         defaultSampleTokens,
         ...(unsplashImageUrl && { coverImageUrl: unsplashImageUrl }),
       });
-      packId = pack.id;
 
       const totalPhases: string[] = [];
       if (imageFile) totalPhases.push("image");
@@ -705,11 +698,7 @@ export function CreatePackDialog({
             const ext = imageFile.type?.includes("png") ? "png" : "jpg";
             coverImage = `cover.${ext}`;
             const coverBlob = await cropImageToSquare(imageFile);
-            const coverOk = await writeBlobForPath(
-              joinPath(folderPath, coverImage),
-              coverBlob,
-              paneType,
-            );
+            const coverOk = await writeBlobForPath(joinPath(folderPath, coverImage), coverBlob, paneType);
             const coverResult = { success: coverOk };
             if (!coverResult.success) coverImage = null;
           }

@@ -332,7 +332,7 @@ export const useProjectStore = create<ProjectState>()(
             const newSlots = nextStacks[resolvedActiveIndex]?.slots;
             if (!newSlots) return {};
             const lastOccupiedIndex = newSlots.reduce((last, slot, index) => (slot ? index : last), -1);
-            let insertIndex = lastOccupiedIndex + 1;
+            const insertIndex = lastOccupiedIndex + 1;
             while (insertIndex >= newSlots.length) {
               nextStacks.forEach((stack) => {
                 stack.slots.push(null);

@@ -3,14 +3,8 @@ import { FilePane } from "@/components/FilePane";
 import { RemoteFilePane } from "@/components/RemoteFilePane";
 import { TempFilesPane } from "@/components/TempFilesPane";
 import { HIGHLIGHT_LIBRARY_FOLDER_ROW, ProjectColumn } from "@/components/ProjectColumn";
-import {
-  LocalPackEditorDialog,
-  type LocalPackEditorState,
-} from "@/components/LocalPackEditorDialog";
-import {
-  PackStructurePane,
-  type PackEntryOpenPayload,
-} from "@/components/PackStructurePane";
+import { LocalPackEditorDialog, type LocalPackEditorState } from "@/components/LocalPackEditorDialog";
+import { PackStructurePane, type PackEntryOpenPayload } from "@/components/PackStructurePane";
 import { FormatDropdown } from "@/components/FormatDropdown";
 import { AboutDialog } from "@/components/AboutDialog";
 import { Link, useSearch, useNavigate } from "@tanstack/react-router";
@@ -232,7 +226,6 @@ const Index = () => {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [openPackId, setOpenPackId] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<"stack" | "pack">("stack");
-  const [packEditorRequestedPath, setPackEditorRequestedPath] = useState<string | null>(null);
   const previewMode = useProjectStore((s) => s.getActiveStack()?.previewMode ?? "single");
   const setPreviewMode = useProjectStore((s) => s.setPreviewMode);
   const addSamplesToStack = useProjectStore((s) => s.addSamplesToStack);
@@ -243,12 +236,8 @@ const Index = () => {
   const setBpmAuto = useProjectStore((s) => s.setBpmAuto);
   const [sourcePath, setSourcePath] = useState("");
   const [sourceVolumeId, setSourceVolumeId] = useState("_default");
-  const [destPath, setDestPath] = useState("");
-  const [destVolumeId, setDestVolumeId] = useState("_default");
   const [requestedSourcePath, setRequestedSourcePath] = useState<string | null>(null);
-  const [requestedDestPath, setRequestedDestPath] = useState<string | null>(null);
   const [requestedSourceRevealPath, setRequestedSourceRevealPath] = useState<string | null>(null);
-  const [requestedDestRevealPath, setRequestedDestRevealPath] = useState<string | null>(null);
   const [selectedSourceItem, setSelectedSourceItem] = useState<{
     path: string;
     type: "file" | "folder";
@@ -264,7 +253,6 @@ const Index = () => {
   const [sourceMountedPermissionId, setSourceMountedPermissionId] = useState<string | null>(null);
   const [highlightedLocalFolderId, setHighlightedLocalFolderId] = useState<string | null>(null);
   const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
-  const [destRefreshToken, setDestRefreshToken] = useState(0);
   const [libraryMode, setLibraryMode] = useState<"local" | "global">("global");
   const [globalScope, setGlobalScope] = useState<"mine" | "all" | "explore" | "rooms">("all");
   const projectId = useProjectStore((s) => s.id);
@@ -272,10 +260,12 @@ const Index = () => {
   const [localPackEditor, setLocalPackEditor] = useState<LocalPackEditorState | null>(null);
   const [activeLocalPackId, setActiveLocalPackId] = useState<string | null>(null);
   const [exportingLocalPack, setExportingLocalPack] = useState(false);
-  const { favorites: sourceLocalFolders, addFavorite, addVirtualPathFavorite, removeFavorite } = useFavorites(
-    "source",
-    sourceVolumeId,
-  );
+  const {
+    favorites: sourceLocalFolders,
+    addFavorite,
+    addVirtualPathFavorite,
+    removeFavorite,
+  } = useFavorites("source", sourceVolumeId);
   const { globalPacks, addGlobalPack, removeGlobalPack } = useProjectColumn(projectId);
   const activeLocalPack = localProjectPacks.find((pack) => pack.id === activeLocalPackId) ?? null;
   const packEditorCoverDisplayUrl =
@@ -417,8 +407,6 @@ const Index = () => {
     } else if (pendingRequest.type === "folder" && libraryMode === "local") {
       if (pendingRequest.paneType === "source") {
         setRequestedSourcePath(pendingRequest.path);
-      } else {
-        setRequestedDestPath(pendingRequest.path);
       }
     } else if (pendingRequest.type === "selectRoot") {
       setLibraryMode("local");
@@ -433,7 +421,6 @@ const Index = () => {
     if (!tourActive || !requestedDemoPaths) return;
     if (!fileSystemService.hasRootForPane("source") || !fileSystemService.hasRootForPane("dest")) return;
     if (requestedDemoPaths.sourcePath) setRequestedSourcePath(requestedDemoPaths.sourcePath);
-    if (requestedDemoPaths.destPath) setRequestedDestPath(requestedDemoPaths.destPath);
   }, [tourActive, requestedDemoPaths?.sourcePath, requestedDemoPaths?.destPath, requestedDemoPaths]);
 
   // Space bar: start whatever was last (multi or single) when idle, stop when playing
@@ -564,7 +551,12 @@ const Index = () => {
       type: "folder" as const,
       name: "",
     };
-    const destinationSelectionPath = selectedDestItem?.type === "folder" ? selectedDestItem.path : destPath || "/";
+    const destinationSelectionPath =
+      selectedDestItem == null
+        ? "/"
+        : selectedDestItem.type === "folder"
+          ? selectedDestItem.path
+          : dirname(selectedDestItem.path);
 
     let files: FileSystemEntry[] = [];
     let sourceBasePath = sourceSelection.path;
@@ -769,7 +761,6 @@ const Index = () => {
       }
 
       setConversionProgress((p) => (p ? { ...p, current: files.length, currentFile: "" } : p));
-      setDestRefreshToken((v) => v + 1);
       setPendingConversionRequest(null);
       setTimeout(() => setConversionProgress(null), 500);
 
@@ -879,9 +870,6 @@ const Index = () => {
       if (!selection.reusedExistingRoot) {
         setDestRootVersion((v) => v + 1);
       }
-      if (revealPath) {
-        setRequestedDestRevealPath(revealPath);
-      }
     }
   };
 
@@ -966,13 +954,7 @@ const Index = () => {
     return () => {
       cancelled = true;
     };
-  }, [
-    libraryMode,
-    selectedSourceItem,
-    sourceLocalFolders,
-    sourceMountedPermissionId,
-    sourceRootVersion,
-  ]);
+  }, [libraryMode, selectedSourceItem, sourceLocalFolders, sourceMountedPermissionId, sourceRootVersion]);
 
   const handlePreviewModeChange = useCallback(
     (value: string) => {
@@ -1100,7 +1082,6 @@ const Index = () => {
 
   const handleOpenLibraryFolder = useCallback(async () => {
     setLibraryMode("local");
-    setPackEditorRequestedPath(null);
     const r = await fileSystemService.restoreSourceLibraryRoot();
     if (!r.success) {
       toast.error("Could not open library", {
@@ -1166,7 +1147,6 @@ const Index = () => {
       setLocalProjectPacks((current) => [pack, ...current]);
       setEditorMode("pack");
       setActiveLocalPackId(pack.id);
-      setPackEditorRequestedPath(null);
       setRequestedSourcePath(null);
     } else {
       setLocalProjectPacks((current) => current.map((p) => (p.id === pack.id ? pack : p)));
@@ -1179,7 +1159,6 @@ const Index = () => {
       if (!pack) return;
       setEditorMode("pack");
       setActiveLocalPackId(pack.id);
-      setPackEditorRequestedPath(null);
       setRequestedSourcePath(null);
     },
     [localProjectPacks],
@@ -1191,62 +1170,64 @@ const Index = () => {
   }, []);
 
   /** Open a project local folder entry by favorite id (virtual path or saved permission handle). */
-  const handleOpenProjectLocalFolder = useCallback(async (favoriteId: string) => {
-    const fav = sourceLocalFolders.find((f) => f.id === favoriteId);
-    if (!fav) return;
-    setLibraryMode("local");
-    setPackEditorRequestedPath(null);
+  const handleOpenProjectLocalFolder = useCallback(
+    async (favoriteId: string) => {
+      const fav = sourceLocalFolders.find((f) => f.id === favoriteId);
+      if (!fav) return;
+      setLibraryMode("local");
 
-    if (fav.permission) {
-      if (!fileSystemService.hasRootForPane("source")) {
-        toast.error("No library folder", {
-          description: "Choose a library folder in Local mode first.",
-          duration: 6000,
-        });
-        return;
-      }
-      const h = await getLocalFolderPermissionHandle(fav.id);
-      if (!h) {
-        toast.error("Folder access expired", {
-          description: "Grant this folder again with + or drag from the desktop.",
-          duration: 7000,
-        });
-        return;
-      }
-      const act = await fileSystemService.activateSourcePermissionHandle(h);
-      if (!act.success) {
-        toast.error("Could not open folder", {
-          description: act.error ?? "Try adding the permission again.",
-          duration: 6000,
-        });
-        return;
-      }
-      setSourceMountedPermissionId(fav.id);
-      setSourceRootVersion((v) => v + 1);
-      setRequestedSourcePath("/");
-      return;
-    }
-
-    const openPath = fav.path ?? "/";
-    if (!fileSystemService.hasRootForPane("source")) {
-      await handleBrowseForFolderRef.current("source", openPath);
-      if (fileSystemService.hasRootForPane("source")) {
+      if (fav.permission) {
+        if (!fileSystemService.hasRootForPane("source")) {
+          toast.error("No library folder", {
+            description: "Choose a library folder in Local mode first.",
+            duration: 6000,
+          });
+          return;
+        }
+        const h = await getLocalFolderPermissionHandle(fav.id);
+        if (!h) {
+          toast.error("Folder access expired", {
+            description: "Grant this folder again with + or drag from the desktop.",
+            duration: 7000,
+          });
+          return;
+        }
+        const act = await fileSystemService.activateSourcePermissionHandle(h);
+        if (!act.success) {
+          toast.error("Could not open folder", {
+            description: act.error ?? "Try adding the permission again.",
+            duration: 6000,
+          });
+          return;
+        }
+        setSourceMountedPermissionId(fav.id);
+        setSourceRootVersion((v) => v + 1);
         setRequestedSourcePath("/");
-      }
-      return;
-    }
-
-    if (fileSystemService.getSourceActiveRootKind() === "permission") {
-      const r = await fileSystemService.restoreSourceLibraryRoot();
-      if (!r.success) {
-        toast.error("Could not return to library", { description: r.error, duration: 6000 });
         return;
       }
-      setSourceRootVersion((v) => v + 1);
-    }
-    setSourceMountedPermissionId(null);
-    setRequestedSourcePath(openPath);
-  }, [sourceLocalFolders]);
+
+      const openPath = fav.path ?? "/";
+      if (!fileSystemService.hasRootForPane("source")) {
+        await handleBrowseForFolderRef.current("source", openPath);
+        if (fileSystemService.hasRootForPane("source")) {
+          setRequestedSourcePath("/");
+        }
+        return;
+      }
+
+      if (fileSystemService.getSourceActiveRootKind() === "permission") {
+        const r = await fileSystemService.restoreSourceLibraryRoot();
+        if (!r.success) {
+          toast.error("Could not return to library", { description: r.error, duration: 6000 });
+          return;
+        }
+        setSourceRootVersion((v) => v + 1);
+      }
+      setSourceMountedPermissionId(null);
+      setRequestedSourcePath(openPath);
+    },
+    [sourceLocalFolders],
+  );
 
   const handleRemoveProjectPack = useCallback(
     async (packId: string) => {
@@ -1256,7 +1237,6 @@ const Index = () => {
         setLocalProjectPacks((current) => current.filter((pack) => pack.id !== packId));
         if (activeLocalPackId === packId) {
           setActiveLocalPackId(null);
-          setPackEditorRequestedPath(null);
           setEditorMode("stack");
         }
       } catch (error) {
@@ -1357,9 +1337,6 @@ const Index = () => {
             aria-label="Pack editor mode"
             onClick={() => {
               setEditorMode("pack");
-              if (sourcePath) {
-                setPackEditorRequestedPath(sourcePath);
-              }
             }}
           >
             Pack
@@ -1574,9 +1551,7 @@ const Index = () => {
               projectPacks={localProjectPacks.map((pack) => ({
                 id: pack.id,
                 name: pack.name,
-                coverImageProxyUrl: projectId
-                  ? getProjectLocalPackCoverDisplayUrl(projectId, pack)
-                  : undefined,
+                coverImageProxyUrl: projectId ? getProjectLocalPackCoverDisplayUrl(projectId, pack) : undefined,
               }))}
               localFolders={sourceLocalFolders}
               globalPacks={globalPacks}
@@ -1616,8 +1591,7 @@ const Index = () => {
                   creatorId={search?.creator ?? undefined}
                 />
               ) : libraryMode === "local" &&
-                (!hasDirectoryPickerSupport() ||
-                  requestedSourcePath?.startsWith("temp://")) ? (
+                (!hasDirectoryPickerSupport() || requestedSourcePath?.startsWith("temp://")) ? (
                 <TempFilesPane
                   paneName="source"
                   title="Temp Files"
@@ -1670,8 +1644,7 @@ const Index = () => {
                     <div
                       className={cn(
                         "w-9 h-9 rounded-md shrink-0 overflow-hidden flex items-center justify-center bg-muted/30",
-                        !packEditorCoverDisplayUrl &&
-                          "border-2 border-dashed border-muted-foreground/45",
+                        !packEditorCoverDisplayUrl && "border-2 border-dashed border-muted-foreground/45",
                       )}
                       aria-hidden={packEditorCoverDisplayUrl ? undefined : true}
                     >
@@ -1687,9 +1660,7 @@ const Index = () => {
                     <h2 className="text-sm font-semibold truncate min-w-0">{activeLocalPack.name}</h2>
                   </div>
                 ) : (
-                  <h2 className="text-sm font-semibold">
-                    {editorMode === "pack" ? "Pack" : stackEditorPaneTitle}
-                  </h2>
+                  <h2 className="text-sm font-semibold">{editorMode === "pack" ? "Pack" : stackEditorPaneTitle}</h2>
                 )}
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
@@ -1725,7 +1696,6 @@ const Index = () => {
             onClose={waveformEditor.close}
             onFileSaved={(pane) => {
               if (pane === "source") setSourceRefreshToken((t) => t + 1);
-              else setDestRefreshToken((t) => t + 1);
             }}
           />
         )}

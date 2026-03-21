@@ -432,7 +432,7 @@ export async function exportProjectPackStructureToZip(
   const url = URL.createObjectURL(zipBlob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = (sanitizeFilenameMinimal(packName) || "pack") + ".zip";
+  a.download = `${sanitizeFilenameMinimal(packName) || "pack"}.zip`;
   a.click();
   URL.revokeObjectURL(url);
 
