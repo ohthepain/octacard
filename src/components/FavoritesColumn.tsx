@@ -38,10 +38,8 @@ export function FavoritesColumn({
   title,
   showTempFilesButton = false,
 }: FavoritesColumnProps) {
-  const { favorites, addFavorite, removeFavorite } = useFavorites(
-    paneType,
-    volumeId
-  );
+  const { favorites, addVirtualPathFavorite, removeFavorite } = useFavorites(paneType, volumeId);
+  const pathFavorites = favorites.filter((f): f is Favorite & { path: string } => Boolean(f.path));
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -57,7 +55,7 @@ export function FavoritesColumn({
     if (sourcePath) {
       if (sourceType === "folder") {
         const name = sourcePath.split("/").filter(Boolean).pop() || sourcePath;
-        addFavorite(sourcePath, name);
+        addVirtualPathFavorite(sourcePath, name);
         onDropFolder?.(sourcePath, name);
         return;
       }
@@ -66,7 +64,7 @@ export function FavoritesColumn({
         if (parts.length >= 2) {
           const parentPath = `/${parts.slice(0, -1).join("/")}`;
           const parentName = parts[parts.length - 2];
-          addFavorite(parentPath, parentName);
+          addVirtualPathFavorite(parentPath, parentName);
           onDropFolder?.(parentPath, parentName);
         }
         return;
@@ -87,7 +85,7 @@ export function FavoritesColumn({
           const dirHandle = handle as FileSystemDirectoryHandle;
           const path = await getPathFromHandle(dirHandle, paneType);
           if (path) {
-            addFavorite(path, dirHandle.name);
+            addVirtualPathFavorite(path, dirHandle.name);
             onDropFolder?.(path, dirHandle.name);
           }
         }
@@ -133,20 +131,20 @@ export function FavoritesColumn({
               <span className="truncate">Temp Files</span>
             </button>
           )}
-          {favorites.length === 0 ? (
+          {pathFavorites.length === 0 ? (
             <div className="px-2 py-4 text-sm text-muted-foreground text-center border-2 border-dashed border-muted rounded-lg">
               No favorites. Drag a folder here to add.
             </div>
           ) : (
-            favorites.map((favorite) => (
+            pathFavorites.map((favorite) => (
               <FavoriteItem
-                key={favorite.path}
+                key={favorite.id}
                 paneType={paneType}
                 favorite={favorite}
                 isActive={currentPath === favorite.path}
                 onBrowseFromFavorite={onBrowseFromFavorite ? () => onBrowseFromFavorite(favorite.path) : undefined}
                 onNavigate={() => onNavigate(favorite.path)}
-                onRemove={() => removeFavorite(favorite.path)}
+                onRemove={() => removeFavorite(favorite.id)}
               />
             ))
           )}
@@ -186,7 +184,7 @@ function FavoriteItem({
             type="button"
             onClick={onBrowseFromFavorite ?? onNavigate}
             className="flex items-center gap-2 flex-1 min-w-0 shrink-0 text-left"
-            data-testid={`favorite-open-${paneType}-${favorite.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
+            data-testid={`favorite-open-${paneType}-${(favorite.path ?? "root").replace(/[^a-zA-Z0-9_-]/g, "_")}`}
           >
             <Star className="w-3 h-3 shrink-0 fill-current" />
             <span className="truncate">{favorite.name}</span>

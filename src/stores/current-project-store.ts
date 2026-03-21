@@ -204,9 +204,6 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
     const projectJson = await getProjectJsonFromRoom(room);
     if (!projectJson) return false;
     if (isOurSavedProject(projectJson)) {
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/d8c1211a-61cd-47fc-bb94-a43ef555084b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ec0b9e'},body:JSON.stringify({sessionId:'ec0b9e',location:'current-project-store.ts:loadProjectFromRoomStorage',message:'skipped hydrate (our save)',data:{},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       return false;
     }
 

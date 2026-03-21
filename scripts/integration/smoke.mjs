@@ -321,7 +321,11 @@ try {
   const addedFavoritePath = addedFavorite.path;
   const addedFavoriteTestId = `favorite-open-source-${toTestIdSegment(addedFavoritePath)}`;
 
-  const storedFavoritesStore = await page.evaluate(() => localStorage.getItem("octacard_favorites_store_v1"));
+  const storedFavoritesStore = await page.evaluate(() => {
+    return (
+      localStorage.getItem("octacard_favorites_store_v2") ?? localStorage.getItem("octacard_favorites_store_v1")
+    );
+  });
   assert.ok(storedFavoritesStore, "Favorites Zustand-style store should be persisted.");
 
   await page.reload({ waitUntil: "networkidle" });

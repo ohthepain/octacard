@@ -2,9 +2,14 @@ import { useSyncExternalStore } from "react";
 
 export type FavoritePaneType = "source" | "dest";
 
+/** Local folder permission (handle in IndexedDB) or virtual path under current library/dest root. */
 export interface Favorite {
-  path: string;
+  id: string;
   name: string;
+  /** Present for path-based favourites (FilePane / legacy project list). */
+  path?: string;
+  /** When true, `FileSystemDirectoryHandle` is stored in IndexedDB under `id` (source pane only). */
+  permission?: boolean;
 }
 
 interface FavoritesState {
@@ -12,12 +17,19 @@ interface FavoritesState {
 }
 
 const LEGACY_STORAGE_PREFIX = "octacard_favorites";
-const STORE_STORAGE_KEY = "octacard_favorites_store_v1";
+const STORE_STORAGE_KEY = "octacard_favorites_store_v2";
 const EMPTY_STATE: FavoritesState = { favoritesByVolume: {} };
 const EMPTY_FAVORITES: Favorite[] = [];
 
 function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
+function newFavoriteId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `fav_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
 function getVolumeKey(paneType: FavoritePaneType, volumeId: string): string {
@@ -32,7 +44,25 @@ function getLegacyStorageKey(volumeKey: string): string {
 }
 
 function dedupeFavorites(favorites: Favorite[]): Favorite[] {
-  return Array.from(new Map(favorites.map((favorite) => [favorite.path, favorite])).values());
+  const byId = new Map<string, Favorite>();
+  for (const f of favorites) {
+    byId.set(f.id, f);
+  }
+  return Array.from(byId.values());
+}
+
+function parseLegacyFavoriteItem(item: unknown): Favorite | null {
+  if (!item || typeof item !== "object") return null;
+  const o = item as Record<string, unknown>;
+  if (typeof o.name !== "string") return null;
+  const id = typeof o.id === "string" ? o.id : newFavoriteId();
+  if (o.permission === true) {
+    return { id, name: o.name, permission: true, ...(typeof o.path === "string" ? { path: o.path } : {}) };
+  }
+  if (typeof o.path === "string") {
+    return { id, name: o.name, path: o.path };
+  }
+  return null;
 }
 
 function parseFavorites(value: string | null): Favorite[] {
@@ -40,18 +70,47 @@ function parseFavorites(value: string | null): Favorite[] {
   try {
     const parsed = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item): item is Favorite => {
-        return Boolean(item && typeof item.path === "string" && typeof item.name === "string");
-      })
-      .map((item) => ({ path: item.path, name: item.name }));
+    return parsed.map(parseLegacyFavoriteItem).filter((x): x is Favorite => x !== null);
   } catch {
     return [];
   }
 }
 
+function migrateV1ToV2IfNeeded(): void {
+  if (!isBrowser()) return;
+  const v2 = localStorage.getItem(STORE_STORAGE_KEY);
+  if (v2) return;
+  const v1Key = "octacard_favorites_store_v1";
+  const raw = localStorage.getItem(v1Key);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw) as FavoritesState;
+    if (!parsed?.favoritesByVolume || typeof parsed.favoritesByVolume !== "object") return;
+    const next: FavoritesState = { favoritesByVolume: {} };
+    for (const [key, list] of Object.entries(parsed.favoritesByVolume)) {
+      if (!Array.isArray(list)) continue;
+      const migrated: Favorite[] = [];
+      for (const item of list) {
+        if (item && typeof item === "object" && "path" in item && "name" in item) {
+          const o = item as { path: string; name: string; id?: string };
+          migrated.push({
+            id: typeof o.id === "string" ? o.id : newFavoriteId(),
+            path: o.path,
+            name: o.name,
+          });
+        }
+      }
+      next.favoritesByVolume[key] = dedupeFavorites(migrated);
+    }
+    localStorage.setItem(STORE_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
 function readStoreState(): FavoritesState | null {
   if (!isBrowser()) return null;
+  migrateV1ToV2IfNeeded();
   const raw = localStorage.getItem(STORE_STORAGE_KEY);
   if (!raw) return null;
   try {
@@ -61,7 +120,8 @@ function readStoreState(): FavoritesState | null {
     }
     const normalized: Record<string, Favorite[]> = {};
     for (const [key, favorites] of Object.entries(parsed.favoritesByVolume)) {
-      normalized[key] = dedupeFavorites(Array.isArray(favorites) ? favorites : []);
+      const list = Array.isArray(favorites) ? favorites.map(parseLegacyFavoriteItem).filter((x): x is Favorite => !!x) : [];
+      normalized[key] = dedupeFavorites(list);
     }
     return { favoritesByVolume: normalized };
   } catch {
@@ -101,8 +161,8 @@ let storageListenerAttached = false;
 
 function emitChange() {
   listeners.forEach((listener) => {
-  listener();
-});
+    listener();
+  });
 }
 
 function persistState(nextState: FavoritesState) {
@@ -123,13 +183,21 @@ function attachStorageListener() {
   if (!isBrowser() || storageListenerAttached) return;
   window.addEventListener("storage", (event) => {
     if (!event.key) return;
-    if (event.key === STORE_STORAGE_KEY || event.key.startsWith(`${LEGACY_STORAGE_PREFIX}_`)) {
+    if (
+      event.key === STORE_STORAGE_KEY ||
+      event.key === "octacard_favorites_store_v1" ||
+      event.key.startsWith(`${LEGACY_STORAGE_PREFIX}_`)
+    ) {
       state = loadInitialState();
       emitChange();
     }
   });
   storageListenerAttached = true;
 }
+
+export type AddFavoriteInput =
+  | { kind: "virtualPath"; path: string; name: string }
+  | { kind: "permission"; id: string; name: string };
 
 export const favoritesStore = {
   subscribe(listener: Listener) {
@@ -146,10 +214,18 @@ export const favoritesStore = {
     const key = getVolumeKey(paneType, volumeId);
     return state.favoritesByVolume[key] ?? EMPTY_FAVORITES;
   },
-  addFavorite(paneType: FavoritePaneType, volumeId: string, path: string, name: string) {
+  addFavorite(paneType: FavoritePaneType, volumeId: string, input: AddFavoriteInput) {
     const key = getVolumeKey(paneType, volumeId);
     const current = state.favoritesByVolume[key] ?? [];
-    const next = dedupeFavorites([...current, { path, name }]);
+    let next: Favorite[];
+    if (input.kind === "virtualPath") {
+      const withoutPath = current.filter((f) => f.path !== input.path);
+      const entry: Favorite = { id: newFavoriteId(), path: input.path, name: input.name };
+      next = dedupeFavorites([...withoutPath, entry]);
+    } else {
+      const entry: Favorite = { id: input.id, name: input.name, permission: true };
+      next = dedupeFavorites([...current.filter((f) => f.id !== input.id), entry]);
+    }
     setState({
       favoritesByVolume: {
         ...state.favoritesByVolume,
@@ -157,10 +233,10 @@ export const favoritesStore = {
       },
     });
   },
-  removeFavorite(paneType: FavoritePaneType, volumeId: string, path: string) {
+  removeFavorite(paneType: FavoritePaneType, volumeId: string, favoriteId: string) {
     const key = getVolumeKey(paneType, volumeId);
     const current = state.favoritesByVolume[key] ?? [];
-    const next = current.filter((favorite) => favorite.path !== path);
+    const next = current.filter((favorite) => favorite.id !== favoriteId);
     setState({
       favoritesByVolume: {
         ...state.favoritesByVolume,

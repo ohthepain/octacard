@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { FilePane } from "@/components/FilePane";
 import { RemoteFilePane } from "@/components/RemoteFilePane";
 import { TempFilesPane } from "@/components/TempFilesPane";
-import { ProjectColumn } from "@/components/ProjectColumn";
+import { HIGHLIGHT_LIBRARY_FOLDER_ROW, ProjectColumn } from "@/components/ProjectColumn";
 import {
   LocalPackEditorDialog,
   type LocalPackEditorState,
@@ -76,6 +76,11 @@ import { useNavigateRequestStore } from "@/stores/navigate-request-store";
 import { useCurrentProjectStore } from "@/stores/current-project-store";
 import { useFollowListenStore } from "@/stores/follow-listen-store";
 import { useFavorites } from "@/hooks/use-favorites";
+import {
+  deleteLocalFolderPermissionHandle,
+  getLocalFolderPermissionHandle,
+  saveLocalFolderPermissionHandle,
+} from "@/lib/local-folder-permissions-store";
 import { useProjectColumn } from "@/stores/project-column-store";
 import {
   deleteProjectPack as deleteLocalProjectPack,
@@ -96,6 +101,14 @@ function dirname(filePath: string): string {
     return "/";
   }
   return `/${parts.slice(0, -1).join("/")}`;
+}
+
+/** First-fit: virtual folder path contains `itemPath` (both app virtual paths). */
+function virtualFolderContains(folderPath: string, itemPath: string): boolean {
+  const f = folderPath.replace(/\/+$/, "") || "/";
+  const p = itemPath.replace(/\/+$/, "") || "/";
+  if (f === "/") return true;
+  return p === f || p.startsWith(`${f}/`);
 }
 
 function basename(filePath: string): string {
@@ -247,6 +260,8 @@ const Index = () => {
   } | null>(null);
   const [sourceRootVersion, setSourceRootVersion] = useState(0);
   const [destRootVersion, setDestRootVersion] = useState(0);
+  const [sourceMountedPermissionId, setSourceMountedPermissionId] = useState<string | null>(null);
+  const [highlightedLocalFolderId, setHighlightedLocalFolderId] = useState<string | null>(null);
   const [sourceRefreshToken, setSourceRefreshToken] = useState(0);
   const [destRefreshToken, setDestRefreshToken] = useState(0);
   const [libraryMode, setLibraryMode] = useState<"local" | "global">("global");
@@ -256,7 +271,10 @@ const Index = () => {
   const [localPackEditor, setLocalPackEditor] = useState<LocalPackEditorState | null>(null);
   const [activeLocalPackId, setActiveLocalPackId] = useState<string | null>(null);
   const [exportingLocalPack, setExportingLocalPack] = useState(false);
-  const { favorites: sourceLocalFolders, addFavorite, removeFavorite } = useFavorites("source", sourceVolumeId);
+  const { favorites: sourceLocalFolders, addFavorite, addVirtualPathFavorite, removeFavorite } = useFavorites(
+    "source",
+    sourceVolumeId,
+  );
   const { globalPacks, addGlobalPack, removeGlobalPack } = useProjectColumn(projectId);
   const activeLocalPack = localProjectPacks.find((pack) => pack.id === activeLocalPackId) ?? null;
   const formatSettings = useFormatPresetStore((s) => s.currentPreset.settings);
@@ -845,6 +863,7 @@ const Index = () => {
   ) => {
     const revealPath = selection.virtualPath === "/" ? null : selection.virtualPath;
     if (paneType === "source") {
+      setSourceMountedPermissionId(null);
       if (!selection.reusedExistingRoot) {
         setSourceRootVersion((v) => v + 1);
       }
@@ -888,6 +907,67 @@ const Index = () => {
     }
   };
   handleBrowseForFolderRef.current = handleBrowseForFolder;
+
+  useEffect(() => {
+    if (libraryMode !== "local") {
+      setHighlightedLocalFolderId(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const kind = fileSystemService.getSourceActiveRootKind();
+      const sel = selectedSourceItem;
+      let entry: FileSystemHandle | null = null;
+      if (sel?.path && (sel.type === "file" || sel.type === "folder")) {
+        entry = await fileSystemService.getSourceHandleForVirtualPath(
+          sel.path,
+          sel.type === "file" ? "file" : "directory",
+        );
+      }
+
+      const pickFallback = () => {
+        if (kind === "permission" && sourceMountedPermissionId) {
+          return sourceMountedPermissionId;
+        }
+        if (kind === "library") {
+          return HIGHLIGHT_LIBRARY_FOLDER_ROW;
+        }
+        return null;
+      };
+
+      if (!entry) {
+        if (!cancelled) setHighlightedLocalFolderId(pickFallback());
+        return;
+      }
+
+      for (const fav of sourceLocalFolders) {
+        if (fav.permission) {
+          const root = await getLocalFolderPermissionHandle(fav.id);
+          if (!root) continue;
+          if (await fileSystemService.isEntryUnderDirectoryRoot(root, entry)) {
+            if (!cancelled) setHighlightedLocalFolderId(fav.id);
+            return;
+          }
+        } else if (fav.path && kind === "library" && sel) {
+          if (virtualFolderContains(fav.path, sel.path)) {
+            if (!cancelled) setHighlightedLocalFolderId(fav.id);
+            return;
+          }
+        }
+      }
+
+      if (!cancelled) setHighlightedLocalFolderId(pickFallback());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    libraryMode,
+    selectedSourceItem,
+    sourceLocalFolders,
+    sourceMountedPermissionId,
+    sourceRootVersion,
+  ]);
 
   const handlePreviewModeChange = useCallback(
     (value: string) => {
@@ -956,7 +1036,14 @@ const Index = () => {
     we.open();
   }, [previewMode, selectedSourceItem, selectedDestItem]);
 
-  const handlePickLocalFolderShortcut = useCallback(async () => {
+  const newPermissionId = useCallback(() => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return `perm_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+  }, []);
+
+  const handlePickLocalFolderPermission = useCallback(async () => {
     if (isUnsupportedBrowser()) {
       toast.error("Browser Not Supported", {
         description:
@@ -966,22 +1053,80 @@ const Index = () => {
       return;
     }
     if (!fileSystemService.hasRootForPane("source")) {
-      toast.error("No library folder", {
-        description: "Choose a library folder in Local mode first, then you can pin shortcuts here.",
+      setLibraryMode("local");
+      await handleBrowseForFolderRef.current("source");
+      return;
+    }
+    const id = newPermissionId();
+    const result = await fileSystemService.pickDirectoryForAdditionalSourcePermission(sourcePath || undefined);
+    if (result.success && result.data) {
+      try {
+        await saveLocalFolderPermissionHandle(id, result.data.handle);
+        addFavorite({ kind: "permission", id, name: result.data.name });
+      } catch (e) {
+        toast.error("Could not save folder access", {
+          description: e instanceof Error ? e.message : "Try again.",
+          duration: 6000,
+        });
+      }
+    } else if (!result.success && result.error !== "User cancelled directory selection") {
+      toast.error("Could not add folder permission", {
+        description: result.error || "Try again or drag a folder from the desktop.",
+        duration: 6000,
+      });
+    }
+  }, [addFavorite, newPermissionId, sourcePath]);
+
+  const handleAddLocalFolderFromHandle = useCallback(
+    async (handle: FileSystemDirectoryHandle, name: string) => {
+      const id = newPermissionId();
+      try {
+        await saveLocalFolderPermissionHandle(id, handle);
+        addFavorite({ kind: "permission", id, name });
+      } catch (e) {
+        toast.error("Could not save folder access", {
+          description: e instanceof Error ? e.message : "Try again.",
+          duration: 6000,
+        });
+      }
+    },
+    [addFavorite, newPermissionId],
+  );
+
+  const handleOpenLibraryFolder = useCallback(async () => {
+    setLibraryMode("local");
+    setPackEditorRequestedPath(null);
+    const r = await fileSystemService.restoreSourceLibraryRoot();
+    if (!r.success) {
+      toast.error("Could not open library", {
+        description: r.error ?? "Use Browse for folder in the file pane to choose your library again.",
         duration: 6000,
       });
       return;
     }
-    const result = await fileSystemService.pickDirectoryForSourceFavoritePin(sourcePath || undefined);
-    if (result.success && result.data) {
-      addFavorite(result.data.path, result.data.name);
-    } else if (!result.success && result.error !== "User cancelled directory selection") {
-      toast.error("Could not add shortcut", {
-        description: result.error || "Try again or drag a folder from the file list.",
-        duration: 6000,
-      });
-    }
-  }, [addFavorite, sourcePath]);
+    setSourceMountedPermissionId(null);
+    setSourceRootVersion((v) => v + 1);
+    setRequestedSourcePath("/");
+  }, []);
+
+  const handleRemoveLocalProjectFolder = useCallback(
+    async (favoriteId: string) => {
+      const fav = sourceLocalFolders.find((f) => f.id === favoriteId);
+      if (fav?.permission) {
+        await deleteLocalFolderPermissionHandle(favoriteId);
+      }
+      if (sourceMountedPermissionId === favoriteId) {
+        setSourceMountedPermissionId(null);
+        const r = await fileSystemService.restoreSourceLibraryRoot();
+        if (r.success) {
+          setSourceRootVersion((v) => v + 1);
+          setRequestedSourcePath("/");
+        }
+      }
+      removeFavorite(favoriteId);
+    },
+    [sourceLocalFolders, sourceMountedPermissionId, removeFavorite],
+  );
 
   const handleBrowseGlobalPacksFromColumn = useCallback(() => {
     setLibraryMode("global");
@@ -1040,22 +1185,63 @@ const Index = () => {
     setOpenPackId(packId);
   }, []);
 
-  /** Open a project-pinned local folder in the source FilePane; does not change editor column mode or selection. */
-  const handleOpenProjectLocalFolder = useCallback(async (path: string) => {
+  /** Open a project local folder entry by favorite id (virtual path or saved permission handle). */
+  const handleOpenProjectLocalFolder = useCallback(async (favoriteId: string) => {
+    const fav = sourceLocalFolders.find((f) => f.id === favoriteId);
+    if (!fav) return;
     setLibraryMode("local");
     setPackEditorRequestedPath(null);
 
+    if (fav.permission) {
+      if (!fileSystemService.hasRootForPane("source")) {
+        toast.error("No library folder", {
+          description: "Choose a library folder in Local mode first.",
+          duration: 6000,
+        });
+        return;
+      }
+      const h = await getLocalFolderPermissionHandle(fav.id);
+      if (!h) {
+        toast.error("Folder access expired", {
+          description: "Grant this folder again with + or drag from the desktop.",
+          duration: 7000,
+        });
+        return;
+      }
+      const act = await fileSystemService.activateSourcePermissionHandle(h);
+      if (!act.success) {
+        toast.error("Could not open folder", {
+          description: act.error ?? "Try adding the permission again.",
+          duration: 6000,
+        });
+        return;
+      }
+      setSourceMountedPermissionId(fav.id);
+      setSourceRootVersion((v) => v + 1);
+      setRequestedSourcePath("/");
+      return;
+    }
+
+    const openPath = fav.path ?? "/";
     if (!fileSystemService.hasRootForPane("source")) {
-      // Without a source root, FilePane cannot list the pin path (empty tree + misleading copy).
-      await handleBrowseForFolderRef.current("source", path);
+      await handleBrowseForFolderRef.current("source", openPath);
       if (fileSystemService.hasRootForPane("source")) {
-        setRequestedSourcePath(path);
+        setRequestedSourcePath("/");
       }
       return;
     }
 
-    setRequestedSourcePath(path);
-  }, []);
+    if (fileSystemService.getSourceActiveRootKind() === "permission") {
+      const r = await fileSystemService.restoreSourceLibraryRoot();
+      if (!r.success) {
+        toast.error("Could not return to library", { description: r.error, duration: 6000 });
+        return;
+      }
+      setSourceRootVersion((v) => v + 1);
+    }
+    setSourceMountedPermissionId(null);
+    setRequestedSourcePath(openPath);
+  }, [sourceLocalFolders]);
 
   const handleRemoveProjectPack = useCallback(
     async (packId: string) => {
@@ -1397,9 +1583,13 @@ const Index = () => {
               onAddGlobalPack={addGlobalPack}
               onRemoveGlobalPack={removeGlobalPack}
               onOpenLocalFolder={handleOpenProjectLocalFolder}
-              onAddLocalFolder={addFavorite}
-              onRemoveLocalFolder={removeFavorite}
-              onPickLocalFolderShortcut={hasDirectoryPickerSupport() ? handlePickLocalFolderShortcut : undefined}
+              onAddLocalFolder={addVirtualPathFavorite}
+              onAddLocalFolderFromHandle={handleAddLocalFolderFromHandle}
+              onRemoveLocalFolder={(id) => void handleRemoveLocalProjectFolder(id)}
+              onOpenLibraryFolder={handleOpenLibraryFolder}
+              hasSourceLibraryRoot={fileSystemService.hasRootForPane("source")}
+              highlightedLocalFolderId={highlightedLocalFolderId}
+              onPickLocalFolderPermission={hasDirectoryPickerSupport() ? handlePickLocalFolderPermission : undefined}
               onBrowseGlobalPacks={handleBrowseGlobalPacksFromColumn}
             />
           </ResizablePanel>

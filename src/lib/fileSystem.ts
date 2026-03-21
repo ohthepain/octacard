@@ -334,6 +334,9 @@ export type PaneType = "source" | "dest";
 class FileSystemService {
   private sourceRegistry = new HandleRegistry();
   private destRegistry = new HandleRegistry();
+  /** Library grant (broad folder); may differ from `sourceRegistry` root while a permission folder is active. */
+  private sourceLibraryRootHandle: FileSystemDirectoryHandle | null = null;
+  private sourceActiveRootKind: "library" | "permission" = "library";
   private searchIndexesByRoot = new WeakMap<
     FileSystemDirectoryHandle,
     RootSearchIndex
@@ -639,6 +642,171 @@ class FileSystemService {
     throw new Error("File System Access API not supported in this browser");
   }
 
+  getSourceActiveRootKind(): "library" | "permission" {
+    return this.sourceActiveRootKind;
+  }
+
+  private ensureLibraryHandleTracked(): void {
+    if (
+      !this.sourceLibraryRootHandle &&
+      this.sourceActiveRootKind === "library" &&
+      this.sourceRegistry.hasRoot()
+    ) {
+      this.sourceLibraryRootHandle = this.sourceRegistry.getRoot();
+    }
+  }
+
+  /**
+   * Virtual path of `target` when it lies under `root`, else null.
+   * Used for browse resolution and permission containment (first-fit).
+   */
+  async resolveVirtualPathUnderRoot(
+    root: FileSystemDirectoryHandle,
+    target: FileSystemDirectoryHandle,
+  ): Promise<string | null> {
+    try {
+      if (await root.isSameEntry(target)) {
+        return "/";
+      }
+      const relativePathParts = await root.resolve(target);
+      if (relativePathParts && relativePathParts.length > 0) {
+        return `/${relativePathParts.join("/")}`;
+      }
+    } catch {
+      // fall through to walk
+    }
+
+    const findPathByHandle = async (
+      currentHandle: FileSystemDirectoryHandle,
+      currentPath: string,
+    ): Promise<string | null> => {
+      if (await currentHandle.isSameEntry(target)) {
+        return currentPath;
+      }
+
+      const entriesFn = (currentHandle as DirectoryHandleWithEntries).entries;
+      if (typeof entriesFn !== "function") {
+        return null;
+      }
+      for await (const [name, childHandle] of entriesFn.call(
+        currentHandle,
+      ) as AsyncIterable<[string, FileSystemHandle]>) {
+        if (childHandle.kind !== "directory") {
+          continue;
+        }
+
+        const childDirHandle = childHandle as FileSystemDirectoryHandle;
+        const childPath =
+          currentPath === "/" ? `/${name}` : `${currentPath}/${name}`;
+
+        if (await childDirHandle.isSameEntry(target)) {
+          return childPath;
+        }
+
+        const nestedPath = await findPathByHandle(childDirHandle, childPath);
+        if (nestedPath) {
+          return nestedPath;
+        }
+      }
+
+      return null;
+    };
+
+    try {
+      return await findPathByHandle(root, "/");
+    } catch {
+      return null;
+    }
+  }
+
+  /** Whether `entry` (file or directory) is inside `root` (same grant or descendant). */
+  async isEntryUnderDirectoryRoot(
+    root: FileSystemDirectoryHandle,
+    entry: FileSystemHandle,
+  ): Promise<boolean> {
+    try {
+      if (entry.kind === "directory") {
+        if (await root.isSameEntry(entry as FileSystemDirectoryHandle)) {
+          return true;
+        }
+      }
+      const parts = await root.resolve(entry);
+      return parts !== null && parts.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async getSourceHandleForVirtualPath(
+    virtualPath: string,
+    kind: "file" | "directory",
+  ): Promise<FileSystemHandle | null> {
+    if (!this.sourceRegistry.hasRoot()) return null;
+    try {
+      if (kind === "file") {
+        return await this.sourceRegistry.getFileHandle(virtualPath);
+      }
+      return await this.sourceRegistry.getDirectoryHandle(virtualPath);
+    } catch {
+      return null;
+    }
+  }
+
+  async applySourceLibraryRoot(handle: FileSystemDirectoryHandle): Promise<void> {
+    await this.clearSearchIndexForPaneRoot("source");
+    this.sourceRegistry.clear();
+    await this.sourceRegistry.setRoot(handle);
+    this.sourceLibraryRootHandle = handle;
+    this.sourceActiveRootKind = "library";
+  }
+
+  async applySourcePermissionRoot(handle: FileSystemDirectoryHandle): Promise<void> {
+    if (this.sourceActiveRootKind === "library" && this.sourceRegistry.hasRoot()) {
+      if (!this.sourceLibraryRootHandle) {
+        this.sourceLibraryRootHandle = this.sourceRegistry.getRoot();
+      }
+    }
+    await this.clearSearchIndexForPaneRoot("source");
+    this.sourceRegistry.clear();
+    await this.sourceRegistry.setRoot(handle);
+    this.sourceActiveRootKind = "permission";
+  }
+
+  async restoreSourceLibraryRoot(): Promise<FileSystemResult<void>> {
+    this.ensureLibraryHandleTracked();
+    if (!this.sourceLibraryRootHandle) {
+      return {
+        success: false,
+        error: "No saved library folder. Use Browse for folder to choose your library again.",
+      };
+    }
+    try {
+      await this.applySourceLibraryRoot(this.sourceLibraryRootHandle);
+      void this.ensureSearchIndex("source");
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  }
+
+  async activateSourcePermissionHandle(
+    handle: FileSystemDirectoryHandle,
+  ): Promise<FileSystemResult<void>> {
+    try {
+      await this.applySourcePermissionRoot(handle);
+      void this.ensureSearchIndex("source");
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  }
+
   private getTestHooks(): OctacardTestHooks | null {
     if (typeof window === "undefined") return null;
     return (window as OctacardWindow).__octacardTestHooks ?? null;
@@ -659,6 +827,8 @@ class FileSystemService {
     try {
       const handle = await this.pickDirectoryHandle("root");
       await this.sourceRegistry.setRoot(handle);
+      this.sourceLibraryRootHandle = handle;
+      this.sourceActiveRootKind = "library";
       await this.destRegistry.setRoot(handle);
       void this.ensureSearchIndex("source");
       return {
@@ -707,6 +877,56 @@ class FileSystemService {
         }
       }
       const handle = await this.pickDirectoryHandle(paneType, startIn);
+
+      if (paneType === "source") {
+        this.ensureLibraryHandleTracked();
+        const permissionRoot =
+          this.sourceActiveRootKind === "permission" ? this.sourceRegistry.getRoot() : null;
+
+        if (permissionRoot) {
+          const underPermission = await this.resolveVirtualPathUnderRoot(permissionRoot, handle);
+          if (underPermission !== null) {
+            void this.ensureSearchIndex("source");
+            return {
+              success: true,
+              data: {
+                handle,
+                virtualPath: underPermission,
+                reusedExistingRoot: true,
+              },
+            };
+          }
+        }
+
+        const libraryRoot = this.sourceLibraryRootHandle ?? this.sourceRegistry.getRoot();
+        if (libraryRoot) {
+          const underLibrary = await this.resolveVirtualPathUnderRoot(libraryRoot, handle);
+          if (underLibrary !== null) {
+            await this.applySourceLibraryRoot(libraryRoot);
+            void this.ensureSearchIndex("source");
+            return {
+              success: true,
+              data: {
+                handle,
+                virtualPath: underLibrary,
+                reusedExistingRoot: true,
+              },
+            };
+          }
+        }
+
+        await this.applySourceLibraryRoot(handle);
+        void this.ensureSearchIndex("source");
+        return {
+          success: true,
+          data: {
+            handle,
+            virtualPath: "/",
+            reusedExistingRoot: false,
+          },
+        };
+      }
+
       const virtualPath = await registry.resolvePathFromRoot(handle);
 
       if (virtualPath) {
@@ -746,12 +966,12 @@ class FileSystemService {
   }
 
   /**
-   * Pick a folder to pin as a local shortcut. The folder must lie inside the current source
-   * library root (unlike requestDirectoryForPane, this never replaces the root).
+   * Pick any folder to store as an extra local folder permission (handle persisted in IndexedDB).
+   * Does not replace the library root.
    */
-  async pickDirectoryForSourceFavoritePin(
+  async pickDirectoryForAdditionalSourcePermission(
     startInPath?: string,
-  ): Promise<FileSystemResult<{ path: string; name: string }>> {
+  ): Promise<FileSystemResult<{ name: string; handle: FileSystemDirectoryHandle }>> {
     if (!hasDirectoryPickerSupport()) {
       return {
         success: false,
@@ -759,8 +979,8 @@ class FileSystemService {
       };
     }
 
-    const registry = this.sourceRegistry;
-    if (!registry.hasRoot()) {
+    this.ensureLibraryHandleTracked();
+    if (!this.sourceRegistry.hasRoot()) {
       return {
         success: false,
         error: "No library folder selected yet",
@@ -768,6 +988,7 @@ class FileSystemService {
     }
 
     try {
+      const registry = this.sourceRegistry;
       let startIn: FileSystemDirectoryHandle | undefined;
       if (startInPath) {
         try {
@@ -778,18 +999,9 @@ class FileSystemService {
       }
 
       const handle = await this.pickDirectoryHandle("source", startIn);
-      const virtualPath = await registry.resolvePathFromRoot(handle);
-      if (!virtualPath) {
-        return {
-          success: false,
-          error: "Choose a folder inside your current library root",
-        };
-      }
-
-      void this.ensureSearchIndex("source");
       return {
         success: true,
-        data: { path: virtualPath, name: handle.name },
+        data: { name: handle.name, handle },
       };
     } catch (error: unknown) {
       if (hasErrorName(error, "AbortError")) {
@@ -810,6 +1022,9 @@ class FileSystemService {
   }
 
   hasRootForPane(paneType: PaneType): boolean {
+    if (paneType === "source") {
+      this.ensureLibraryHandleTracked();
+    }
     return this.getRegistry(paneType).hasRoot();
   }
 

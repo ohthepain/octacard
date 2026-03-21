@@ -2,6 +2,7 @@ import {
   ChevronDown,
   Folder,
   FolderOpen,
+  FolderPlus,
   Library,
   Pencil,
   Plus,
@@ -39,6 +40,9 @@ type RemoteDropItem =
     }
   | { kind: "sample"; id: string; name: string };
 
+/** Pass to `highlightedLocalFolderId` when the library grant row should appear active. */
+export const HIGHLIGHT_LIBRARY_FOLDER_ROW = "__octacard_library_folder__";
+
 interface ProjectColumnProps {
   currentPath: string;
   projectPacks: ProjectPackRef[];
@@ -51,10 +55,19 @@ interface ProjectColumnProps {
   onOpenGlobalPack: (packId: string) => void;
   onAddGlobalPack: (pack: ProjectPackRef) => void;
   onRemoveGlobalPack: (packId: string) => void;
-  onOpenLocalFolder: (path: string) => void | Promise<void>;
+  /** Open a saved local folder entry by favorite id (virtual path or permission handle). */
+  onOpenLocalFolder: (favoriteId: string) => void | Promise<void>;
+  /** Add a folder pinned by virtual path (under the current library tree). */
   onAddLocalFolder: (path: string, name: string) => void;
-  onRemoveLocalFolder: (path: string) => void;
-  onPickLocalFolderShortcut?: () => void;
+  /** Add an extra permission when the OS handle is not under the current library virtual tree. */
+  onAddLocalFolderFromHandle?: (handle: FileSystemDirectoryHandle, name: string) => void | Promise<void>;
+  onRemoveLocalFolder: (favoriteId: string) => void;
+  /** User chose the main library grant (browse root). */
+  onOpenLibraryFolder?: () => void | Promise<void>;
+  hasSourceLibraryRoot: boolean;
+  /** `HIGHLIGHT_LIBRARY_FOLDER_ROW` or a favorite `id` (first-fit / navigation). */
+  highlightedLocalFolderId: string | null;
+  onPickLocalFolderPermission?: () => void;
   onBrowseGlobalPacks?: () => void;
 }
 
@@ -147,11 +160,14 @@ function SectionHeaderIconButton({
   label,
   tooltip,
   onClick,
+  icon = "plus",
 }: {
   label: string;
   tooltip: string;
   onClick: () => void;
+  icon?: "plus" | "folderPlus";
 }) {
+  const Icon = icon === "folderPlus" ? FolderPlus : Plus;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -163,7 +179,7 @@ function SectionHeaderIconButton({
           aria-label={label}
           onClick={onClick}
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Icon className="h-3.5 w-3.5" />
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom">{tooltip}</TooltipContent>
@@ -227,10 +243,15 @@ export function ProjectColumn({
   onRemoveGlobalPack,
   onOpenLocalFolder,
   onAddLocalFolder,
+  onAddLocalFolderFromHandle,
   onRemoveLocalFolder,
-  onPickLocalFolderShortcut,
+  onOpenLibraryFolder,
+  hasSourceLibraryRoot,
+  highlightedLocalFolderId,
+  onPickLocalFolderPermission,
   onBrowseGlobalPacks,
 }: ProjectColumnProps) {
+  void currentPath;
   const handleLocalDrop = async (event: DragEvent) => {
     event.preventDefault();
 
@@ -272,6 +293,8 @@ export function ProjectColumn({
           const path = fileSystemService.getVirtualPath(dirHandle, "source");
           if (path) {
             onAddLocalFolder(path, dirHandle.name);
+          } else if (onAddLocalFolderFromHandle) {
+            await onAddLocalFolderFromHandle(dirHandle, dirHandle.name);
           }
         }
       } catch {
@@ -384,13 +407,14 @@ export function ProjectColumn({
           </Section>
 
           <Section
-            title="Local Folders"
+            title="Local folder permissions"
             headerAction={
-              onPickLocalFolderShortcut ? (
+              onPickLocalFolderPermission ? (
                 <SectionHeaderIconButton
-                  label="Add local folder shortcut"
-                  tooltip="Add a local folder shortcut"
-                  onClick={onPickLocalFolderShortcut}
+                  label="Add folder permission"
+                  tooltip="Add disk folder access (folder icon). No library yet — you will choose your library folder first."
+                  onClick={onPickLocalFolderPermission}
+                  icon="folderPlus"
                 />
               ) : undefined
             }
@@ -399,41 +423,65 @@ export function ProjectColumn({
               onDragOver={handleDragOver}
               onDrop={(event) => void handleLocalDrop(event)}
             >
-              {localFolders.length === 0 ? (
+              {!hasSourceLibraryRoot ? (
                 <div className="rounded-lg border border-dashed border-border px-2 py-3 text-xs text-muted-foreground">
-                  Drag local folders here to pin them.
+                  Open Local mode and choose a library folder in the file pane first. Then you can add extra folder
+                  permissions here.
                 </div>
               ) : (
-                localFolders.map((folder) => (
-                  <div
-                    key={folder.path}
-                    className="group flex items-center gap-1 rounded px-1 py-0.5 hover:bg-muted/50"
-                  >
-                    <button
-                      type="button"
-                      className={cn(
-                        "flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left text-sm",
-                        currentPath === folder.path
-                          ? "bg-primary/10 text-primary"
-                          : "",
-                      )}
-                      onClick={() => onOpenLocalFolder(folder.path)}
-                    >
-                      <Star className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{folder.name}</span>
-                    </button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-                      onClick={() => onRemoveLocalFolder(folder.path)}
-                      aria-label={`Remove ${folder.name} from local folders`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))
+                <>
+                  {onOpenLibraryFolder ? (
+                    <div className="group flex items-center gap-1 rounded px-1 py-0.5 hover:bg-muted/50">
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left text-sm",
+                          highlightedLocalFolderId === HIGHLIGHT_LIBRARY_FOLDER_ROW
+                            ? "bg-primary/10 text-primary"
+                            : "",
+                        )}
+                        onClick={() => onOpenLibraryFolder()}
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Library</span>
+                      </button>
+                    </div>
+                  ) : null}
+                  {localFolders.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border px-2 py-3 text-xs text-muted-foreground">
+                      Drag folders here or use + to save access to another folder. Names are reminders only.
+                    </div>
+                  ) : (
+                    localFolders.map((folder) => (
+                      <div
+                        key={folder.id}
+                        className="group flex items-center gap-1 rounded px-1 py-0.5 hover:bg-muted/50"
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left text-sm",
+                            highlightedLocalFolderId === folder.id ? "bg-primary/10 text-primary" : "",
+                          )}
+                          onClick={() => onOpenLocalFolder(folder.id)}
+                        >
+                          <Star className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{folder.name}</span>
+                        </button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                          onClick={() => onRemoveLocalFolder(folder.id)}
+                          aria-label={`Remove ${folder.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </>
               )}
             </div>
           </Section>

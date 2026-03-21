@@ -1,12 +1,13 @@
 import { useCallback } from "react";
 import {
   favoritesStore,
+  type AddFavoriteInput,
   type Favorite,
   useFavoritesSelector,
   type FavoritePaneType,
 } from "@/stores/favorites-store";
 
-export type { Favorite };
+export type { Favorite, AddFavoriteInput };
 
 const EMPTY_FAVORITES: Favorite[] = [];
 
@@ -17,19 +18,27 @@ const EMPTY_FAVORITES: Favorite[] = [];
 export function useFavorites(paneType: FavoritePaneType, volumeId: string) {
   const volumeKey = `${paneType}__${volumeId || "_default"}`;
   const favorites = useFavoritesSelector(
-    (state) => state.favoritesByVolume[volumeKey] ?? EMPTY_FAVORITES
+    (state) => state.favoritesByVolume[volumeKey] ?? EMPTY_FAVORITES,
   );
 
   const addFavorite = useCallback(
+    (input: AddFavoriteInput) => {
+      favoritesStore.addFavorite(paneType, volumeId, input);
+    },
+    [paneType, volumeId],
+  );
+
+  /** Path-based shortcut (under current library / dest root). */
+  const addVirtualPathFavorite = useCallback(
     (path: string, name: string) => {
-      favoritesStore.addFavorite(paneType, volumeId, path, name);
+      favoritesStore.addFavorite(paneType, volumeId, { kind: "virtualPath", path, name });
     },
     [paneType, volumeId],
   );
 
   const removeFavorite = useCallback(
-    (path: string) => {
-      favoritesStore.removeFavorite(paneType, volumeId, path);
+    (favoriteId: string) => {
+      favoritesStore.removeFavorite(paneType, volumeId, favoriteId);
     },
     [paneType, volumeId],
   );
@@ -44,6 +53,7 @@ export function useFavorites(paneType: FavoritePaneType, volumeId: string) {
   return {
     favorites,
     addFavorite,
+    addVirtualPathFavorite,
     removeFavorite,
     isFavorite,
   };

@@ -607,6 +607,7 @@ export function TempFilesPane({
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
+      Temp Files pane
       <div className="flex items-center gap-2 p-2 border-b border-border shrink-0">
         <div className="flex-1 min-w-0 text-sm font-medium truncate" title={ROOT_PATH}>
           Temp Files
@@ -650,7 +651,6 @@ export function TempFilesPane({
           </Button>
         </div>
       </div>
-
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-2 space-y-0.5">
           {loading ? (
@@ -666,7 +666,6 @@ export function TempFilesPane({
           )}
         </div>
       </ScrollArea>
-
       <div className="shrink-0 border-t border-border px-3 py-1.5 text-xs text-muted-foreground flex items-center justify-between">
         <span>{title}</span>
         <span>{formatFileSize(totalBytes)} used</span>

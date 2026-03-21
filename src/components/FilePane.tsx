@@ -44,7 +44,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useNavigationState } from "@/hooks/use-navigation-state";
-import { useFavorites } from "@/hooks/use-favorites";
+import { useFavorites, type Favorite } from "@/hooks/use-favorites";
 import { VideoPreview } from "@/components/VideoPreview";
 import { OverwriteConfirmDialog, type OverwriteChoice } from "@/components/OverwriteConfirmDialog";
 import { fileSystemService } from "@/lib/fileSystem";
@@ -344,7 +344,8 @@ export const FilePane = ({
   const previewMode = useProjectStore((s) => s.getActiveStack()?.previewMode ?? "single");
   const putSampleInActiveSlot = useProjectStore((s) => s.putSampleInActiveSlot);
   const setActiveSlotIndex = useProjectStore((s) => s.setActiveSlotIndex);
-  const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
+  const { favorites, addVirtualPathFavorite, removeFavorite, isFavorite } = useFavorites(paneType, volumeId);
+  const pathFavorites = favorites.filter((f): f is Favorite & { path: string } => Boolean(f.path));
   const [pendingExpandedFolders, setPendingExpandedFolders] = useState<string[]>([]);
   const [isRestoringExpanded, setIsRestoringExpanded] = useState(false);
   const [treeViewMode, setTreeViewMode] = useState<"all" | "folders" | "files">("files");
@@ -1898,13 +1899,23 @@ export const FilePane = ({
     onSelectionChange({ path: node.path, type: node.type, name: node.name });
   }, [selectedItems, fileTree, onSelectionChange]);
 
-  // Navigate when requestedPath is set (e.g. from favorites column)
+  // Navigate when requestedPath is set (e.g. from favorites column).
+  // Also retry when the path matches currentRootPath but the last root load failed (pathDoesNotExist):
+  // otherwise re-selecting the same project pin skips navigation and leaves an empty tree.
   useEffect(() => {
-    if (requestedPath && requestedPath !== currentRootPath) {
-      void navigateToFolder(requestedPath);
-      onRequestedPathHandled?.();
-    }
-  }, [requestedPath, currentRootPath, navigateToFolder, onRequestedPathHandled]);
+    if (!requestedPath) return;
+    const pathChanged = requestedPath !== currentRootPath;
+    const retryFailedRoot = requestedPath === currentRootPath && pathDoesNotExist;
+    if (!pathChanged && !retryFailedRoot) return;
+    void navigateToFolder(requestedPath);
+    onRequestedPathHandled?.();
+  }, [
+    requestedPath,
+    currentRootPath,
+    pathDoesNotExist,
+    navigateToFolder,
+    onRequestedPathHandled,
+  ]);
 
   useEffect(() => {
     if (requestedRevealPath) {
@@ -4081,7 +4092,7 @@ export const FilePane = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!isFavorite(node.path)) {
-                        addFavorite(node.path, node.name);
+                        addVirtualPathFavorite(node.path, node.name);
                       }
                     }}
                     disabled={isFavorite(node.path)}
@@ -4380,10 +4391,11 @@ export const FilePane = ({
   const toggleCurrentPathFavorite = () => {
     if (!currentRootPath) return;
     if (isCurrentPathFavorite) {
-      removeFavorite(currentRootPath);
+      const fav = pathFavorites.find((f) => f.path === currentRootPath);
+      if (fav) removeFavorite(fav.id);
       return;
     }
-    addFavorite(currentRootPath, currentPathFavoriteName);
+    addVirtualPathFavorite(currentRootPath, currentPathFavoriteName);
   };
 
   return (
@@ -4426,14 +4438,14 @@ export const FilePane = ({
                   Favorites
                 </div>
                 <div className="space-y-0.5 mt-1">
-                  {favorites.length === 0 ? (
+                  {pathFavorites.length === 0 ? (
                     <div className="px-2 py-1.5 text-sm text-muted-foreground">No favorites</div>
                   ) : (
-                    favorites.map((favorite) => {
+                    pathFavorites.map((favorite) => {
                       const isActive = currentRootPath === favorite.path;
                       return (
                         <div
-                          key={favorite.path}
+                          key={favorite.id}
                           className={`group flex items-center gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
                             isActive ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-muted/50"
                           }`}
@@ -4452,7 +4464,7 @@ export const FilePane = ({
                             className="h-5 w-5 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                             onClick={(e) => {
                               e.stopPropagation();
-                              removeFavorite(favorite.path);
+                              removeFavorite(favorite.id);
                             }}
                             title="Remove from favorites"
                           >
@@ -4735,119 +4747,129 @@ export const FilePane = ({
                 onClick={(e) => {
                   // Clear selection when clicking on empty space (not on a file/folder item)
                   const target = e.target as HTMLElement;
-                  if (target === e.currentTarget || (!target.closest('[draggable="true"]') && !target.closest("button"))) {
+                  if (
+                    target === e.currentTarget ||
+                    (!target.closest('[draggable="true"]') && !target.closest("button"))
+                  ) {
                     setSelectedItems(new Set());
                     // Also clear selections in other panes
                     handlePaneClick();
                   }
                 }}
               >
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
-              </div>
-            ) : pathDoesNotExist ? (
-              <div className="text-center py-8 space-y-3">
-                {onBrowseForFolder ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2"
-                    data-testid={`select-folder-${paneName}`}
-                    onClick={() => onBrowseForFolder(currentRootPath || "/")}
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    Select folder
-                  </Button>
-                ) : (
-                  <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
-                    Navigate to nearest existing folder
-                  </Button>
-                )}
-                {paneGuidanceCopy}
-              </div>
-            ) : isSearchingFolders ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  <div className="text-sm text-muted-foreground">Searching...</div>
-                </div>
-              </div>
-            ) : searchQuery && searchResultsTree.length === 0 ? (
-              <div className="text-center py-8 space-y-2">
-                <div className="text-sm text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-                {paneGuidanceCopy}
-              </div>
-            ) : activeTreeNodes.length === 0 ? (
-              <>
-                {/* Render file tree with empty array - renderFileTree will add parent link if needed */}
-                {!searchQuery && renderFileTree([])}
-                <div
-                  className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
-                    isDraggingOverRoot ? "border-primary bg-primary/10" : "border-muted text-muted-foreground"
-                  }`}
-                >
-                  {pathDoesNotExist ? (
-                    <div className="space-y-3">
-                      <div className="text-amber-600 dark:text-amber-500">
-                        Directory does not exist: {currentRootPath || rootPath}
-                      </div>
-                      {currentRootPath && currentRootPath !== rootPath ? (
-                        <Button size="sm" variant="outline" onClick={navigateToParent} className="gap-2">
-                          <ArrowUp className="w-4 h-4" />
-                          Go to Parent Folder
-                        </Button>
-                      ) : onBrowseForFolder ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button size="sm" variant="outline" className="gap-2">
-                              <FolderOpen className="w-4 h-4" />
-                              Choose folder to navigate to
-                              <ChevronDown className="w-4 h-4" />
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
+                  </div>
+                ) : pathDoesNotExist ? (
+                  <div className="text-center py-8 space-y-3">
+                    {onBrowseForFolder ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        data-testid={`select-folder-${paneName}`}
+                        onClick={() => onBrowseForFolder(currentRootPath || "/")}
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        Select folder
+                      </Button>
+                    ) : (
+                      <Button onClick={navigateToNearestExistingParent} size="sm" variant="outline">
+                        Navigate to nearest existing folder
+                      </Button>
+                    )}
+                    {paneGuidanceCopy}
+                  </div>
+                ) : isSearchingFolders ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      <div className="text-sm text-muted-foreground">Searching...</div>
+                    </div>
+                  </div>
+                ) : searchQuery && searchResultsTree.length === 0 ? (
+                  <div className="text-center py-8 space-y-2">
+                    <div className="text-sm text-muted-foreground">
+                      No files found matching &quot;{searchQuery}&quot;
+                    </div>
+                    {paneGuidanceCopy}
+                  </div>
+                ) : activeTreeNodes.length === 0 ? (
+                  <>
+                    {/* Render file tree with empty array - renderFileTree will add parent link if needed */}
+                    {!searchQuery && renderFileTree([])}
+                    <div
+                      className={`text-center py-8 text-sm border-2 border-dashed rounded-lg transition-colors ${
+                        isDraggingOverRoot ? "border-primary bg-primary/10" : "border-muted text-muted-foreground"
+                      }`}
+                    >
+                      {pathDoesNotExist ? (
+                        <div className="space-y-3">
+                          <div className="text-amber-600 dark:text-amber-500">
+                            Directory does not exist: {currentRootPath || rootPath}
+                          </div>
+                          {currentRootPath && currentRootPath !== rootPath ? (
+                            <Button size="sm" variant="outline" onClick={navigateToParent} className="gap-2">
+                              <ArrowUp className="w-4 h-4" />
+                              Go to Parent Folder
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="center">
-                            <DropdownMenuItem onClick={() => onBrowseForFolder(currentRootPath || "/")}>
-                              <FolderOpen className="w-4 h-4 mr-2" />
-                              Browse for folder...
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={navigateToNearestExistingParent}>
-                              <ArrowUp className="w-4 h-4 mr-2" />
-                              Navigate to nearest existing folder
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                          ) : onBrowseForFolder ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="outline" className="gap-2">
+                                  <FolderOpen className="w-4 h-4" />
+                                  Choose folder to navigate to
+                                  <ChevronDown className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="center">
+                                <DropdownMenuItem onClick={() => onBrowseForFolder(currentRootPath || "/")}>
+                                  <FolderOpen className="w-4 h-4 mr-2" />
+                                  Browse for folder...
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={navigateToNearestExistingParent}>
+                                  <ArrowUp className="w-4 h-4 mr-2" />
+                                  Navigate to nearest existing folder
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={navigateToNearestExistingParent}
+                              className="gap-2"
+                            >
+                              <ArrowUp className="w-4 h-4" />
+                              Navigate to Nearest Existing Parent
+                            </Button>
+                          )}
+                        </div>
+                      ) : searchQuery ? (
+                        <div className="space-y-2">
+                          <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
+                          {paneGuidanceCopy}
+                        </div>
                       ) : (
-                        <Button size="sm" variant="outline" onClick={navigateToNearestExistingParent} className="gap-2">
-                          <ArrowUp className="w-4 h-4" />
-                          Navigate to Nearest Existing Parent
-                        </Button>
+                        <div className="space-y-2">
+                          <div className="text-muted-foreground">
+                            {treeViewMode === "folders" ? "No folders found" : "No files found"}
+                          </div>
+                          {paneGuidanceCopy}
+                        </div>
                       )}
                     </div>
-                  ) : searchQuery ? (
-                    <div className="space-y-2">
-                      <div className="text-muted-foreground">No files found matching &quot;{searchQuery}&quot;</div>
-                      {paneGuidanceCopy}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="text-muted-foreground">
-                        {treeViewMode === "folders" ? "No folders found" : "No files found"}
-                      </div>
-                      {paneGuidanceCopy}
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : searchQuery ? (
-              renderFileTree(searchTreeNodes)
-            ) : (
-              renderFileTree(filteredTreeNodes)
-            )}
-            {isDraggingOverRoot && !dragOverPath && !isDraggingOverBreadcrumb && activeTreeNodes.length > 0 && (
-              <div className="mt-3 h-20 rounded-lg border border-dashed border-primary/40 bg-primary/5 pointer-events-none" />
-            )}
+                  </>
+                ) : searchQuery ? (
+                  renderFileTree(searchTreeNodes)
+                ) : (
+                  renderFileTree(filteredTreeNodes)
+                )}
+                {isDraggingOverRoot && !dragOverPath && !isDraggingOverBreadcrumb && activeTreeNodes.length > 0 && (
+                  <div className="mt-3 h-20 rounded-lg border border-dashed border-primary/40 bg-primary/5 pointer-events-none" />
+                )}
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent>
@@ -4864,32 +4886,32 @@ export const FilePane = ({
 
         {/* Footer: Refresh and New Folder - shown when viewing a directory */}
         {fileSystemService.hasRootForPane(paneType) && currentRootPath && (
-            <div className="flex items-center gap-2 px-4 py-2 border-t border-border shrink-0 bg-muted/30">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={() => refreshCurrentDirectory()}
-                title="Refresh"
-                disabled={loading}
-              >
-                <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={() => setNewFolderDialogOpen(true)}
-                title="Create new folder"
-              >
-                <FolderPlus className="w-4 h-4" />
-                New Folder
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-2 px-4 py-2 border-t border-border shrink-0 bg-muted/30">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => refreshCurrentDirectory()}
+              title="Refresh"
+              disabled={loading}
+            >
+              <RotateCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setNewFolderDialogOpen(true)}
+              title="Create new folder"
+            >
+              <FolderPlus className="w-4 h-4" />
+              New Folder
+            </Button>
+          </div>
+        )}
 
         {/* Video Preview */}
         {selectedVideoFile && (
