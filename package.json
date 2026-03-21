@@ -154,7 +154,7 @@
     "@bgotink/playwright-coverage": "^0.3.2",
     "@biomejs/biome": "^2.4.7",
     "@playwright/test": "^1.58.2",
-    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^25.5.0",
     "@types/pg": "^8.18.0",
     "@types/react": "^19.2.14",
