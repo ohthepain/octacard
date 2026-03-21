@@ -1422,14 +1422,7 @@ const Index = () => {
                 />
               ) : libraryMode === "local" &&
                 (!hasDirectoryPickerSupport() ||
-                  requestedSourcePath?.startsWith("temp://") ||
-                  (editorMode === "pack" &&
-                    !fileSystemService.hasRootForPane("source") &&
-                    !(
-                      requestedSourcePath &&
-                      requestedSourcePath.startsWith("/") &&
-                      !requestedSourcePath.startsWith("temp://")
-                    ))) ? (
+                  requestedSourcePath?.startsWith("temp://")) ? (
                 <TempFilesPane
                   paneName="source"
                   title="Temp Files"

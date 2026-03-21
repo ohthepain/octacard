@@ -1,15 +1,20 @@
 # Navigation Pane
 
-The **Navigation Pane** is the **center column** of the main layout (see [panes-layout.md](./panes-layout.md)). In code it is not one component: **`Index.tsx`** chooses what to render in the `source-browser` panel based on `libraryMode`, browser support, `editorMode`, and path flags.
+The **Navigation Pane** is the **center column** of the main layout (see [panes-layout.md](./panes-layout.md)). In code it is not one component: **`Index.tsx`** chooses what to render in the `source-browser` panel based on `libraryMode`, browser support, and path flags (not `editorMode` — the pack editor does not switch the center column away from `FilePane`).
 
 ## What can appear here
 
-| Condition (simplified)                                                                | Primary UI                                                                                          |
-| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `libraryMode === "global"` and global scope is **rooms**                              | `RoomsTab`                                                                                          |
-| `libraryMode === "global"` (otherwise)                                                | `RemoteFilePane` — search/browse packs; opening a pack drills into **`PackView`** inside that pane  |
-| `libraryMode === "local"` and temp / unsupported-FS / certain pack-without-root cases | `TempFilesPane`                                                                                     |
-| `libraryMode === "local"` (typical disk library)                                      | `FilePane` — local tree; may embed **`PackView`** when viewing a pack-shaped context in local flows |
+Rough branching (exact conditions live in `Index.tsx`):
+
+### Global (`libraryMode === "global"`)
+
+- **`globalScope === "rooms"`** → `RoomsTab`
+- **Otherwise** → `RemoteFilePane` (search/browse packs; open pack → `PackView` inside that pane)
+
+### Local (`libraryMode === "local"`)
+
+- **Temp / no File System Access API** — `requestedSourcePath` starts with `temp://`, or the browser has no directory picker → `TempFilesPane`
+- **Otherwise** (typical Chromium disk library) → `FilePane` (tree; may show `PackView` when the current folder is pack-shaped)
 
 So “navigation” covers **global library**, **rooms**, **temp files**, and **local files**, not only “local folders.”
 
