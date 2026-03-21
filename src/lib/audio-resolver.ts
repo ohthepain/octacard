@@ -3,10 +3,10 @@
  * Handles local paths (via fileSystemService), remote paths (via audition cache),
  * and temp paths (via temp-files-store).
  */
-import type { FileSystemResult } from "./fileSystem";
-import type { PaneType } from "./fileSystem";
-import { fileSystemService } from "./fileSystem";
+
 import { getOrFetchRemoteSample } from "./audition-cache";
+import type { FileSystemResult, PaneType } from "./fileSystem";
+import { fileSystemService } from "./fileSystem";
 import { fromTempPath, getFile, isTempPath } from "./temp-files-store";
 
 const REMOTE_PREFIX = "remote://sample/";
@@ -56,6 +56,11 @@ export async function getAudioBlobForPath(
     }
     const objectUrl = URL.createObjectURL(blob);
     return { success: true, data: objectUrl };
+  }
+
+  if (path.startsWith("dest:")) {
+    const inner = path.slice("dest:".length);
+    return fileSystemService.getAudioFileBlob(inner, "dest");
   }
 
   return fileSystemService.getAudioFileBlob(path, paneType);

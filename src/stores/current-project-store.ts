@@ -30,6 +30,12 @@ interface CurrentProjectState {
   loadProjectFromRoomStorage: () => Promise<boolean>;
   /** Create new project: new id, reset content. Preserves formatSettings from current or passed value. */
   createNewProject: (name: string, formatSettings?: Record<string, unknown> | null) => Promise<ProjectDocument | null>;
+  /** Save current draft (no project) as a new project. Preserves stacks, sample edits, format settings. */
+  saveDraftAsProject: (
+    name: string,
+    coverImageS3Key?: string | null,
+    coverImageUrl?: string | null,
+  ) => Promise<ProjectDocument | null>;
   /** Build project document from current stores (for export, etc.) */
   getProjectDocument: () => ProjectDocument | null;
   /** Persist current project to IndexedDB/API (e.g. before leaving room). */
@@ -121,6 +127,32 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
       useSampleEditsStore.getState().hydrateFromProject(project.sampleEdits);
       useFormatPresetStore.getState().hydrateFromProject(project.formatSettings);
       // Room is joined only when user explicitly goes live via Live toggle
+      return project;
+    } finally {
+      set({ isHydrating: false });
+    }
+  },
+
+  saveDraftAsProject: async (name, coverImageS3Key, coverImageUrl) => {
+    const projectState = useProjectStore.getState();
+    if (projectState.id) return null;
+
+    await get().persistToProject();
+    useRoomStore.getState().leaveRoom();
+
+    const project = await createProject(name);
+    set({ isHydrating: true });
+    try {
+      useProjectStore.getState().setMetadata({
+        id: project.id,
+        name: project.name,
+        coverImageS3Key: coverImageS3Key ?? null,
+        coverImageUrl: coverImageUrl ?? null,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+        isPublic: project.isPublic,
+      });
+      await get().persistToProject();
       return project;
     } finally {
       set({ isHydrating: false });

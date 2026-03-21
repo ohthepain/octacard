@@ -10,6 +10,8 @@ import { fromTempPath, getFile, isTempPath } from "./temp-files-store";
 import { parseRemoteSampleId } from "./audio-resolver";
 import type { ProjectDocument } from "./project-document";
 import { sanitizeFilenameMinimal } from "./filename";
+import { getPackStructure } from "./project-packs";
+import { exportAudioWithEdits } from "./exportAudio";
 
 /** Pack export config - from Pack model or inline when exporting from project */
 export interface PackExportConfig {
@@ -64,6 +66,12 @@ async function resolvePathToBlob(path: string, paneType: "source" | "dest" = "so
     const virtualPath = fromTempPath(path);
     if (!virtualPath) return null;
     return await getFile(virtualPath);
+  }
+
+  if (path.startsWith("dest:")) {
+    const inner = path.slice("dest:".length);
+    const file = await fileSystemService.getFile(inner, "dest");
+    return file;
   }
 
   const file = await fileSystemService.getFile(path, paneType);
@@ -184,4 +192,249 @@ export async function exportProjectPack(
   }
 
   return exportProjectPackToZip(project, packSettings, packSettings.name);
+}
+
+function splitRelativePath(path: string): string[] {
+  return path
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean);
+}
+
+export async function exportLocalPackFolderToZip(
+  packName: string,
+  sourceRootPath: string,
+  sourcePaneType: "source" | "dest" = "source",
+): Promise<{ success: boolean; error?: string; count?: number }> {
+  const result = await fileSystemService.listAudioFilesRecursively(sourceRootPath, sourcePaneType);
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error ?? "Could not read local pack files" };
+  }
+  const files = result.data;
+  if (files.length === 0) {
+    return { success: false, error: "No audio files to export" };
+  }
+
+  const normalizedRoot = sourceRootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const prefix = normalizedRoot.endsWith("/") ? normalizedRoot : `${normalizedRoot}/`;
+
+  const zip = new JSZip();
+  let written = 0;
+  for (const entry of files) {
+    const relativePath = entry.path.startsWith(prefix)
+      ? entry.path.slice(prefix.length).replace(/^\/+/, "")
+      : entry.name;
+    const fileBlob = await resolvePathToBlob(entry.path, sourcePaneType);
+    if (!fileBlob) continue;
+    const segments = splitRelativePath(relativePath);
+    if (segments.length === 0) continue;
+    const safeFileName = sanitizeFilenameMinimal(segments.pop() ?? entry.name) || "sample";
+    const safeRelativePath = [...segments, safeFileName].join("/");
+    zip.file(safeRelativePath, fileBlob);
+    written += 1;
+  }
+
+  if (written === 0) {
+    return { success: false, error: "Could not resolve any files" };
+  }
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(zipBlob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${sanitizeFilenameMinimal(packName) || "local-pack"}.zip`;
+  link.click();
+  URL.revokeObjectURL(url);
+  return { success: true, count: written };
+}
+
+export async function exportLocalPackFolderToFolder(
+  packName: string,
+  sourceRootPath: string,
+  destinationParentPath: string,
+  sourcePaneType: "source" | "dest" = "source",
+  destinationPaneType: "source" | "dest" = "dest",
+): Promise<{ success: boolean; error?: string; count?: number }> {
+  const filesResult = await fileSystemService.listAudioFilesRecursively(sourceRootPath, sourcePaneType);
+  if (!filesResult.success || !filesResult.data) {
+    return { success: false, error: filesResult.error ?? "Could not read local pack files" };
+  }
+  const files = filesResult.data;
+  if (files.length === 0) {
+    return { success: false, error: "No audio files to export" };
+  }
+
+  const safePackFolder = sanitizeFilenameMinimal(packName) || "local-pack";
+  const packDestination = `${destinationParentPath.replace(/\/+$/, "")}/${safePackFolder}`;
+  const createRoot = await fileSystemService.createFolder(destinationParentPath, safePackFolder, destinationPaneType);
+  if (!createRoot.success) {
+    return { success: false, error: createRoot.error ?? "Could not create destination pack folder" };
+  }
+
+  const normalizedRoot = sourceRootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const prefix = normalizedRoot.endsWith("/") ? normalizedRoot : `${normalizedRoot}/`;
+
+  let written = 0;
+  for (const entry of files) {
+    const relativePath = entry.path.startsWith(prefix)
+      ? entry.path.slice(prefix.length).replace(/^\/+/, "")
+      : entry.name;
+    const segments = splitRelativePath(relativePath);
+    if (segments.length === 0) continue;
+    const rawName = segments.pop() ?? entry.name;
+    const safeName = sanitizeFilenameMinimal(rawName) || "sample";
+
+    let destinationDir = packDestination;
+    for (const segment of segments) {
+      const safeSegment = sanitizeFilenameMinimal(segment) || "folder";
+      const nextDir = `${destinationDir}/${safeSegment}`;
+      const createDir = await fileSystemService.createFolder(destinationDir, safeSegment, destinationPaneType);
+      if (!createDir.success) {
+        return { success: false, error: createDir.error ?? "Could not create destination folder" };
+      }
+      destinationDir = nextDir;
+    }
+
+    const copyResult = await fileSystemService.copyFile(
+      entry.path,
+      destinationDir,
+      safeName,
+      sourcePaneType,
+      destinationPaneType,
+    );
+    if (!copyResult.success) {
+      return { success: false, error: copyResult.error ?? `Could not export ${entry.name}` };
+    }
+    written += 1;
+  }
+
+  return { success: true, count: written };
+}
+
+export async function exportProjectPackStructureToFolder(
+  projectId: string,
+  packId: string,
+  packName: string,
+  destinationParentPath: string,
+  destinationPaneType: "source" | "dest" = "dest",
+): Promise<{ success: boolean; error?: string; count?: number }> {
+  const structure = await getPackStructure(projectId, packId);
+  if (structure.entries.length === 0) {
+    return { success: false, error: "No samples to export" };
+  }
+
+  const safePackFolder = sanitizeFilenameMinimal(packName) || "local-pack";
+  const packDestination = `${destinationParentPath.replace(/\/+$/, "")}/${safePackFolder}`;
+  const createRoot = await fileSystemService.createFolder(
+    destinationParentPath,
+    safePackFolder,
+    destinationPaneType,
+  );
+  if (!createRoot.success) {
+    return { success: false, error: createRoot.error ?? "Could not create export folder" };
+  }
+
+  let written = 0;
+  for (const entry of structure.entries) {
+    const blob = await resolvePathToBlob(entry.sourceRef, "source");
+    if (!blob) continue;
+
+    const { mainBlob } = await exportAudioWithEdits(blob, {
+      regionStart: entry.regionStart,
+      regionEnd: entry.regionEnd,
+    });
+
+    const safeName = sanitizeFilenameMinimal(entry.displayName) || "sample";
+    const ext = safeName.includes(".") ? "" : ".wav";
+    const folderSegments = buildFolderPathForEntry(entry, structure.folders);
+
+    let destinationDir = packDestination;
+    for (const segment of folderSegments) {
+      const nextDir = `${destinationDir}/${segment}`;
+      const createDir = await fileSystemService.createFolder(destinationDir, segment, destinationPaneType);
+      if (!createDir.success) {
+        return { success: false, error: createDir.error ?? "Could not create folder" };
+      }
+      destinationDir = nextDir;
+    }
+
+    const targetPath = `${destinationDir}/${safeName}${ext}`;
+    const writeResult = await fileSystemService.writeBlobToPath(targetPath, mainBlob, destinationPaneType);
+    if (!writeResult.success) continue;
+    written += 1;
+  }
+
+  if (written === 0) {
+    return { success: false, error: "Could not export any samples" };
+  }
+
+  const packJson = { name: packName };
+  const packJsonBlob = new Blob([JSON.stringify(packJson, null, 2)], { type: "application/json" });
+  await fileSystemService.writeBlobToPath(`${packDestination}/pack.json`, packJsonBlob, destinationPaneType);
+
+  return { success: true, count: written };
+}
+
+function buildFolderPathForEntry(
+  entry: { folderId: string | null },
+  folders: Array<{ id: string; parentId: string | null; name: string }>,
+): string[] {
+  if (!entry.folderId) return [];
+  const path: string[] = [];
+  let currentId: string | null = entry.folderId;
+  while (currentId) {
+    const folder = folders.find((f) => f.id === currentId);
+    if (!folder) break;
+    path.unshift(sanitizeFilenameMinimal(folder.name) || "folder");
+    currentId = folder.parentId;
+  }
+  return path;
+}
+
+export async function exportProjectPackStructureToZip(
+  projectId: string,
+  packId: string,
+  packName: string,
+): Promise<{ success: boolean; error?: string; count?: number }> {
+  const structure = await getPackStructure(projectId, packId);
+  if (structure.entries.length === 0) {
+    return { success: false, error: "No samples to export" };
+  }
+
+  const zip = new JSZip();
+  let written = 0;
+
+  for (const entry of structure.entries) {
+    const blob = await resolvePathToBlob(entry.sourceRef, "source");
+    if (!blob) continue;
+
+    const { mainBlob } = await exportAudioWithEdits(blob, {
+      regionStart: entry.regionStart,
+      regionEnd: entry.regionEnd,
+    });
+
+    const safeName = sanitizeFilenameMinimal(entry.displayName) || "sample";
+    const ext = safeName.includes(".") ? "" : ".wav";
+    const folderPath = buildFolderPathForEntry(entry, structure.folders);
+    const zipPath = folderPath.length > 0 ? [...folderPath, safeName + ext].join("/") : safeName + ext;
+    zip.file(zipPath, mainBlob);
+    written += 1;
+  }
+
+  if (written === 0) {
+    return { success: false, error: "Could not resolve any samples" };
+  }
+
+  const packJson = { name: packName };
+  zip.file("pack.json", JSON.stringify(packJson, null, 2));
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (sanitizeFilenameMinimal(packName) || "pack") + ".zip";
+  a.click();
+  URL.revokeObjectURL(url);
+
+  return { success: true, count: written };
 }

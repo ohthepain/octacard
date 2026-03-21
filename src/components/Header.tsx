@@ -1,4 +1,3 @@
-import { Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSession } from "@/lib/auth-client";
@@ -21,18 +20,18 @@ export function DevModeToggle() {
           size="sm"
           className={
             devMode
-              ? "text-orange-500 hover:text-orange-600"
-              : "text-muted-foreground hover:text-foreground"
+              ? "h-8 px-3 text-orange-500 hover:text-orange-600"
+              : "h-8 px-3 text-muted-foreground hover:text-foreground"
           }
           aria-label="Toggle dev mode"
           aria-pressed={devMode}
           data-testid="dev-mode-toggle"
           onClick={() => setDevMode(!devMode)}
         >
-          <Bug className={`h-4 w-4 ${devMode ? "fill-current" : ""}`} />
+          <span>DEV</span>
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Dev mode {devMode ? "on" : "off"}</TooltipContent>
+      <TooltipContent>Dev mode is {devMode ? "on" : "off"}</TooltipContent>
     </Tooltip>
   );
 }

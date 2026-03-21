@@ -1,0 +1,21 @@
+---
+description: >-
+  Main layout and column UX — read docs/ux when changing shell, ProjectColumn,
+  center browser, or editor pane behavior.
+globs:
+  - docs/ux/**/*.md
+  - src/pages/Index.tsx
+  - src/components/ProjectColumn.tsx
+alwaysApply: false
+---
+
+# UX documentation (main layout)
+
+When the task touches the **three-column shell** (project | navigation | editor), **Project Pane**, **center file browser / library mode**, or **editor pane** behavior, open and follow:
+
+- `docs/ux/main-layout.md` — overall columns and optional wave editor
+- `docs/ux/project-pane.md` — left column (`ProjectColumn`, local packs, pins)
+- `docs/ux/navigation-pane.md` — center column
+- `docs/ux/editor-pane.md` — right column
+
+Prefer implementing to match these docs. If product or code **intentionally** diverges, update the relevant `.md` in the same change.

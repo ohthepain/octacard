@@ -666,6 +666,10 @@ export const FilePane = ({
       // Check if root directory is set
       if (!fileSystemService.hasRootForPane(paneType)) {
         setLoading(false);
+        if (nodeId === "root") {
+          setPathDoesNotExist(true);
+          setFileTree([]);
+        }
         return;
       }
 

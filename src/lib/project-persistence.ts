@@ -50,8 +50,14 @@ export async function getProject(_id?: string): Promise<ProjectDocument | null> 
   if (!(await hasSession())) return null;
   const res = await apiFetch(`${API_BASE}/me`);
   if (res.ok) {
-    const data = await res.json();
-    return normalizeProjectDocument(data as Record<string, unknown>);
+    const text = await res.text();
+    if (!text || text.trim() === "") return null;
+    try {
+      const data = JSON.parse(text) as Record<string, unknown>;
+      return normalizeProjectDocument(data);
+    } catch {
+      return null;
+    }
   }
   if (res.status === 404) return null;
   if (res.status === 401) return null;
