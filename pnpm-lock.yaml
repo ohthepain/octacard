@@ -215,7 +215,7 @@ importers:
         version: 3.5.0
       tailwindcss-animate:
         specifier: ^1.0.7
-        version: 1.0.7(tailwindcss@4.2.1)
+        version: 1.0.7(tailwindcss@4.2.2)
       wavesurfer.js:
         specifier: ^7.12.4
         version: 7.12.4(patch_hash=sqsbq5b6btklpv35vnneopl5w4)
@@ -290,8 +290,8 @@ importers:
         specifier: ^0.34.5
         version: 0.34.5
       tailwindcss:
-        specifier: ^4.2.1
-        version: 4.2.1
+        specifier: ^4.2.2
+        version: 4.2.2
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
@@ -15197,9 +15197,9 @@ snapshots:
 
   tailwind-merge@3.5.0: {}
 
-  tailwindcss-animate@1.0.7(tailwindcss@4.2.1):
+  tailwindcss-animate@1.0.7(tailwindcss@4.2.2):
     dependencies:
-      tailwindcss: 4.2.1
+      tailwindcss: 4.2.2
 
   tailwindcss@4.2.1: {}
 
