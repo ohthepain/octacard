@@ -198,6 +198,39 @@ export function scoreAtTime(
 }
 
 /**
+ * When two candidates are closer than `minSpacingSec`, keep one: the higher-confidence hit
+ * (time follows the winner). Input should be unsorted; result is time-ordered.
+ */
+export function debounceSliceMarkers(
+  markers: SliceMarker[],
+  minSpacingSec: number,
+): SliceMarker[] {
+  if (markers.length === 0) return [];
+  if (minSpacingSec <= 0) return [...markers].sort((a, b) => a.time - b.time);
+
+  const sorted = [...markers].sort((a, b) => {
+    if (a.time !== b.time) return a.time - b.time;
+    return b.confidence - a.confidence;
+  });
+  const out: SliceMarker[] = [];
+  for (const m of sorted) {
+    if (out.length === 0) {
+      out.push({ time: m.time, confidence: m.confidence });
+      continue;
+    }
+    const last = out[out.length - 1];
+    if (m.time - last.time < minSpacingSec) {
+      if (m.confidence > last.confidence) {
+        out[out.length - 1] = { time: m.time, confidence: m.confidence };
+      }
+    } else {
+      out.push({ time: m.time, confidence: m.confidence });
+    }
+  }
+  return out;
+}
+
+/**
  * Detect slice markers at 32nd-note grid points.
  * For each grid point, finds the best match (transient, pitch change, or both) within the search window
  * and assigns a confidence score.
@@ -228,6 +261,8 @@ export function detectSliceMarkers(
   const bars = gridSpan / barSeconds;
   const numGridPoints = Math.max(1, Math.floor(32 * bars));
   const gridInterval = gridSpan / numGridPoints;
+  /** One 128th note at this BPM/grid (grid step is a 32nd). */
+  const debounceSpacingSec = gridInterval / 4;
   const searchRadius = gridInterval / 2;
 
   const channel = buffer.getChannelData(0);
@@ -294,16 +329,14 @@ export function detectSliceMarkers(
     (best, m) => (m.time < best.time ? m : best),
     markers[0] ?? { time: Infinity, confidence: 0 },
   );
-  const minSpacingSec = MIN_SPACING_MS / 1000;
-  const startAlreadyCovered =
-    nearestToStart && nearestToStart.time - t0 < minSpacingSec;
+  const startAlreadyCovered = nearestToStart.time - t0 < debounceSpacingSec;
   if (hasAudioAtStart && !startAlreadyCovered) {
     const startConfidence = Math.min(1, 0.5 + (startRms / maxRms) * 0.5);
     markers.push({ time: t0, confidence: startConfidence });
     markers.sort((a, b) => a.time - b.time);
   }
 
-  return markers;
+  return debounceSliceMarkers(markers, debounceSpacingSec);
 }
 
 const ELBOW_MIN_GAP = 0.04;

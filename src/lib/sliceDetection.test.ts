@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeTransientScores,
   confidenceThresholdForMinCount,
+  debounceSliceMarkers,
   formatSliceConfidenceChip,
   inferSliceCountFromConfidences,
   selectSlicesByConfidenceThreshold,
@@ -130,6 +131,41 @@ function maxTransientScoreBetween(
   }
   return m;
 }
+
+describe("debounceSliceMarkers", () => {
+  it("drops the weaker of two hits within min spacing (time-ordered)", () => {
+    const out = debounceSliceMarkers(
+      [
+        { time: 0.1, confidence: 0.3 },
+        { time: 0.11, confidence: 0.9 },
+      ],
+      0.05,
+    );
+    expect(out).toEqual([{ time: 0.11, confidence: 0.9 }]);
+  });
+
+  it("keeps the first when the later hit is weaker", () => {
+    const out = debounceSliceMarkers(
+      [
+        { time: 0.1, confidence: 0.8 },
+        { time: 0.11, confidence: 0.2 },
+      ],
+      0.05,
+    );
+    expect(out).toEqual([{ time: 0.1, confidence: 0.8 }]);
+  });
+
+  it("keeps both when separated", () => {
+    const out = debounceSliceMarkers(
+      [
+        { time: 0.1, confidence: 0.5 },
+        { time: 0.2, confidence: 0.5 },
+      ],
+      0.05,
+    );
+    expect(out.map((m) => m.time)).toEqual([0.1, 0.2]);
+  });
+});
 
 describe("computeTransientScores", () => {
   const sampleRate = 48_000;
