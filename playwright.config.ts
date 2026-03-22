@@ -5,6 +5,8 @@ import { defineCoverageReporterConfig } from "@bgotink/playwright-coverage";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3010";
+/** Set PLAYWRIGHT_SKIP_WEB_SERVER=1 when something else already serves `baseURL` and must not be replaced. */
+const skipWebServer = process.env.PLAYWRIGHT_SKIP_WEB_SERVER === "1";
 
 export default defineConfig({
   testDir: "e2e",
@@ -33,11 +35,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: process.env.CI
+  webServer: skipWebServer
     ? undefined
     : {
         command: "pnpm run preview:it",
         url: baseURL,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: true,
+        timeout: 120_000,
       },
 });

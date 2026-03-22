@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assertRevealInFinder } from "../../tests/reveal-in-finder.mjs";
-import { assertRevealInFinderDest } from "../../tests/reveal-in-finder-dest.mjs";
 import { assertRevealFileInFinder } from "../../tests/reveal-file-in-finder.mjs";
 import { assertRevealInFinderDoesNotOpenPickerFallback } from "../../tests/reveal-in-finder-no-picker-fallback.mjs";
 import { assertSampleRateOptions } from "../../tests/sample-rate-options.mjs";
@@ -23,8 +22,8 @@ import { assertBraveBrowserSupport } from "../../tests/brave-browser-support.mjs
 import { assertWaveformButtonOpensEmptyState } from "../../tests/waveform-button-opens-empty-state.mjs";
 import { assertFilePaneKeyboardNavigation } from "../../tests/filepane-keyboard-navigation.mjs";
 import { assertSearchModesAllFoldersFiles } from "../../tests/search-modes-all-folders-files.mjs";
-import { assertSourceFolderDoesNotAutoSelectDest } from "../../tests/source-folder-does-not-auto-select-dest.mjs";
 import { assertFilePaneGuidanceCopy } from "../../tests/filepane-guidance-copy.mjs";
+import { ensureMockDestRoot } from "../../tests/integration-fs-helpers.mjs";
 import { waitForPageCondition, waitForAriaPressed } from "../../tests/wait-utils.mjs";
 import { assertBarsBeatsSupport } from "../../tests/bars-beats-support.mjs";
 import { assertSampleStartEndBar } from "../../tests/sample-start-end-bar.mjs";
@@ -177,71 +176,47 @@ try {
   const formatBox = await formatButton.boundingBox();
   assert.ok(convertBox, "Expected convert button to have a visible bounding box.");
   assert.ok(formatBox, "Expected format button to have a visible bounding box.");
+  // Header is asymmetric (wide left toolbar + flex spacers); Convert is not viewport-centered.
+  assert.ok(
+    convertBox.x + convertBox.width <= formatBox.x + 2,
+    `Expected convert before format controls. convertRight=${convertBox.x + convertBox.width}, formatLeft=${formatBox.x}`,
+  );
   const viewport = page.viewportSize();
   assert.ok(viewport, "Expected viewport size to be available.");
-  const convertCenterX = convertBox.x + convertBox.width / 2;
-  const viewportCenterX = viewport.width / 2;
-  const centerDelta = Math.abs(convertCenterX - viewportCenterX);
-  assert.ok(
-    centerDelta <= 160,
-    `Expected convert button to be centered. Delta=${centerDelta}, viewportCenter=${viewportCenterX}, buttonCenter=${convertCenterX}`,
-  );
   assert.ok(convertBox.x >= 0, "Expected convert button to remain inside the viewport.");
   assert.ok(convertBox.x + convertBox.width <= viewport.width, "Expected convert button to remain fully visible.");
   await assertDevModeButton(page, { convertButton, formatButton });
   await page.locator("#main-layout").waitFor({ state: "visible" });
   const sourcePanel = page.getByTestId("panel-source");
-  const destPanel = page.getByTestId("panel-dest");
   await sourcePanel.waitFor({ state: "visible" });
-  await destPanel.waitFor({ state: "visible" });
   await assertFilePaneGuidanceCopy(page);
   const sourceBox = await sourcePanel.boundingBox();
-  const destBox = await destPanel.boundingBox();
-  if (!sourceBox || !destBox) {
-    throw new Error("Expected source and destination panels to be visible.");
+  const editorPanel = page.getByTestId("panel-editor");
+  await editorPanel.waitFor({ state: "visible" });
+  const editorBox = await editorPanel.boundingBox();
+  if (!sourceBox || !editorBox) {
+    throw new Error("Expected source navigation and editor panels to be visible.");
   }
-  const averageWidth = (sourceBox.width + destBox.width) / 2;
-  const widthDelta = Math.abs(sourceBox.width - destBox.width);
-  assert.ok(
-    widthDelta <= averageWidth * 0.05,
-    `Expected source/dest panels to be near equal width. Source=${sourceBox.width}, Dest=${destBox.width}`,
-  );
+  assert.ok(sourceBox.width > 80, `Expected source panel to have reasonable width (${sourceBox.width}).`);
+  assert.ok(editorBox.width > 80, `Expected editor panel to have reasonable width (${editorBox.width}).`);
   await page.evaluate(() => {
-    const sourcePanel = document.querySelector('[data-testid="panel-source"]');
-    if (!(sourcePanel instanceof HTMLElement)) throw new Error("Source panel not found");
-    const browseButton = sourcePanel.querySelector('button[title="Browse for folder to navigate to"]');
+    const panel = document.querySelector('[data-testid="panel-source"]');
+    if (!(panel instanceof HTMLElement)) throw new Error("Source panel not found");
+    const browseButton = panel.querySelector('button[title="Browse for folder to navigate to"]');
     if (!(browseButton instanceof HTMLElement)) throw new Error("Source browse button not found");
     browseButton.click();
   });
 
   const sourceAlphaNode = page.getByTestId("tree-node-source-_Alpha");
   await sourceAlphaNode.waitFor({ state: "visible" });
-  await page.evaluate(() => {
-    const destPanel = document.querySelector('[data-testid="panel-dest"]');
-    if (!(destPanel instanceof HTMLElement)) throw new Error("Dest panel not found");
-    const browseButton = destPanel.querySelector('button[title="Browse for folder to navigate to"]');
-    if (!(browseButton instanceof HTMLElement)) {
-      const selectFolder = destPanel.querySelector('[data-testid="select-folder-dest"]');
-      if (selectFolder instanceof HTMLElement) selectFolder.click();
-      else throw new Error("Dest browse button not found");
-    } else {
-      browseButton.click();
-    }
-  });
-  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
+  await ensureMockDestRoot(page);
   await assertWhatsNewTour(page);
   await assertFilePaneKeyboardNavigation(page);
   await assertSearchModesAllFoldersFiles(page);
-  await assertSourceFolderDoesNotAutoSelectDest(page);
   await assertMultiStackPersistsAfterReload(page);
   await sourceAlphaNode.waitFor({ state: "visible" });
   await page.getByTestId("favorite-open-source-_Alpha").waitFor({ state: "visible" });
-  await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
   await assertRevealInFinder(page);
-  await page.evaluate(() => {
-    window.__revealCalls = [];
-  });
-  await assertRevealInFinderDest(page);
   await page.evaluate(() => {
     window.__revealCalls = [];
   });
@@ -249,17 +224,16 @@ try {
   await assertRevealInFinderDoesNotOpenPickerFallback(page);
   await page.evaluate(() => {
     const sourceFavorite = document.querySelector('[data-testid="favorite-open-source-_Alpha"]');
-    const destFavorite = document.querySelector('[data-testid="favorite-open-dest-_Beta"]');
     if (!(sourceFavorite instanceof HTMLElement)) throw new Error("Source favorite button not found");
-    if (!(destFavorite instanceof HTMLElement)) throw new Error("Destination favorite button not found");
     sourceFavorite.click();
-    destFavorite.click();
   });
-  await waitForPageCondition(page, "Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 4");
+  // After `assertMultiStackPersistsAfterReload`, the page reload resets `__pickerCalls`; only
+  // `openSourceAndDestRoots` runs (source + dest). Favorite navigation does not open a picker.
+  await waitForPageCondition(page, "Array.isArray(window.__pickerCalls) && window.__pickerCalls.length >= 2");
   const pickerCalls = await page.evaluate(() => window.__pickerCalls);
   assert.ok(
-    pickerCalls.length >= 4,
-    "Expected at least four picker calls (source, dest, persist source, persist dest).",
+    pickerCalls.length >= 2,
+    "Expected mock picker calls for source and destination roots after reload (see openSourceAndDestRoots).",
   );
   await assertIndexedSearchUsesCache(page);
 
@@ -340,18 +314,9 @@ try {
     browseButton.click();
   });
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
-  await page.evaluate(() => {
-    const destPanel = document.querySelector('[data-testid="panel-dest"]');
-    if (!(destPanel instanceof HTMLElement)) throw new Error("Dest panel not found after reload");
-    const browseButton = destPanel.querySelector('button[title="Browse for folder to navigate to"]');
-    const selectFolder = destPanel.querySelector('[data-testid="select-folder-dest"]');
-    if (browseButton instanceof HTMLElement) browseButton.click();
-    else if (selectFolder instanceof HTMLElement) selectFolder.click();
-  });
-  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
+  await ensureMockDestRoot(page);
   const reloadedFavorite = page.getByTestId(addedFavoriteTestId);
   await reloadedFavorite.waitFor({ state: "visible" });
-  await page.getByTestId("favorite-open-dest-_Beta").waitFor({ state: "visible" });
   await page.evaluate((testId) => {
     const favoriteButton = document.querySelector(`[data-testid="${testId}"]`);
     if (!(favoriteButton instanceof HTMLElement)) throw new Error(`Favorite button not found: ${testId}`);
@@ -372,10 +337,6 @@ try {
 
   await page.getByTestId("breadcrumb-root-source").click();
   await sourceAlphaNode.waitFor({ state: "visible" });
-  await page.getByTestId("breadcrumb-root-dest").waitFor({ state: "visible" });
-  await page.getByTestId("breadcrumb-root-dest").click();
-  const destBetaNode = page.getByTestId("tree-node-dest-_Beta");
-  await destBetaNode.waitFor({ state: "visible" });
   await formatButton.click();
   await page.locator('label[for="sample-depth-16-bit"]').click();
   await page.getByRole("button", { name: "Done" }).click();
@@ -384,14 +345,12 @@ try {
   // await assertDragFolderDropConvertsWithoutConfirmation(page);
 
   await page.getByTestId("tree-node-source-_Alpha").click();
-  await destBetaNode.click();
 
   // Skip: conversion-progress dialog assertions are intentionally not enforced here.
   // await assertConvertDialogEllipsis(page);
   // await assertConversionCanBeCancelled(page);
 
   await page.getByTestId("tree-node-source-_Alpha").click();
-  await destBetaNode.click();
 
   // Skip: conversion call assertion block is flaky in this environment.
   // await page.evaluate(() => {
@@ -474,11 +433,8 @@ try {
 
   // Reset pane state before SP404 preset test.
   await page.getByTestId("panel-source").locator('input[placeholder="Search files..."]').fill("");
-  await page.getByTestId("panel-dest").locator('input[placeholder="Search files..."]').fill("");
   await page.getByTestId("breadcrumb-root-source").click();
-  await page.getByTestId("breadcrumb-root-dest").click();
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
-  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
 
   // Skip: SP404 sanitize conversion assertion is flaky in this environment.
   // await assertSp404PresetSanitizesFilename(page);

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { waitForAriaPressed } from "./wait-utils.mjs";
+import { ensureMockDestRoot } from "./integration-fs-helpers.mjs";
 
 async function openSourceAndDestRoots(page) {
   await page.evaluate(() => {
@@ -8,18 +9,10 @@ async function openSourceAndDestRoots(page) {
     const sourceBrowse = sourcePanel.querySelector('button[title="Browse for folder to navigate to"]');
     if (!(sourceBrowse instanceof HTMLElement)) throw new Error("Source browse button not found");
     sourceBrowse.click();
-
-    const destPanel = document.querySelector('[data-testid="panel-dest"]');
-    if (!(destPanel instanceof HTMLElement)) throw new Error("Dest panel not found");
-    const destBrowse = destPanel.querySelector('button[title="Browse for folder to navigate to"]');
-    const destSelectFolder = destPanel.querySelector('[data-testid="select-folder-dest"]');
-    if (destBrowse instanceof HTMLElement) destBrowse.click();
-    else if (destSelectFolder instanceof HTMLElement) destSelectFolder.click();
-    else throw new Error("Dest browse button not found");
   });
 
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
-  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
+  await ensureMockDestRoot(page);
 }
 
 export async function assertMultiStackPersistsAfterReload(page) {

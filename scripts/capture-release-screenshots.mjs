@@ -194,16 +194,14 @@ async function main() {
     if (browse) browse.click();
   });
   await page.waitForTimeout(300);
-  await page.evaluate(() => {
-    const dest = document.querySelector('[data-testid="panel-dest"]');
-    const browse = dest?.querySelector('button[title="Browse for folder to navigate to"]');
-    const selectFolder = dest?.querySelector('[data-testid="select-folder-dest"]');
-    if (browse) browse.click();
-    else if (selectFolder) selectFolder.click();
+  await page.evaluate(async () => {
+    const hooks = window.__octacardTestHooks;
+    if (hooks?.requestDirectoryForPaneForTests) {
+      await hooks.requestDirectoryForPaneForTests("dest");
+    }
   });
   await page.waitForTimeout(500);
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" }).catch(() => {});
-  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" }).catch(() => {});
 
   for (const scenario of scenarios) {
     try {

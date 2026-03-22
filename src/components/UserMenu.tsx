@@ -113,6 +113,14 @@ export function UserMenu() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem
+              onClick={() => setDevMode(!devMode)}
+              className="flex items-center gap-2 cursor-pointer"
+              data-testid="dev-mode-button"
+            >
+              <ToggleLeft className={`h-4 w-4 ${devMode ? "text-orange-500" : ""}`} />
+              Dev Mode {devMode ? "On" : "Off"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
               onClick={() => openCacheDebug()}
               className="flex items-center gap-2 cursor-pointer text-violet-600 focus:text-violet-600"
               data-testid="cache-debug-button"

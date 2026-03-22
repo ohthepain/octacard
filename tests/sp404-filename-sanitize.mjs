@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { waitForPageCondition } from "./wait-utils.mjs";
+import { ensureMockDestRoot } from "./integration-fs-helpers.mjs";
 
 export async function assertSp404PresetSanitizesFilename(page) {
   await page.getByTestId("format-settings-button").click();
@@ -11,6 +12,8 @@ export async function assertSp404PresetSanitizesFilename(page) {
     window.__convertCalls = [];
   });
 
+  await ensureMockDestRoot(page);
+
   const sourcePanel = page.getByTestId("panel-source");
   await sourcePanel.locator('button[title="Root"]').click();
   await page.getByTestId("tree-node-source-_Alpha").waitFor({ state: "visible" });
@@ -18,10 +21,6 @@ export async function assertSp404PresetSanitizesFilename(page) {
   const sourceFile = page.getByTestId("tree-node-source-_Alpha_Mel__wav");
   await sourceFile.waitFor({ state: "visible" });
   await sourceFile.click();
-
-  const destPanel = page.getByTestId("panel-dest");
-  await destPanel.locator('button[title="Root"]').click();
-  await page.getByTestId("tree-node-dest-_Beta").waitFor({ state: "visible" });
 
   await page.getByRole("button", { name: "Convert" }).click();
   await page.getByRole("button", { name: "Convert & Save" }).click();
@@ -32,5 +31,4 @@ export async function assertSp404PresetSanitizesFilename(page) {
   assert.ok(meloCall, "Expected conversion call for /Alpha/Melô.wav.");
   assert.equal(meloCall.sanitizeFilename, true, "Expected SP-404 preset to enable sanitize filename.");
   assert.equal(meloCall.fileName, "Melô.wav", "Expected original filename to be passed into conversion.");
-
 }

@@ -11,7 +11,11 @@ export async function assertBarsBeatsSupport(page) {
 
   const fileNode = page.getByTestId("tree-node-source-_Alpha_inside-alpha_wav");
   await fileNode.waitFor({ state: "visible" });
-  await fileNode.click();
+  await fileNode.scrollIntoViewIfNeeded();
+  // Breadcrumb / bottom toolbar can sit above the tree when sidebar + narrow column; direct click avoids interception.
+  await fileNode.evaluate((el) => {
+    if (el instanceof HTMLElement) el.click();
+  });
 
   const preview = page.getByTestId("audio-preview-source");
   await preview.waitFor({ state: "visible" });

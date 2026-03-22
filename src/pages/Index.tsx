@@ -486,14 +486,17 @@ const Index = () => {
 
   useEffect(() => {
     const win = typeof window !== "undefined" ? (window as OctacardTestWindow) : null;
-    if (win?.__octacardTestHooks) {
-      win.__octacardPlayerStore = usePlayerStore;
-      win.__octacardProjectStore = useProjectStore;
-      win.__octacardWaveformEditorStore = useWaveformEditorStore;
-      win.__octacardMultiSampleStoreResetStack = () => {
-        useProjectStore.getState().resetActiveStackSlots();
-      };
-    }
+    if (!win?.__octacardTestHooks) return;
+    Object.assign(win.__octacardTestHooks as object, {
+      requestDirectoryForPaneForTests: (paneType: "source" | "dest") =>
+        fileSystemService.requestDirectoryForPane(paneType, "/"),
+    });
+    win.__octacardPlayerStore = usePlayerStore;
+    win.__octacardProjectStore = useProjectStore;
+    win.__octacardWaveformEditorStore = useWaveformEditorStore;
+    win.__octacardMultiSampleStoreResetStack = () => {
+      useProjectStore.getState().resetActiveStackSlots();
+    };
   }, []);
 
   useEffect(() => {
@@ -1577,59 +1580,67 @@ const Index = () => {
 
           {/* Source Browser - center separator only affects source vs dest */}
           <ResizablePanel id="source-browser" defaultSize="30%" minSize="15%">
-            <div className="h-full min-h-0" data-testid="panel-source">
+            <div className="h-full min-h-0">
               {libraryMode === "global" && globalScope === "rooms" ? (
-                <RoomsTab />
+                <div className="h-full min-h-0" data-testid="panel-source">
+                  <RoomsTab />
+                </div>
               ) : libraryMode === "global" ? (
-                <RemoteFilePane
-                  key={`source-${sourceRootVersion}`}
-                  title={search?.creator ? "Creator's packs" : "Global Library"}
-                  scope={globalScope === "rooms" ? "all" : globalScope}
-                  onSelectionChange={setSelectedSourceItem}
-                  openPackId={openPackId}
-                  onOpenPackIdConsumed={() => setOpenPackId(null)}
-                  creatorId={search?.creator ?? undefined}
-                />
+                <div className="h-full min-h-0" data-testid="panel-source">
+                  <RemoteFilePane
+                    key={`source-${sourceRootVersion}`}
+                    title={search?.creator ? "Creator's packs" : "Global Library"}
+                    scope={globalScope === "rooms" ? "all" : globalScope}
+                    onSelectionChange={setSelectedSourceItem}
+                    openPackId={openPackId}
+                    onOpenPackIdConsumed={() => setOpenPackId(null)}
+                    creatorId={search?.creator ?? undefined}
+                  />
+                </div>
               ) : libraryMode === "local" &&
                 (!hasDirectoryPickerSupport() || requestedSourcePath?.startsWith("temp://")) ? (
-                <TempFilesPane
-                  paneName="source"
-                  title="Temp Files"
-                  onSelectionChange={setSelectedSourceItem}
-                  onPathChange={(path) => handleSourcePathChange(path, "_default")}
-                  refreshToken={sourceRefreshToken}
-                  requestedPath={requestedSourcePath}
-                  onRequestedPathHandled={handleRequestedSourcePathHandled}
-                />
+                <div className="h-full min-h-0" data-testid="panel-source">
+                  <TempFilesPane
+                    paneName="source"
+                    title="Temp Files"
+                    onSelectionChange={setSelectedSourceItem}
+                    onPathChange={(path) => handleSourcePathChange(path, "_default")}
+                    refreshToken={sourceRefreshToken}
+                    requestedPath={requestedSourcePath}
+                    onRequestedPathHandled={handleRequestedSourcePathHandled}
+                  />
+                </div>
               ) : (
-                <FilePane
-                  key={`source-${sourceRootVersion}`}
-                  paneName="source"
-                  title="Local Files"
-                  showSidebar={false}
-                  onPathChange={handleSourcePathChange}
-                  onSelectionChange={setSelectedSourceItem}
-                  onRequestedPathHandled={handleRequestedSourcePathHandled}
-                  requestedPath={requestedSourcePath}
-                  onRequestedRevealPathHandled={handleRequestedSourceRevealPathHandled}
-                  requestedRevealPath={requestedSourceRevealPath}
-                  dropMode="navigate"
-                  sampleRate={formatSettings.sampleRate}
-                  sampleDepth={formatSettings.sampleDepth}
-                  fileFormat={formatSettings.fileFormat}
-                  pitch={formatSettings.pitch}
-                  sanitizeFilename={formatSettings.sanitizeFilename}
-                  shortenFilename={formatSettings.shortenFilename}
-                  shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
-                  mono={formatSettings.mono}
-                  normalize={formatSettings.normalize}
-                  trimStart={formatSettings.trim}
-                  convertFiles={false}
-                  showEjectButton={false}
-                  showNewFolderButton={false}
-                  onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
-                  refreshToken={sourceRefreshToken}
-                />
+                <div className="h-full min-h-0" data-testid="panel-source">
+                  <FilePane
+                    key={`source-${sourceRootVersion}`}
+                    paneName="source"
+                    title="Local Files"
+                    showSidebar={true}
+                    onPathChange={handleSourcePathChange}
+                    onSelectionChange={setSelectedSourceItem}
+                    onRequestedPathHandled={handleRequestedSourcePathHandled}
+                    requestedPath={requestedSourcePath}
+                    onRequestedRevealPathHandled={handleRequestedSourceRevealPathHandled}
+                    requestedRevealPath={requestedSourceRevealPath}
+                    dropMode="navigate"
+                    sampleRate={formatSettings.sampleRate}
+                    sampleDepth={formatSettings.sampleDepth}
+                    fileFormat={formatSettings.fileFormat}
+                    pitch={formatSettings.pitch}
+                    sanitizeFilename={formatSettings.sanitizeFilename}
+                    shortenFilename={formatSettings.shortenFilename}
+                    shortenFilenameMaxLength={formatSettings.shortenFilenameMaxLength}
+                    mono={formatSettings.mono}
+                    normalize={formatSettings.normalize}
+                    trimStart={formatSettings.trim}
+                    convertFiles={false}
+                    showEjectButton={false}
+                    showNewFolderButton={false}
+                    onBrowseForFolder={(path) => handleBrowseForFolder("source", path)}
+                    refreshToken={sourceRefreshToken}
+                  />
+                </div>
               )}
             </div>
           </ResizablePanel>
