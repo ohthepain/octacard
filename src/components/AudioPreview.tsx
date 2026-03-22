@@ -2134,6 +2134,74 @@ export const AudioPreview = ({
     ],
   );
 
+  /**
+   * ×2 / ÷2: scale tempo and musical loop length together (bars/beats/16ths),
+   * so wall-clock loop duration stays the same (2× beats at 2× BPM, etc.).
+   */
+  const handleTempoAndLoopMusicalScale = useCallback(
+    (factor: 2 | 0.5) => {
+      if (duration <= 0) return;
+      const beatUnitFactor = 4 / parsedTimeSignature.beatUnit;
+      const oldTempo = tempoBpm;
+      const oldSpb = (60 / Math.max(1, oldTempo)) * beatUnitFactor;
+      if (oldSpb <= 0) return;
+      const effectiveLoopEnd = loopEnd > 0 ? loopEnd : duration;
+      const loopLen = Math.max(0, effectiveLoopEnd - loopStart);
+      const totalBeats = loopLen / oldSpb;
+      if (totalBeats <= 0) return;
+
+      if (factor === 2) {
+        const nextTempo = Math.max(50, Math.min(240, Math.round(oldTempo * 2)));
+        if (nextTempo === oldTempo) return;
+        const nextTotalBeats = totalBeats * 2;
+        const nextSpb = (60 / nextTempo) * beatUnitFactor;
+        setTempoBpm(nextTempo);
+        setTempoEditingValue(null);
+        setLoopEnd(clampToDuration(loopStart + nextTotalBeats * nextSpb));
+      } else {
+        const nextTempo = Math.max(50, Math.min(240, Math.round(oldTempo / 2)));
+        if (nextTempo === oldTempo) return;
+        const nextTotalBeats = Math.max(0.25, totalBeats / 2);
+        const nextSpb = (60 / nextTempo) * beatUnitFactor;
+        setTempoBpm(nextTempo);
+        setTempoEditingValue(null);
+        setLoopEnd(clampToDuration(loopStart + nextTotalBeats * nextSpb));
+      }
+    },
+    [
+      clampToDuration,
+      duration,
+      loopEnd,
+      loopStart,
+      parsedTimeSignature.beatUnit,
+      tempoBpm,
+    ],
+  );
+
+  const tempoLoopScaleButtonState = useMemo(() => {
+    const beatUnitFactor = 4 / parsedTimeSignature.beatUnit;
+    const oldSpb = (60 / Math.max(1, tempoBpm)) * beatUnitFactor;
+    const effectiveLoopEnd = loopEnd > 0 ? loopEnd : duration;
+    const loopLen = Math.max(0, effectiveLoopEnd - loopStart);
+    const totalBeats = oldSpb > 0 ? loopLen / oldSpb : 0;
+    const canDoubleToNewTempo =
+      Math.max(50, Math.min(240, Math.round(tempoBpm * 2))) !== tempoBpm;
+    const canHalveToNewTempo =
+      Math.max(50, Math.min(240, Math.round(tempoBpm / 2))) !== tempoBpm;
+    return {
+      canDouble:
+        duration > 0 &&
+        totalBeats > 0 &&
+        canDoubleToNewTempo &&
+        tempoBpm <= 120,
+      canHalve:
+        duration > 0 &&
+        totalBeats > 0.25 + 1e-6 &&
+        canHalveToNewTempo &&
+        tempoBpm >= 100,
+    };
+  }, [duration, loopEnd, loopStart, parsedTimeSignature.beatUnit, tempoBpm]);
+
   const handleTempoChange = useCallback(
     (newTempo: number) => {
       const n = Math.max(50, Math.min(240, Math.round(newTempo)));
@@ -3099,10 +3167,10 @@ export const AudioPreview = ({
                 size="sm"
                 variant="outline"
                 className="h-7 px-2 min-w-0 shrink-0 font-mono text-xs"
-                onClick={() => handleTempoChange(tempoBpm * 2)}
-                disabled={isLoading || tempoBpm > 120}
-                title="Double tempo"
-                aria-label="Double tempo"
+                onClick={() => handleTempoAndLoopMusicalScale(2)}
+                disabled={isLoading || !tempoLoopScaleButtonState.canDouble}
+                title="Double tempo and loop length (bars, beats, 16ths)"
+                aria-label="Double tempo and loop length in bars"
               >
                 ×2
               </Button>
@@ -3111,10 +3179,10 @@ export const AudioPreview = ({
                 size="sm"
                 variant="outline"
                 className="h-7 px-2 min-w-0 shrink-0 font-mono text-xs"
-                onClick={() => handleTempoChange(tempoBpm / 2)}
-                disabled={isLoading || tempoBpm < 100}
-                title="Halve tempo"
-                aria-label="Halve tempo"
+                onClick={() => handleTempoAndLoopMusicalScale(0.5)}
+                disabled={isLoading || !tempoLoopScaleButtonState.canHalve}
+                title="Halve tempo and loop length (bars, beats, 16ths)"
+                aria-label="Halve tempo and loop length in bars"
               >
                 ÷2
               </Button>
