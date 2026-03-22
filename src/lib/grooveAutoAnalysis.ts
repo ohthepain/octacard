@@ -407,8 +407,14 @@ export function analyzeGrooveAuto(
   const duration = buffer.duration;
 
   const startsWithAudio = hasAudioAtStart(channel, sampleRate);
-  /** Earliest hit (kick): intro-sensitive so a loud backbeat does not steal the anchor. */
-  const anchorOnset = detectEarliestHitTime(channel, sampleRate);
+  /**
+   * Loop anchor: when energy is already up at file start, linear onset detection often
+   * misses sample-0 (no “rise” in the first RMS windows) and reports the next hop — visually
+   * the “second slice”. If we already know audio starts immediately, lock the anchor to 0.
+   */
+  const anchorOnset = startsWithAudio
+    ? 0
+    : detectEarliestHitTime(channel, sampleRate);
 
   const transientFrames = computeTransientScores(channel, sampleRate);
   const pitchFrames = computePitchChangeScores(channel, sampleRate);
