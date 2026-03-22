@@ -290,6 +290,19 @@ export const AudioPreview = ({
     }
   }, [isPlaying, duration, loopStart, loopEnd, playStart]);
 
+  // After load, keep WaveSurfer at play start (sample/loop start from metadata or edits) while idle.
+  // Gate on prevFilePathForLoopRef so we don't seek with stale loop state from the previous file.
+  useEffect(() => {
+    if (isEmptyState || !filePath) return;
+    if (filePath !== prevFilePathForLoopRef.current) return;
+    const ws = wavesurferRef.current;
+    if (!ws || duration <= 0 || isPlaying) return;
+    const clamped = Math.max(loopStart, Math.min(loopEnd || duration, playStart));
+    const t = Math.min(clamped, duration * 0.9999);
+    ws.seekTo(t / duration);
+    setCurrentTime(t);
+  }, [isEmptyState, filePath, duration, loopStart, loopEnd, playStart, isPlaying]);
+
   const parsedTimeSignature = useMemo(() => {
     const m = timeSignature.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
     if (!m) return { beatsPerBar: 4, beatUnit: 4 };
@@ -597,7 +610,18 @@ export const AudioPreview = ({
             sliceDetectionRunForRef.current = filePath;
           }
         } else {
+          if (cancelled) return;
           setSampleRate(0);
+          // Non-WAV (or unreadable buffer): no embedded start/loop — hydrate from saved edits once duration is known
+          // so playhead sync and persist gating match WAV behavior.
+          const edits = getEdits(filePath);
+          if (duration > 0) {
+            prevFilePathForLoopRef.current = filePath;
+            setLoopStart(edits?.loopStart ?? 0);
+            setLoopEnd(edits?.loopEnd ?? duration);
+            setPlayStart(edits?.playStart ?? 0);
+            setLoopEnabled(edits?.loopEnabled ?? true);
+          }
         }
       } catch {
         // Ignore parse errors; user can open Slicing for detection
@@ -729,10 +753,7 @@ export const AudioPreview = ({
       const buffer = await ctx.decodeAudioData(arrayBuffer);
       await ctx.close();
 
-      const { bpm, loopStart: newStart, loopEnd: newEnd } = computeAutoLoop(
-        buffer,
-        fileName ?? ""
-      );
+      const { bpm, loopStart: newStart, loopEnd: newEnd } = computeAutoLoop(buffer, fileName ?? "");
       setTempoBpm(bpm);
       setLoopStart(newStart);
       setLoopEnd(newEnd);
@@ -1750,24 +1771,14 @@ export const AudioPreview = ({
         const beatUnitFactor = 4 / parsedTimeSignature.beatUnit;
         const oldSecondsPerBeat = (60 / Math.max(1, oldTempo)) * beatUnitFactor;
         const newSecondsPerBeat = (60 / n) * beatUnitFactor;
-        const totalBeats =
-          oldSecondsPerBeat > 0 ? Math.max(0, effectiveLoopEnd - loopStart) / oldSecondsPerBeat : 0;
+        const totalBeats = oldSecondsPerBeat > 0 ? Math.max(0, effectiveLoopEnd - loopStart) / oldSecondsPerBeat : 0;
         if (totalBeats > 0) {
-          const nextEnd = Math.max(
-            loopStart + 0.001,
-            Math.min(duration, loopStart + totalBeats * newSecondsPerBeat),
-          );
+          const nextEnd = Math.max(loopStart + 0.001, Math.min(duration, loopStart + totalBeats * newSecondsPerBeat));
           setLoopEnd(nextEnd);
         }
       }
     },
-    [
-      duration,
-      loopEnd,
-      loopStart,
-      parsedTimeSignature.beatUnit,
-      tempoBpm,
-    ],
+    [duration, loopEnd, loopStart, parsedTimeSignature.beatUnit, tempoBpm],
   );
 
   const handleLoopBoundaryDrag = useCallback(
@@ -2569,7 +2580,7 @@ export const AudioPreview = ({
                 className="h-7 w-7 p-0 shrink-0"
                 onClick={() => handleAutoLoop()}
                 disabled={isLoading || isAutoRunning}
-                title="Auto: detect BPM, trim leading silence, set loop to 1 bar"
+                title="Auto: detect BPM, trim leading silence, loop point"
                 aria-label="Auto-detect BPM and loop bounds"
                 data-testid="audio-preview-auto-loop"
               >
