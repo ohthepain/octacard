@@ -573,7 +573,9 @@ export function analyzeGrooveAuto(
     }
   }
 
-  // Half-time fix: backbeat-heavy loops often lock at ½ BPM; prefer 2× when phase still fits.
+  // Half-time fix: onset autocorr often locks at ½ BPM (e.g. 8th-note groove reads ~59 vs ~117).
+  // When 2× lands in a normal dance tempo band, accept a slightly weaker quarter-grid fit so we
+  // don’t stick on an implausible slow BPM.
   const doubled = clampBpm(bestBpm * 2);
   if (doubled != null && bestBpm < 102) {
     const { score } = bestPhaseForBpm(
@@ -584,7 +586,10 @@ export function analyzeGrooveAuto(
       transientFrames,
       pitchFrames,
     );
-    const needRatio = bestBpm <= 75 ? 0.78 : 0.86;
+    let needRatio = bestBpm <= 75 ? 0.78 : 0.86;
+    if (bestBpm <= 72 && doubled >= 106 && doubled <= 135) {
+      needRatio = Math.min(needRatio, 0.7);
+    }
     if (score >= bestScore * needRatio) {
       bestBpm = doubled;
       bestScore = score;
