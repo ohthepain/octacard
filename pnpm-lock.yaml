@@ -38,8 +38,8 @@ importers:
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.8)(zod@4.3.6)
       '@liveblocks/client':
-        specifier: ^3.15.3
-        version: 3.15.3(@types/json-schema@7.0.15)
+        specifier: ^3.15.4
+        version: 3.15.4(@types/json-schema@7.0.15)
       '@prisma/adapter-pg':
         specifier: ^7.5.0
         version: 7.5.0
@@ -1810,11 +1810,11 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@liveblocks/client@3.15.3':
-    resolution: {integrity: sha512-pyGlVsP7sK7pSDj2KkPBaHD01VJk1/WqiJoBBUMs4mAcohH/jwosUP/hx2yMSPpdatw5cfGyacpFhm/USsMpiA==}
+  '@liveblocks/client@3.15.4':
+    resolution: {integrity: sha512-TIPncKDUZYfzWn5CVCE8DF3ThRGSc/Y7L1EHyXCMiEoDZ84ZrvmHoG6r/2u6ksJaVgLlHyiINtyCGMddGEK5cA==}
 
-  '@liveblocks/core@3.15.3':
-    resolution: {integrity: sha512-4nTxjybOSGEbE06rHwJeHOo2iWtwS2dgt4K3iXNhT4bjGSeaQgOuhoyANfwtFeHUj6pf+H/FwXlhj2STX1lspg==}
+  '@liveblocks/core@3.15.4':
+    resolution: {integrity: sha512-HmV/4y2s2ihrRI/8vTMJ1S7J6bpM4xRczgIipHVLNPeQUWA1NCpxzOgDsQdzGXtSp7gJtWvJllrzCiFTGcVBUg==}
     peerDependencies:
       '@types/json-schema': ^7
 
@@ -9147,13 +9147,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@liveblocks/client@3.15.3(@types/json-schema@7.0.15)':
+  '@liveblocks/client@3.15.4(@types/json-schema@7.0.15)':
     dependencies:
-      '@liveblocks/core': 3.15.3(@types/json-schema@7.0.15)
+      '@liveblocks/core': 3.15.4(@types/json-schema@7.0.15)
     transitivePeerDependencies:
       - '@types/json-schema'
 
-  '@liveblocks/core@3.15.3(@types/json-schema@7.0.15)':
+  '@liveblocks/core@3.15.4(@types/json-schema@7.0.15)':
     dependencies:
       '@types/json-schema': 7.0.15
 
