@@ -418,12 +418,115 @@ function bpmCandidatesFromAudio(buffer: AudioBuffer): number[] {
   return uniqueBmps(pool);
 }
 
-/** Prefer common dance/loop tempos when phase scores tie (fixes half-time / wrong peak). */
+/**
+ * Light nudge toward plausible loop tempos when phase is ambiguous — kept small so we don’t
+ * override a wrong “~120” when bar boundaries and transients disagree.
+ */
 function bpmTieBreakBonus(bpm: number): number {
-  if (bpm >= 100 && bpm <= 138) return 0.035;
-  if (bpm >= 90 && bpm <= 150) return 0.02;
-  if (bpm >= 80 && bpm <= 160) return 0.01;
+  if (bpm >= 100 && bpm <= 138) return 0.012;
+  if (bpm >= 90 && bpm <= 150) return 0.006;
+  if (bpm >= 80 && bpm <= 160) return 0.003;
   return 0;
+}
+
+const BAR_ALIGN_WEIGHT = 0.14;
+const SLICE_ALIGN_WEIGHT = 0.1;
+
+/** How close (duration - loopStart) is to an integer number of bars (1 = exact). */
+function fileEndBarAlignment(
+  loopStart: number,
+  duration: number,
+  secondsPerBeat: number,
+  beatsPerBar: number,
+): number {
+  const usable = Math.max(0, duration - loopStart);
+  const barLen = secondsPerBeat * beatsPerBar;
+  if (barLen < 1e-9) return 0;
+  const n = usable / barLen;
+  const f = n - Math.floor(n);
+  const d = Math.min(f, 1 - f);
+  return 1 - Math.min(1, d * 4);
+}
+
+/** Local maxima in transient curve (cheap stand-in for high-confidence splice times). */
+function transientPeakTimes(
+  frames: { time: number; score: number }[],
+  duration: number,
+): number[] {
+  const out: number[] = [];
+  for (let i = 1; i + 1 < frames.length; i++) {
+    const a = frames[i - 1];
+    const b = frames[i];
+    const c = frames[i + 1];
+    if (b.time > duration) break;
+    if (b.score >= a.score && b.score >= c.score && b.score >= 0.18) {
+      out.push(b.time);
+    }
+  }
+  return out.slice(0, 40);
+}
+
+/** Weighted fit of transient peaks to quarter grid at this BPM/phase. */
+function quarterGridSliceAlignment(
+  loopStart: number,
+  phi: number,
+  secondsPerBeat: number,
+  peakTimes: number[],
+  transientFrames: { time: number; score: number }[],
+): number {
+  const step = secondsPerBeat / 4;
+  if (step < 1e-9 || peakTimes.length === 0) return 0;
+  let num = 0;
+  let den = 0;
+  for (const t of peakTimes) {
+    if (t < loopStart - 1e-4) continue;
+    const w = scoreAtTime(transientFrames, t);
+    if (w < 0.06) continue;
+    const phase = (t - loopStart - phi) / step;
+    const dist = Math.abs(phase - Math.round(phase));
+    const near = Math.max(0, 1 - 2 * dist);
+    num += w * near;
+    den += w;
+  }
+  return den > 0 ? num / den : 0;
+}
+
+function scoreBpmForGroove(
+  bpm: number,
+  beatUnit: number,
+  beatsPerBar: number,
+  phaseScoreFrom: number,
+  duration: number,
+  loopStart: number,
+  transientFrames: { time: number; score: number }[],
+  pitchFrames: { time: number; score: number }[],
+): { combined: number; phaseScore: number } {
+  const { score: phaseScore, phi } = bestPhaseForBpm(
+    bpm,
+    beatUnit,
+    phaseScoreFrom,
+    duration,
+    transientFrames,
+    pitchFrames,
+  );
+  const secondsPerBeat = (60 / bpm) * (4 / beatUnit);
+  const barAlign = fileEndBarAlignment(
+    loopStart,
+    duration,
+    secondsPerBeat,
+    beatsPerBar,
+  );
+  const peaks = transientPeakTimes(transientFrames, duration);
+  const sliceAlign = quarterGridSliceAlignment(
+    loopStart,
+    phi,
+    secondsPerBeat,
+    peaks,
+    transientFrames,
+  );
+  const combined =
+    phaseScore + BAR_ALIGN_WEIGHT * barAlign + SLICE_ALIGN_WEIGHT * sliceAlign;
+  return { combined, phaseScore };
 }
 
 /** Largest power of two ≤ n (n ≥ 1). */
@@ -554,35 +657,39 @@ export function analyzeGrooveAuto(
   const candidates = bpmCandidatesFromAudio(buffer);
 
   let bestBpm = candidates[0] ?? 120;
-  let bestScore = -1;
+  let bestCombined = -1;
 
   const phaseScoreFrom = Math.max(0, anchorOnset - 0.02);
 
   for (const bpm of candidates) {
-    const { score } = bestPhaseForBpm(
+    const { combined } = scoreBpmForGroove(
       bpm,
       beatUnit,
+      beatsPerBar,
       phaseScoreFrom,
       duration,
+      anchorOnset,
       transientFrames,
       pitchFrames,
     );
-    if (score > bestScore) {
-      bestScore = score;
+    if (combined > bestCombined) {
+      bestCombined = combined;
       bestBpm = bpm;
     }
   }
 
   // Half-time fix: onset autocorr often locks at ½ BPM (e.g. 8th-note groove reads ~59 vs ~117).
-  // When 2× lands in a normal dance tempo band, accept a slightly weaker quarter-grid fit so we
+  // When 2× lands in a normal dance tempo band, accept a slightly weaker composite fit so we
   // don’t stick on an implausible slow BPM.
   const doubled = clampBpm(bestBpm * 2);
   if (doubled != null && bestBpm < 102) {
-    const { score } = bestPhaseForBpm(
+    const gr = scoreBpmForGroove(
       doubled,
       beatUnit,
+      beatsPerBar,
       phaseScoreFrom,
       duration,
+      anchorOnset,
       transientFrames,
       pitchFrames,
     );
@@ -590,9 +697,9 @@ export function analyzeGrooveAuto(
     if (bestBpm <= 72 && doubled >= 106 && doubled <= 135) {
       needRatio = Math.min(needRatio, 0.7);
     }
-    if (score >= bestScore * needRatio) {
+    if (gr.combined >= bestCombined * needRatio) {
       bestBpm = doubled;
-      bestScore = score;
+      bestCombined = gr.combined;
     }
   }
 
