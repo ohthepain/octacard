@@ -24,7 +24,42 @@ const FIRST_TRANSIENT_THRESHOLD = 0.15;
 const INTRO_ONSET_THRESHOLDS = [0.08, 0.11, 0.14] as const;
 const INTRO_ONSET_MAX_SEC = 0.48;
 const LEADING_SILENCE_WINDOW_MS = 80;
-const START_HAS_AUDIO_THRESHOLD = 0.05;
+/** Leading window must exceed this fraction of the file’s peak frame RMS to count as “audio up at 0”. */
+const START_HAS_AUDIO_RATIO = 0.14;
+/** Ignore sub-audible leading energy so noise/DC does not force anchor 0. */
+const START_RMS_ABSOLUTE_MIN = 5e-4;
+/** Do not lock loop to t=0 on very quiet masters (ratio test becomes meaningless). */
+const PEAK_RMS_MIN_TO_LOCK_START = 0.012;
+/** Consecutive samples at/below this absolute level count as leading silence. */
+const LEADING_SILENCE_ABS_THRESHOLD = 5e-4;
+/**
+ * Also treat samples as “quiet” if below this fraction of peak frame RMS (codec noise / hum
+ * in padded regions stays under this vs true drum hits).
+ */
+const LEADING_SILENCE_PEAK_FRAC = 0.16;
+const MIN_LEADING_QUIET_RUN_MS = 2.5;
+/** If RMS over this opening duration is below this fraction of peak, do not lock to t=0. */
+const LEADING_HEAD_MS = 48;
+const HEAD_RMS_MAX_FRAC_OF_PEAK = 0.26;
+/** If onset lands at ~0 but the leading window is still quiet vs peak, search again after this (decode click / false onset). */
+const ONSET_RETRY_MIN_TIME_SEC = 0.05;
+const SUSPICIOUS_ONSET_MAX_SEC = 0.028;
+
+/** Opening run where each sample is at or below abs and peak-relative quiet thresholds. */
+function leadingQuietRunMs(
+  samples: Float32Array,
+  sampleRate: number,
+  maxRms: number,
+): number {
+  const relThr = maxRms * LEADING_SILENCE_PEAK_FRAC;
+  const thr = Math.max(LEADING_SILENCE_ABS_THRESHOLD, relThr);
+  let n = 0;
+  for (let i = 0; i < samples.length; i++) {
+    if (Math.abs(samples[i]) > thr) break;
+    n++;
+  }
+  return (n / sampleRate) * 1000;
+}
 
 function rms(samples: Float32Array, start: number, length: number): number {
   let sum = 0;
@@ -38,26 +73,91 @@ function rms(samples: Float32Array, start: number, length: number): number {
   return Math.sqrt(sum / count);
 }
 
-function hasAudioAtStart(samples: Float32Array, sampleRate: number): boolean {
+/**
+ * RMS in first ~80 ms, peak frame RMS over the whole buffer, and whether that counts as real audio at t≈0.
+ */
+function leadingStartDiagnostics(
+  samples: Float32Array,
+  sampleRate: number,
+): {
+  startRms: number;
+  maxRms: number;
+  ratio: number;
+  startsWithAudio: boolean;
+} {
   const windowSamples = Math.min(
     Math.floor((LEADING_SILENCE_WINDOW_MS / 1000) * sampleRate),
     samples.length,
   );
-  if (windowSamples <= 0) return true;
+  if (windowSamples <= 0) {
+    return { startRms: 0, maxRms: 0, ratio: 0, startsWithAudio: true };
+  }
   const startRms = rms(samples, 0, windowSamples);
 
-  const first2sSamples = Math.min(2 * sampleRate, samples.length);
   let maxRms = 0;
-  for (let pos = 0; pos + FRAME_SIZE <= first2sSamples; pos += HOP_SIZE) {
+  for (let pos = 0; pos + FRAME_SIZE <= samples.length; pos += HOP_SIZE) {
     maxRms = Math.max(maxRms, rms(samples, pos, FRAME_SIZE));
   }
-  if (maxRms < 1e-10) return true;
-  return startRms > maxRms * START_HAS_AUDIO_THRESHOLD;
+  const ratio = maxRms > 1e-15 ? startRms / maxRms : 0;
+  if (maxRms < 1e-10) {
+    return { startRms, maxRms, ratio, startsWithAudio: true };
+  }
+  let startsWithAudio =
+    maxRms >= PEAK_RMS_MIN_TO_LOCK_START &&
+    startRms >= START_RMS_ABSOLUTE_MIN &&
+    startRms > maxRms * START_HAS_AUDIO_RATIO;
+  if (
+    leadingQuietRunMs(samples, sampleRate, maxRms) >= MIN_LEADING_QUIET_RUN_MS
+  ) {
+    startsWithAudio = false;
+  }
+
+  const headSamples = Math.min(
+    samples.length,
+    Math.floor((LEADING_HEAD_MS / 1000) * sampleRate),
+  );
+  const headRms = headSamples > 0 ? rms(samples, 0, headSamples) : 0;
+  if (headRms < maxRms * HEAD_RMS_MAX_FRAC_OF_PEAK) {
+    startsWithAudio = false;
+  }
+
+  return { startRms, maxRms, ratio, startsWithAudio };
+}
+
+function firstHopPosAtLeastTime(
+  samplesLength: number,
+  sampleRate: number,
+  minTimeSec: number,
+): number {
+  let pos = 0;
+  while (pos + FRAME_SIZE <= samplesLength) {
+    if (pos / sampleRate >= minTimeSec - 1e-12) return pos;
+    pos += HOP_SIZE;
+  }
+  return pos;
+}
+
+function feedPrevRmsThrough(
+  prevRms: number[],
+  samples: Float32Array,
+  endPosExclusive: number,
+): void {
+  prevRms.length = 0;
+  for (
+    let pos = 0;
+    pos < endPosExclusive && pos + FRAME_SIZE <= samples.length;
+    pos += HOP_SIZE
+  ) {
+    const currentRms = rms(samples, pos, FRAME_SIZE);
+    prevRms.push(currentRms);
+    if (prevRms.length > 4) prevRms.shift();
+  }
 }
 
 function detectFirstTransientTime(
   samples: Float32Array,
   sampleRate: number,
+  minTimeSec = 0,
 ): number {
   const prevRms: number[] = [];
   let maxRawScore = 0;
@@ -75,7 +175,16 @@ function detectFirstTransientTime(
 
   if (maxRawScore <= 0) return 0;
 
-  for (let pos = 0; pos + FRAME_SIZE <= samples.length; pos += HOP_SIZE) {
+  const startPos = firstHopPosAtLeastTime(
+    samples.length,
+    sampleRate,
+    minTimeSec,
+  );
+  for (
+    let pos = startPos;
+    pos + FRAME_SIZE <= samples.length;
+    pos += HOP_SIZE
+  ) {
     const time = pos / sampleRate;
     const currentRms = rms(samples, pos, FRAME_SIZE);
     const prev =
@@ -99,6 +208,7 @@ function detectFirstTransientTime(
 function detectEarliestHitTime(
   samples: Float32Array,
   sampleRate: number,
+  minTimeSec = 0,
 ): number {
   const prevRms: number[] = [];
   let maxRawScore = 0;
@@ -121,9 +231,19 @@ function detectEarliestHitTime(
     Math.floor(INTRO_ONSET_MAX_SEC * sampleRate),
   );
 
+  const startPos = firstHopPosAtLeastTime(
+    samples.length,
+    sampleRate,
+    minTimeSec,
+  );
+
   for (const thresh of INTRO_ONSET_THRESHOLDS) {
-    prevRms.length = 0;
-    for (let pos = 0; pos + FRAME_SIZE <= samples.length; pos += HOP_SIZE) {
+    feedPrevRmsThrough(prevRms, samples, startPos);
+    for (
+      let pos = startPos;
+      pos + FRAME_SIZE <= samples.length;
+      pos += HOP_SIZE
+    ) {
       const time = pos / sampleRate;
       if (pos + FRAME_SIZE > introEndSample) break;
 
@@ -142,7 +262,7 @@ function detectEarliestHitTime(
     }
   }
 
-  return detectFirstTransientTime(samples, sampleRate);
+  return detectFirstTransientTime(samples, sampleRate, minTimeSec);
 }
 
 function buildOnsetEnvelope(samples: Float32Array): Float32Array {
@@ -406,15 +526,27 @@ export function analyzeGrooveAuto(
   const sampleRate = buffer.sampleRate;
   const duration = buffer.duration;
 
-  const startsWithAudio = hasAudioAtStart(channel, sampleRate);
+  const lead = leadingStartDiagnostics(channel, sampleRate);
   /**
    * Loop anchor: when energy is already up at file start, linear onset detection often
    * misses sample-0 (no “rise” in the first RMS windows) and reports the next hop — visually
    * the “second slice”. If we already know audio starts immediately, lock the anchor to 0.
    */
-  const anchorOnset = startsWithAudio
+  let anchorOnset = lead.startsWithAudio
     ? 0
     : detectEarliestHitTime(channel, sampleRate);
+
+  if (
+    !lead.startsWithAudio &&
+    anchorOnset < SUSPICIOUS_ONSET_MAX_SEC &&
+    lead.startRms < lead.maxRms * START_HAS_AUDIO_RATIO
+  ) {
+    anchorOnset = detectEarliestHitTime(
+      channel,
+      sampleRate,
+      ONSET_RETRY_MIN_TIME_SEC,
+    );
+  }
 
   const transientFrames = computeTransientScores(channel, sampleRate);
   const pitchFrames = computePitchChangeScores(channel, sampleRate);
@@ -499,7 +631,7 @@ export function analyzeGrooveAuto(
     loopEnd,
     barsInLoop: bestBars,
     bpmFromFilename: false,
-    trimmedSilence: !startsWithAudio && anchorOnset > 0.01,
+    trimmedSilence: !lead.startsWithAudio && anchorOnset > 0.01,
     quarterTimes,
     sliceMarkers,
     numSlices: inferred.numSlices,
