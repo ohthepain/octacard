@@ -53,10 +53,7 @@ const TRANSIENT_LOG_EPS = 1e-14;
  * Combines log-compressed relative step (bounded vs silence-before) with absolute RMS rise vs file peak,
  * then normalizes by a high percentile so a few "infinite ratio" frames do not flatten everything else.
  */
-export function computeTransientScores(
-  samples: Float32Array,
-  sampleRate: number,
-): { time: number; score: number }[] {
+export function computeTransientScores(samples: Float32Array, sampleRate: number): { time: number; score: number }[] {
   const positions: number[] = [];
   const rmsValues: number[] = [];
   for (let pos = 0; pos + FRAME_SIZE <= samples.length; pos += HOP_SIZE) {
@@ -77,11 +74,7 @@ export function computeTransientScores(
     prevRms.push(currentRms);
     if (prevRms.length > 4) prevRms.shift();
 
-    const logOnset = Math.max(
-      0,
-      Math.log(currentRms + TRANSIENT_LOG_EPS) -
-        Math.log(prev + TRANSIENT_LOG_EPS),
-    );
+    const logOnset = Math.max(0, Math.log(currentRms + TRANSIENT_LOG_EPS) - Math.log(prev + TRANSIENT_LOG_EPS));
     const logNorm = Math.min(1, logOnset / TRANSIENT_LOG_ONSET_CAP);
 
     const delta = Math.max(0, currentRms - prev);
@@ -95,10 +88,7 @@ export function computeTransientScores(
   for (const r of rawScores) maxRaw = Math.max(maxRaw, r);
 
   const sorted = [...rawScores].sort((a, b) => a - b);
-  const pctIdx = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.floor(TRANSIENT_NORM_PERCENTILE * (sorted.length - 1))),
-  );
+  const pctIdx = Math.min(sorted.length - 1, Math.max(0, Math.floor(TRANSIENT_NORM_PERCENTILE * (sorted.length - 1))));
   const pPct = sorted[pctIdx] ?? 0;
   const scale = Math.max(pPct, maxRaw * TRANSIENT_MIN_SCALE_FRAC, 1e-15);
 
@@ -141,18 +131,11 @@ function estimatePitch(samples: Float32Array, sampleRate: number): number {
 /**
  * Compute pitch change strength between consecutive windows.
  */
-export function computePitchChangeScores(
-  samples: Float32Array,
-  sampleRate: number,
-): { time: number; score: number }[] {
+export function computePitchChangeScores(samples: Float32Array, sampleRate: number): { time: number; score: number }[] {
   const results: { time: number; score: number }[] = [];
   let prevPitch = 0;
 
-  for (
-    let pos = 0;
-    pos + PITCH_WINDOW_SIZE <= samples.length;
-    pos += HOP_SIZE
-  ) {
+  for (let pos = 0; pos + PITCH_WINDOW_SIZE <= samples.length; pos += HOP_SIZE) {
     const time = pos / sampleRate;
     const window = samples.subarray(pos, pos + PITCH_WINDOW_SIZE);
     const pitch = estimatePitch(window, sampleRate);
@@ -177,14 +160,10 @@ export function computePitchChangeScores(
 /**
  * Interpolate score at a given time from discrete frame scores.
  */
-export function scoreAtTime(
-  frames: { time: number; score: number }[],
-  time: number,
-): number {
+export function scoreAtTime(frames: { time: number; score: number }[], time: number): number {
   if (frames.length === 0) return 0;
   if (time <= frames[0].time) return frames[0].score;
-  if (time >= frames[frames.length - 1].time)
-    return frames[frames.length - 1].score;
+  if (time >= frames[frames.length - 1].time) return frames[frames.length - 1].score;
 
   for (let i = 0; i < frames.length - 1; i++) {
     const a = frames[i];
@@ -201,10 +180,7 @@ export function scoreAtTime(
  * When two candidates are closer than `minSpacingSec`, keep one: the higher-confidence hit
  * (time follows the winner). Input should be unsorted; result is time-ordered.
  */
-export function debounceSliceMarkers(
-  markers: SliceMarker[],
-  minSpacingSec: number,
-): SliceMarker[] {
+export function debounceSliceMarkers(markers: SliceMarker[], minSpacingSec: number): SliceMarker[] {
   if (markers.length === 0) return [];
   if (minSpacingSec <= 0) return [...markers].sort((a, b) => a.time - b.time);
 
@@ -250,9 +226,7 @@ export function detectSliceMarkers(
 ): SliceMarker[] {
   const fullDuration = buffer.duration;
   const t0 = region ? Math.max(0, region.start) : 0;
-  const t1 = region
-    ? Math.min(fullDuration, region.end)
-    : Math.min(fullDuration, duration);
+  const t1 = region ? Math.min(fullDuration, region.end) : Math.min(fullDuration, duration);
   const gridSpan = Math.max(0.001, t1 - t0);
 
   const beatsPerBar = timing?.beatsPerBar ?? 4;
@@ -272,10 +246,7 @@ export function detectSliceMarkers(
   const pitchFrames = computePitchChangeScores(channel, sampleRate);
 
   const markers: SliceMarker[] = [];
-  const numSearchSteps = Math.max(
-    5,
-    Math.floor((searchRadius * 2 * sampleRate) / HOP_SIZE),
-  );
+  const numSearchSteps = Math.max(5, Math.floor((searchRadius * 2 * sampleRate) / HOP_SIZE));
 
   for (let g = 0; g < numGridPoints; g++) {
     const gridTime = t0 + (g + 0.5) * gridInterval;
@@ -283,19 +254,12 @@ export function detectSliceMarkers(
     let bestConfidence = 0;
 
     for (let s = 0; s < numSearchSteps; s++) {
-      const t =
-        gridTime -
-        searchRadius +
-        (searchRadius * 2 * s) / Math.max(1, numSearchSteps - 1);
+      const t = gridTime - searchRadius + (searchRadius * 2 * s) / Math.max(1, numSearchSteps - 1);
       const clampedT = Math.max(t0, Math.min(t1, t));
       const transientScore = scoreAtTime(transientFrames, clampedT);
       const pitchScore = scoreAtTime(pitchFrames, clampedT);
       const confidence =
-        mode === "transient"
-          ? transientScore
-          : mode === "pitch"
-            ? pitchScore
-            : 0.6 * transientScore + 0.4 * pitchScore;
+        mode === "transient" ? transientScore : mode === "pitch" ? pitchScore : 0.6 * transientScore + 0.4 * pitchScore;
       if (confidence > bestConfidence) {
         bestConfidence = confidence;
         bestTime = clampedT;
@@ -307,21 +271,12 @@ export function detectSliceMarkers(
 
   // Ensure a slice at the start when there is audio there (first slice would otherwise be missed)
   const startWindowMs = 50;
-  const startSample = Math.min(
-    channel.length - 1,
-    Math.max(0, Math.floor(t0 * sampleRate)),
-  );
-  const startWindowSamples = Math.min(
-    Math.floor((startWindowMs / 1000) * sampleRate),
-    channel.length - startSample,
-  );
-  const startRms =
-    startWindowSamples > 0 ? rms(channel, startSample, startWindowSamples) : 0;
+  const startSample = Math.min(channel.length - 1, Math.max(0, Math.floor(t0 * sampleRate)));
+  const startWindowSamples = Math.min(Math.floor((startWindowMs / 1000) * sampleRate), channel.length - startSample);
+  const startRms = startWindowSamples > 0 ? rms(channel, startSample, startWindowSamples) : 0;
   const numFrames = Math.min(500, Math.ceil(channel.length / HOP_SIZE));
   const maxRms = Math.max(
-    ...Array.from({ length: numFrames }, (_, i) =>
-      rms(channel, i * HOP_SIZE, FRAME_SIZE),
-    ),
+    ...Array.from({ length: numFrames }, (_, i) => rms(channel, i * HOP_SIZE, FRAME_SIZE)),
     1e-10,
   );
   const hasAudioAtStart = startRms > maxRms * 0.03;
@@ -389,14 +344,9 @@ export function inferSliceCountFromConfidences(markers: SliceMarker[]): {
 /**
  * Keep every marker with confidence >= threshold (no spacing filter).
  */
-export function selectSlicesByConfidenceThreshold(
-  markers: SliceMarker[],
-  threshold: number,
-): SliceMarker[] {
+export function selectSlicesByConfidenceThreshold(markers: SliceMarker[], threshold: number): SliceMarker[] {
   if (markers.length === 0) return [];
-  return [...markers]
-    .filter((m) => m.confidence >= threshold)
-    .sort((a, b) => a.time - b.time);
+  return [...markers].filter((m) => m.confidence >= threshold).sort((a, b) => a.time - b.time);
 }
 
 /**
@@ -432,8 +382,7 @@ export function selectTopNSlicesWithMeta(
   });
   const picked = sorted.slice(0, capped);
   const weakestKept = Math.min(...picked.map((m) => m.confidence));
-  const nextCandidateConfidence =
-    capped < sorted.length ? sorted[capped].confidence : null;
+  const nextCandidateConfidence = capped < sorted.length ? sorted[capped].confidence : null;
   return {
     selected: picked.sort((a, b) => a.time - b.time),
     weakestKept,
@@ -444,10 +393,7 @@ export function selectTopNSlicesWithMeta(
 /**
  * Confidence of the Nth-highest marker (1-based). Dragging “slice count” to N sets cutoff to this value so at least N markers pass (ties can yield more).
  */
-export function confidenceThresholdForMinCount(
-  markers: SliceMarker[],
-  count: number,
-): number {
+export function confidenceThresholdForMinCount(markers: SliceMarker[], count: number): number {
   if (markers.length === 0) return 1;
   const n = Math.max(1, Math.min(count, markers.length));
   const sorted = [...markers].map((m) => m.confidence).sort((a, b) => b - a);

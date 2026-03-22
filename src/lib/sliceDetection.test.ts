@@ -120,11 +120,7 @@ describe("selectTopNSlicesWithMeta", () => {
   });
 });
 
-function maxTransientScoreBetween(
-  frames: { time: number; score: number }[],
-  t0: number,
-  t1: number,
-): number {
+function maxTransientScoreBetween(frames: { time: number; score: number }[], t0: number, t1: number): number {
   let m = 0;
   for (const f of frames) {
     if (f.time >= t0 && f.time <= t1) m = Math.max(m, f.score);
@@ -170,10 +166,7 @@ describe("debounceSliceMarkers", () => {
 describe("computeTransientScores", () => {
   const sampleRate = 48_000;
   /** ~2 s: step from quiet / silence to loud block (same attack, different pre-level). */
-  function buildStepBuffer(
-    preLevel: number,
-    splitSample: number,
-  ): Float32Array {
+  function buildStepBuffer(preLevel: number, splitSample: number): Float32Array {
     const n = sampleRate * 2;
     const buf = new Float32Array(n);
     for (let i = 0; i < n; i++) {
