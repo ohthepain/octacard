@@ -1,72 +1,51 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import JSZip from "jszip";
 import {
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Gauge,
+  GripHorizontal,
+  GripVertical,
+  Info,
+  Layers,
+  Map as MapIcon,
+  Mic,
   Play,
+  Repeat,
+  RotateCcw,
   SkipBack,
   SkipForward,
+  Square,
+  Trash2,
   Volume2,
   VolumeX,
+  Wand2,
   X,
   ZoomIn,
   ZoomOut,
-  Gauge,
-  RotateCcw,
-  Map as MapIcon,
-  ChevronDown,
-  ChevronUp,
-  Layers,
-  Mic,
-  Square,
-  Download,
-  Activity,
-  Trash2,
-  GripVertical,
-  GripHorizontal,
-  Repeat,
-  Info,
-  Wand2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import { Input } from "@/components/ui/input";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import WaveSurfer from "wavesurfer.js";
+import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
+import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
+import RecordPlugin from "wavesurfer.js/dist/plugins/record";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline";
-import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
-import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
-import RecordPlugin from "wavesurfer.js/dist/plugins/record";
-import { useSampleEditsStore } from "@/stores/sample-edits-store";
-import { useProjectStore, EMPTY_SLOTS } from "@/stores/project-store";
-import { usePlayerStore } from "@/stores/player-store";
-import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
-import { useAppOptionsStore } from "@/stores/app-options-store";
 import { useShallow } from "zustand/react/shallow";
 import {
-  exportAudioWithEdits,
-  mixOverdub,
-  replaceSegment,
-  parseWavCueMarkers,
-  parseWavMetadata,
-  getAudioFileInfo,
-  formatBytes,
-  type AudioFileInfo,
-} from "@/lib/exportAudio";
-import { fileSystemService } from "@/lib/fileSystem";
-import { getAudioBlobForPath, isRemotePath } from "@/lib/audio-resolver";
-import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
-import { isTempPath } from "@/lib/temp-files-store";
-import JSZip from "jszip";
-import { ensureAudioDecodable } from "@/lib/audioConverter";
-import { parseBpmFromString } from "@/lib/tempoUtils";
-import { computeAutoLoop } from "@/lib/autoLoopDetection";
-import { detectSliceMarkers, selectTopSlices, type SliceMarker, type SliceDetectionMode } from "@/lib/sliceDetection";
-import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
-import {
-  ExportOptionsDialog,
   DEFAULT_OPTIONS as DEFAULT_EXPORT_OPTIONS,
   type ExportMarkerOptions,
+  ExportOptionsDialog,
 } from "@/components/ExportOptionsDialog";
+import { ExportOverwriteDialog } from "@/components/ExportOverwriteDialog";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -75,11 +54,52 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { getAudioBlobForPath, isRemotePath } from "@/lib/audio-resolver";
+import { ensureAudioDecodable } from "@/lib/audioConverter";
+import { hasDirectoryPickerSupport } from "@/lib/browserSupport";
+import {
+  type AudioFileInfo,
+  exportAudioWithEdits,
+  formatBytes,
+  getAudioFileInfo,
+  mixOverdub,
+  parseWavCueMarkers,
+  parseWavMetadata,
+  replaceSegment,
+} from "@/lib/exportAudio";
+import { fileSystemService } from "@/lib/fileSystem";
+import { analyzeGrooveAuto } from "@/lib/grooveAutoAnalysis";
+import {
+  detectSliceMarkers,
+  formatSliceConfidenceChip,
+  inferSliceCountFromConfidences,
+  type SliceDetectionMode,
+  type SliceMarker,
+  selectTopNSlicesWithMeta,
+} from "@/lib/sliceDetection";
+import { isTempPath } from "@/lib/temp-files-store";
+import { parseBpmFromString } from "@/lib/tempoUtils";
+import { useAppOptionsStore } from "@/stores/app-options-store";
+import { usePlayerStore } from "@/stores/player-store";
+import { EMPTY_SLOTS, useProjectStore } from "@/stores/project-store";
+import { useSampleEditsStore } from "@/stores/sample-edits-store";
+import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 
 function isAbortError(e: unknown): boolean {
-  return e instanceof Error && (e.name === "AbortError" || e.message?.includes("aborted"));
+  return (
+    e instanceof Error &&
+    (e.name === "AbortError" || e.message?.includes("aborted"))
+  );
 }
 
 function createSilentWavDataUrl(durationSeconds: number): string {
@@ -88,7 +108,8 @@ function createSilentWavDataUrl(durationSeconds: number): string {
   const buffer = new ArrayBuffer(44 + numSamples);
   const view = new DataView(buffer);
   const writeStr = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    for (let i = 0; i < str.length; i++)
+      view.setUint8(offset + i, str.charCodeAt(i));
   };
   writeStr(0, "RIFF");
   view.setUint32(4, 36 + numSamples, true);
@@ -145,28 +166,42 @@ export const AudioPreview = ({
   const [isRecording, setIsRecording] = useState(false);
   const [_isRecordPaused, setIsRecordPaused] = useState(false);
   const [isRecordArmed, setIsRecordArmed] = useState(false);
-  const [recordArmedMode, setRecordArmedMode] = useState<"replace" | "overdub">("replace");
+  const [recordArmedMode, setRecordArmedMode] = useState<"replace" | "overdub">(
+    "replace",
+  );
   const recordArmedModeRef = useRef<"replace" | "overdub">("replace");
   const recordingModeRef = useRef<"replace" | "overdub">("replace");
   const recordStartTimeRef = useRef<number>(0);
   const [exportOverwriteOpen, setExportOverwriteOpen] = useState(false);
-  const exportOverwriteResolverRef = useRef<((choice: "abort" | "overwrite" | "saveAs") => void) | null>(null);
+  const exportOverwriteResolverRef = useRef<
+    ((choice: "abort" | "overwrite" | "saveAs") => void) | null
+  >(null);
   const [exportSaveAsOpen, setExportSaveAsOpen] = useState(false);
   const [exportSaveAsFilename, setExportSaveAsFilename] = useState("");
-  const [exportSaveAsDirHandle, setExportSaveAsDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [exportSaveAsDirHandle, setExportSaveAsDirHandle] =
+    useState<FileSystemDirectoryHandle | null>(null);
   const exportSaveAsResolverRef = useRef<
-    ((result: { dirHandle: FileSystemDirectoryHandle; filename: string } | null) => void) | null
+    | ((
+        result: {
+          dirHandle: FileSystemDirectoryHandle;
+          filename: string;
+        } | null,
+      ) => void)
+    | null
   >(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
-  const [exportMarkerOptions, setExportMarkerOptions] = useState<ExportMarkerOptions>(() => ({
-    ...DEFAULT_EXPORT_OPTIONS,
-  }));
+  const [exportMarkerOptions, setExportMarkerOptions] =
+    useState<ExportMarkerOptions>(() => ({
+      ...DEFAULT_EXPORT_OPTIONS,
+    }));
 
   const setEdits = useSampleEditsStore((s) => s.setEdits);
   const getEdits = useSampleEditsStore((s) => s.getEdits);
   const playerIsPlaying = usePlayerStore((s) => s.isPlaying);
-  const requestRestartWithNewLoop = usePlayerStore((s) => s.requestRestartWithNewLoop);
+  const requestRestartWithNewLoop = usePlayerStore(
+    (s) => s.requestRestartWithNewLoop,
+  );
   const playerMode = usePlayerStore((s) => s.mode);
   const singleFile = usePlayerStore((s) => s.singleFile);
   const [wavesurferPlaying, setWavesurferPlaying] = useState(false);
@@ -176,7 +211,9 @@ export const AudioPreview = ({
   const playerCurrentTime = usePlayerStore((s) => s.currentTime);
   const playSingle = usePlayerStore((s) => s.playSingle);
   const stopPlayer = usePlayerStore((s) => s.stop);
-  const requestSwitchAtNextBar = usePlayerStore((s) => s.requestSwitchAtNextBar);
+  const requestSwitchAtNextBar = usePlayerStore(
+    (s) => s.requestSwitchAtNextBar,
+  );
   const muted = usePlayerStore((s) => s.muted);
   const setMuted = usePlayerStore((s) => s.setMuted);
   const stack = useProjectStore(useShallow((s) => s.getActiveStackStack()));
@@ -208,9 +245,17 @@ export const AudioPreview = ({
     const ws = wavesurferRef.current;
     if (!ws || !duration) return;
     let t: number;
-    if (playerMode === "multi" && multiSampleId && playingSamplePosition?.sampleId === multiSampleId) {
+    if (
+      playerMode === "multi" &&
+      multiSampleId &&
+      playingSamplePosition?.sampleId === multiSampleId
+    ) {
       t = playingSamplePosition.currentTime;
-    } else if (playerMode === "single" && isPlaying && singleFile?.path === filePath) {
+    } else if (
+      playerMode === "single" &&
+      isPlaying &&
+      singleFile?.path === filePath
+    ) {
       t = playerCurrentTime;
     } else return;
     const safeTime = Math.min(t, duration * 0.9999);
@@ -234,31 +279,44 @@ export const AudioPreview = ({
   onFileSavedRef.current = onFileSaved;
   const [exportFilenameOpen, setExportFilenameOpen] = useState(false);
   const [exportFilename, setExportFilename] = useState("");
-  const exportFilenameResolverRef = useRef<((name: string | null) => void) | null>(null);
+  const exportFilenameResolverRef = useRef<
+    ((name: string | null) => void) | null
+  >(null);
   const lastRecordedBlobRef = useRef<Blob | null>(null);
 
   const [slicingOpen, setSlicingOpen] = useState(false);
   const [addMarkerMode, setAddMarkerMode] = useState(false);
   const [sliceMarkers, setSliceMarkers] = useState<SliceMarker[]>([]);
-  const [numSlices, setNumSlices] = useState(8);
-  const [sliceDetectionMode, setSliceDetectionMode] = useState<SliceDetectionMode>("transient");
+  /** How many grid slices to keep: top N by confidence (elbow seeds N; drag adjusts N). */
+  const [sliceVisibleCount, setSliceVisibleCount] = useState(8);
+  const [sliceDetectionMode, setSliceDetectionMode] =
+    useState<SliceDetectionMode>("transient");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const numSlicesDragRef = useRef<{ startY: number; startX: number; startValue: number } | null>(null);
+  const numSlicesDragRef = useRef<{
+    startY: number;
+    startX: number;
+    startRank: number;
+  } | null>(null);
   const addSliceAtTimeRef = useRef<(t: number) => void>(() => {});
   const addMarkerModeRef = useRef(false);
   const sliceMarkersRef = useRef<SliceMarker[]>([]);
+  const combinedSliceMarkersRef = useRef<SliceMarker[]>([]);
 
-  const [sliceConfidenceOverrides, setSliceConfidenceOverrides] = useState<Map<string, number>>(
-    () => new Map<string, number>(),
-  );
-  const [slicePositionOverrides, setSlicePositionOverrides] = useState<Map<string, number>>(
-    () => new Map<string, number>(),
-  );
+  const [sliceConfidenceOverrides, setSliceConfidenceOverrides] = useState<
+    Map<string, number>
+  >(() => new Map<string, number>());
+  const [slicePositionOverrides, setSlicePositionOverrides] = useState<
+    Map<string, number>
+  >(() => new Map<string, number>());
   const [userAddedSlices, setUserAddedSlices] = useState<SliceMarker[]>([]);
   const [hoveredSliceKey, setHoveredSliceKey] = useState<string | null>(null);
-  const [timeDisplayMode, setTimeDisplayMode] = useState<"clock" | "bars">("clock");
+  const [timeDisplayMode, setTimeDisplayMode] = useState<"clock" | "bars">(
+    "clock",
+  );
   const [tempoBpm, setTempoBpm] = useState(120);
-  const [tempoEditingValue, setTempoEditingValue] = useState<string | null>(null);
+  const [tempoEditingValue, setTempoEditingValue] = useState<string | null>(
+    null,
+  );
   const [timeSignature, setTimeSignature] = useState("4/4");
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(0);
@@ -267,11 +325,23 @@ export const AudioPreview = ({
   const loopEnabledRef = useRef(true);
   const [rootKey, setRootKey] = useState("");
   const [tuningCents, setTuningCents] = useState(0);
-  const loopPartDragRef = useRef<{ startY: number; startX: number; startValue: number } | null>(null);
+  const loopPartDragRef = useRef<{
+    startY: number;
+    startX: number;
+    startValue: number;
+  } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
-  const [audioFileInfo, setAudioFileInfo] = useState<AudioFileInfo | null>(null);
+  const [audioFileInfo, setAudioFileInfo] = useState<AudioFileInfo | null>(
+    null,
+  );
   const [sampleRate, setSampleRate] = useState(44100);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
+  const [grooveAutoDebug, setGrooveAutoDebug] = useState<{
+    quarterTimes: number[];
+    sliceConfidenceThreshold: number;
+    numSlices: number;
+    sliceCountMethod: string;
+  } | null>(null);
   const devMode = useAppOptionsStore((s) => s.devMode);
 
   useEffect(() => {
@@ -284,7 +354,10 @@ export const AudioPreview = ({
     const wasPlaying = prevIsPlayingRef.current;
     prevIsPlayingRef.current = isPlaying;
     if (wasPlaying && !isPlaying && wavesurferRef.current && duration > 0) {
-      const clampedPlayStart = Math.max(loopStart, Math.min(loopEnd || duration, playStart));
+      const clampedPlayStart = Math.max(
+        loopStart,
+        Math.min(loopEnd || duration, playStart),
+      );
       wavesurferRef.current.seekTo(clampedPlayStart / duration);
       setCurrentTime(clampedPlayStart);
     }
@@ -297,11 +370,22 @@ export const AudioPreview = ({
     if (filePath !== prevFilePathForLoopRef.current) return;
     const ws = wavesurferRef.current;
     if (!ws || duration <= 0 || isPlaying) return;
-    const clamped = Math.max(loopStart, Math.min(loopEnd || duration, playStart));
+    const clamped = Math.max(
+      loopStart,
+      Math.min(loopEnd || duration, playStart),
+    );
     const t = Math.min(clamped, duration * 0.9999);
     ws.seekTo(t / duration);
     setCurrentTime(t);
-  }, [isEmptyState, filePath, duration, loopStart, loopEnd, playStart, isPlaying]);
+  }, [
+    isEmptyState,
+    filePath,
+    duration,
+    loopStart,
+    loopEnd,
+    playStart,
+    isPlaying,
+  ]);
 
   const parsedTimeSignature = useMemo(() => {
     const m = timeSignature.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
@@ -330,7 +414,10 @@ export const AudioPreview = ({
     [secondsPerBeat],
   );
 
-  const clampToDuration = useCallback((seconds: number) => Math.max(0, Math.min(duration, seconds)), [duration]);
+  const clampToDuration = useCallback(
+    (seconds: number) => Math.max(0, Math.min(duration, seconds)),
+    [duration],
+  );
 
   const formatTime = useCallback((seconds: number): string => {
     if (Number.isNaN(seconds)) return "0:00";
@@ -341,11 +428,16 @@ export const AudioPreview = ({
 
   const formatBarsBeats = useCallback(
     (seconds: number): string => {
-      if (!Number.isFinite(seconds) || seconds < 0 || secondsPerBeat <= 0) return "1.1.00";
+      if (!Number.isFinite(seconds) || seconds < 0 || secondsPerBeat <= 0)
+        return "1.1.00";
       const totalBeats = seconds / secondsPerBeat;
       const barsZero = Math.floor(totalBeats / parsedTimeSignature.beatsPerBar);
-      const beatInBar = Math.floor(totalBeats % parsedTimeSignature.beatsPerBar);
-      const sixteenth = Math.floor(((totalBeats - Math.floor(totalBeats)) * 4) % 4);
+      const beatInBar = Math.floor(
+        totalBeats % parsedTimeSignature.beatsPerBar,
+      );
+      const sixteenth = Math.floor(
+        ((totalBeats - Math.floor(totalBeats)) * 4) % 4,
+      );
       return `${barsZero + 1}.${beatInBar + 1}.${String(Math.max(0, sixteenth)).padStart(2, "0")}`;
     },
     [parsedTimeSignature.beatsPerBar, secondsPerBeat],
@@ -378,21 +470,52 @@ export const AudioPreview = ({
     return [...overridden, ...userAddedSlices];
   }, [sliceMarkers, sliceConfidenceOverrides, userAddedSlices, sliceKey]);
 
-  const displayedSlices = useMemo(() => {
-    const selected = selectTopSlices(combinedSliceMarkers, numSlices);
-    return selected.map((m) => {
+  useEffect(() => {
+    combinedSliceMarkersRef.current = combinedSliceMarkers;
+  }, [combinedSliceMarkers]);
+
+  const {
+    displayedSlices,
+    ghostSliceMarkers,
+    sliceFloorConfidence,
+    sliceNextConfidence,
+  } = useMemo(() => {
+    const meta = selectTopNSlicesWithMeta(
+      combinedSliceMarkers,
+      sliceVisibleCount,
+    );
+    const selectedKeys = new Set(meta.selected.map((m) => sliceKey(m.time)));
+    const ghostSliceMarkers = combinedSliceMarkers.filter(
+      (m) => !selectedKeys.has(sliceKey(m.time)),
+    );
+    const displayedSlices = meta.selected.map((m) => {
       const key = sliceKey(m.time);
       const pos = slicePositionOverrides.get(key);
       const displayTime = pos !== undefined ? pos : m.time;
-      const isUserAdded = userAddedSlices.some((u) => Math.abs(u.time - m.time) < 0.001);
+      const isUserAdded = userAddedSlices.some(
+        (u) => Math.abs(u.time - m.time) < 0.001,
+      );
       return { ...m, time: displayTime, originalTime: m.time, isUserAdded };
     });
-  }, [combinedSliceMarkers, numSlices, slicePositionOverrides, userAddedSlices, sliceKey]);
+    return {
+      displayedSlices,
+      ghostSliceMarkers,
+      sliceFloorConfidence: meta.weakestKept,
+      sliceNextConfidence: meta.nextCandidateConfidence,
+    };
+  }, [
+    combinedSliceMarkers,
+    sliceVisibleCount,
+    slicePositionOverrides,
+    userAddedSlices,
+    sliceKey,
+  ]);
 
-  const getExportBlobForEmptyState = useCallback(async (): Promise<Blob | null> => {
-    if (lastRecordedBlobRef.current) return lastRecordedBlobRef.current;
-    return null;
-  }, []);
+  const getExportBlobForEmptyState =
+    useCallback(async (): Promise<Blob | null> => {
+      if (lastRecordedBlobRef.current) return lastRecordedBlobRef.current;
+      return null;
+    }, []);
 
   // Drag state for zoom and navigation
   const dragStateRef = useRef<{
@@ -414,9 +537,12 @@ export const AudioPreview = ({
   // Dragging the visible area overlay scrolls only (navigate) when overlay is narrower than minimap.
   const handleMinimapMouseDown = useCallback(
     (e: MouseEvent) => {
-      if (!wavesurferRef.current || !minimapContainerRef.current || isLoading) return;
+      if (!wavesurferRef.current || !minimapContainerRef.current || isLoading)
+        return;
       const minimapRect = minimapContainerRef.current.getBoundingClientRect();
-      const overlayEl = minimapContainerRef.current.querySelector('[part="minimap-overlay"]') as HTMLElement | null;
+      const overlayEl = minimapContainerRef.current.querySelector(
+        '[part="minimap-overlay"]',
+      ) as HTMLElement | null;
       const overlayRect = overlayEl?.getBoundingClientRect();
       const isWithinOverlay =
         !!overlayRect &&
@@ -426,7 +552,10 @@ export const AudioPreview = ({
         e.clientY <= overlayRect.bottom;
       // If overlay takes a large share of the minimap, treat drag as background drag
       // so users can still access vertical zoom-out without pixel-hunting outside the overlay.
-      const overlayCoverage = overlayRect && minimapRect.width > 0 ? overlayRect.width / minimapRect.width : 0;
+      const overlayCoverage =
+        overlayRect && minimapRect.width > 0
+          ? overlayRect.width / minimapRect.width
+          : 0;
       const overlayFillsMinimap = overlayCoverage >= 0.5;
       const isOverlay = isWithinOverlay && !overlayFillsMinimap;
 
@@ -512,13 +641,18 @@ export const AudioPreview = ({
       try {
         // Check file size first to avoid loading huge files (skip for remote paths)
         if (!isRemotePath(filePath!)) {
-          const statsResult = await fileSystemService.getFileStats(filePath!, paneType!);
+          const statsResult = await fileSystemService.getFileStats(
+            filePath!,
+            paneType!,
+          );
           if (cancelled) return;
           if (statsResult.success && statsResult.data) {
             const fileSizeMB = statsResult.data.size / (1024 * 1024);
             // Warn for very large files but still try to load
             if (fileSizeMB > 100) {
-              console.warn(`Large file detected: ${fileSizeMB.toFixed(1)}MB. Loading may take a while...`);
+              console.warn(
+                `Large file detected: ${fileSizeMB.toFixed(1)}MB. Loading may take a while...`,
+              );
             }
           }
         }
@@ -527,9 +661,15 @@ export const AudioPreview = ({
         if (cancelled) return;
 
         if (result.success && result.data) {
-          const decodableUrl = await ensureAudioDecodable(result.data, filePath!);
+          const decodableUrl = await ensureAudioDecodable(
+            result.data,
+            filePath!,
+          );
           if (cancelled) return;
-          console.log("AudioPreview - Got audio blob data URL for file:", filePath);
+          console.log(
+            "AudioPreview - Got audio blob data URL for file:",
+            filePath,
+          );
           setAudioUrl(decodableUrl);
           setErrorMessage("");
         } else if (!cancelled) {
@@ -572,20 +712,29 @@ export const AudioPreview = ({
         const parsed = parseWavMetadata(arrayBuffer);
         if (parsed) {
           setSampleRate(parsed.sampleRate);
-          if (parsed.tempo != null && Number.isFinite(parsed.tempo)) setTempoBpm(parsed.tempo);
+          if (parsed.tempo != null && Number.isFinite(parsed.tempo))
+            setTempoBpm(parsed.tempo);
           else {
             const bpmResult = parseBpmFromString(fileName ?? "");
             if (bpmResult?.bpm) setTempoBpm(bpmResult.bpm);
             else {
-              const mainTempo = useProjectStore.getState().getActiveStack()?.globalTempoBpm ?? 120;
-              if (Number.isFinite(mainTempo) && mainTempo > 0) setTempoBpm(mainTempo);
+              const mainTempo =
+                useProjectStore.getState().getActiveStack()?.globalTempoBpm ??
+                120;
+              if (Number.isFinite(mainTempo) && mainTempo > 0)
+                setTempoBpm(mainTempo);
             }
           }
           if (parsed.timeSignature) setTimeSignature(parsed.timeSignature);
-          if (parsed.rootKey != null && Number.isFinite(parsed.rootKey)) setRootKey(String(parsed.rootKey));
-          if (parsed.tuningCents != null && Number.isFinite(parsed.tuningCents)) setTuningCents(parsed.tuningCents);
+          if (parsed.rootKey != null && Number.isFinite(parsed.rootKey))
+            setRootKey(String(parsed.rootKey));
+          if (parsed.tuningCents != null && Number.isFinite(parsed.tuningCents))
+            setTuningCents(parsed.tuningCents);
 
-          const metadataStart = parsed.sampleStartFrame != null ? parsed.sampleStartFrame / parsed.sampleRate : 0;
+          const metadataStart =
+            parsed.sampleStartFrame != null
+              ? parsed.sampleStartFrame / parsed.sampleRate
+              : 0;
           const durationFromFile = parsed.totalFrames / parsed.sampleRate;
           const metadataEnd =
             parsed.sampleEndFrame != null
@@ -594,7 +743,9 @@ export const AudioPreview = ({
           const edits = getEdits(filePath);
           prevFilePathForLoopRef.current = filePath;
           setLoopStart(edits?.loopStart ?? Math.max(0, metadataStart));
-          setLoopEnd(edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd));
+          setLoopEnd(
+            edits?.loopEnd ?? Math.max(metadataStart + 0.001, metadataEnd),
+          );
           setPlayStart(edits?.playStart ?? Math.max(0, metadataStart));
           setLoopEnabled(edits?.loopEnabled ?? true);
 
@@ -604,7 +755,7 @@ export const AudioPreview = ({
               confidence: 1,
             }));
             setSliceMarkers(markers);
-            setNumSlices(markers.length);
+            setSliceVisibleCount(markers.length);
             setSlicingOpen(true);
             setExportMarkerOptions((prev) => ({ ...prev, sliceFiles: true }));
             sliceDetectionRunForRef.current = filePath;
@@ -642,7 +793,9 @@ export const AudioPreview = ({
     const prevLoopEnd = existing.loopEnd;
     // Only restart when loop params actually changed from a previously persisted state (avoid restart on initial load)
     const loopParamsChanged =
-      prevLoopStart != null && prevLoopEnd != null && (prevLoopStart !== loopStart || prevLoopEnd !== loopEnd);
+      prevLoopStart != null &&
+      prevLoopEnd != null &&
+      (prevLoopStart !== loopStart || prevLoopEnd !== loopEnd);
     setEdits(filePath, {
       ...existing,
       loopStart,
@@ -656,7 +809,11 @@ export const AudioPreview = ({
         (playerMode === "single" && singleFile?.path === filePath) ||
         (playerMode === "multi" && stack.some((s) => s.path === filePath));
       if (isThisFilePlaying) {
-        requestRestartWithNewLoop({ path: filePath, newLoopStart: loopStart, newLoopEnd: loopEnd });
+        requestRestartWithNewLoop({
+          path: filePath,
+          newLoopStart: loopStart,
+          newLoopEnd: loopEnd,
+        });
       }
     }
   }, [
@@ -677,11 +834,17 @@ export const AudioPreview = ({
   ]);
 
   // When opened from multi-sample, sync tempo with the sample's BPM so loop length in bars matches
-  const slots = useProjectStore(useShallow((s) => s.getActiveStack()?.slots ?? EMPTY_SLOTS));
-  const globalTempoBpm = useProjectStore((s) => s.getActiveStack()?.globalTempoBpm ?? 120);
+  const slots = useProjectStore(
+    useShallow((s) => s.getActiveStack()?.slots ?? EMPTY_SLOTS),
+  );
+  const globalTempoBpm = useProjectStore(
+    (s) => s.getActiveStack()?.globalTempoBpm ?? 120,
+  );
   useEffect(() => {
     if (!multiSampleId || isEmptyState) return;
-    const sample = slots.find((s): s is NonNullable<typeof s> => s != null && s.id === multiSampleId);
+    const sample = slots.find(
+      (s): s is NonNullable<typeof s> => s != null && s.id === multiSampleId,
+    );
     const bpm = sample?.bpm ?? globalTempoBpm;
     if (Number.isFinite(bpm) && bpm > 0) setTempoBpm(bpm);
   }, [multiSampleId, isEmptyState, slots, globalTempoBpm]);
@@ -699,6 +862,7 @@ export const AudioPreview = ({
       const result = await getAudioBlobForPath(filePath, paneType);
       if (!result.success || !result.data) {
         setSliceMarkers([]);
+        setSliceVisibleCount(8);
         setIsAnalyzing(false);
         return;
       }
@@ -713,7 +877,7 @@ export const AudioPreview = ({
           confidence: 1,
         }));
         setSliceMarkers(markers);
-        setNumSlices(markers.length);
+        setSliceVisibleCount(markers.length);
         setExportMarkerOptions((prev) => ({ ...prev, sliceFiles: true }));
         setIsAnalyzing(false);
         return;
@@ -725,17 +889,35 @@ export const AudioPreview = ({
 
       const bpmResult = parseBpmFromString(fileName ?? "");
       const bpm = bpmResult?.bpm ?? 120;
-      const markers = detectSliceMarkers(buffer, buffer.duration, bpm, sliceDetectionMode);
+      const markers = detectSliceMarkers(
+        buffer,
+        buffer.duration,
+        bpm,
+        sliceDetectionMode,
+        undefined,
+        {
+          beatsPerBar: parsedTimeSignature.beatsPerBar,
+          beatUnit: parsedTimeSignature.beatUnit,
+        },
+      );
       setSliceMarkers(markers);
-      const bars = (buffer.duration * bpm) / 240;
-      setNumSlices(Math.max(1, Math.floor(8 * bars)));
+      setSliceVisibleCount(inferSliceCountFromConfidences(markers).numSlices);
     } catch (err) {
       console.warn("Slice detection failed:", err);
       setSliceMarkers([]);
+      setSliceVisibleCount(8);
     } finally {
       setIsAnalyzing(false);
     }
-  }, [fileName, isEmptyState, filePath, paneType, sliceDetectionMode]);
+  }, [
+    fileName,
+    isEmptyState,
+    filePath,
+    paneType,
+    sliceDetectionMode,
+    parsedTimeSignature.beatUnit,
+    parsedTimeSignature.beatsPerBar,
+  ]);
 
   const handleAutoLoop = useCallback(async () => {
     if (isEmptyState || !filePath || !paneType) return;
@@ -753,19 +935,48 @@ export const AudioPreview = ({
       const buffer = await ctx.decodeAudioData(arrayBuffer);
       await ctx.close();
 
-      const { bpm, loopStart: newStart, loopEnd: newEnd } = computeAutoLoop(buffer, fileName ?? "");
-      setTempoBpm(bpm);
-      setLoopStart(newStart);
-      setLoopEnd(newEnd);
-      setPlayStart(newStart);
-      toast.success(`Auto: BPM ${bpm}, loop ${newStart.toFixed(2)}s–${newEnd.toFixed(2)}s`);
+      const analyzed = analyzeGrooveAuto(buffer, {
+        beatsPerBar: parsedTimeSignature.beatsPerBar,
+        beatUnit: parsedTimeSignature.beatUnit,
+        sliceMode: sliceDetectionMode,
+      });
+      setTempoBpm(analyzed.bpm);
+      setLoopStart(analyzed.loopStart);
+      setLoopEnd(analyzed.loopEnd);
+      setPlayStart(analyzed.loopStart);
+      setSliceMarkers(analyzed.sliceMarkers);
+      setSliceVisibleCount(analyzed.numSlices);
+      setSliceConfidenceOverrides(new Map());
+      setSlicePositionOverrides(new Map());
+      setUserAddedSlices([]);
+      sliceDetectionRunForRef.current = filePath;
+      const sliceCount = selectTopNSlicesWithMeta(
+        analyzed.sliceMarkers,
+        analyzed.numSlices,
+      ).selected.length;
+      setGrooveAutoDebug({
+        quarterTimes: analyzed.quarterTimes,
+        sliceConfidenceThreshold: analyzed.sliceConfidenceThreshold,
+        numSlices: sliceCount,
+        sliceCountMethod: analyzed.sliceCountMethod,
+      });
+      toast.success(
+        `Auto: BPM ${analyzed.bpm}, ${analyzed.barsInLoop} bar loop, ${sliceCount} slices (${analyzed.loopStart.toFixed(2)}–${analyzed.loopEnd.toFixed(2)}s)`,
+      );
     } catch (err) {
       console.warn("Auto loop detection failed:", err);
       toast.error("Auto-detect failed");
     } finally {
       setIsAutoRunning(false);
     }
-  }, [fileName, isEmptyState, filePath, paneType]);
+  }, [
+    filePath,
+    isEmptyState,
+    paneType,
+    parsedTimeSignature.beatUnit,
+    parsedTimeSignature.beatsPerBar,
+    sliceDetectionMode,
+  ]);
 
   useEffect(() => {
     if (isEmptyState || !filePath) {
@@ -774,10 +985,23 @@ export const AudioPreview = ({
   }, [isEmptyState, filePath]);
 
   useEffect(() => {
-    if (slicingOpen && !isEmptyState && filePath && paneType && sliceMarkers.length === 0) {
+    if (
+      slicingOpen &&
+      !isEmptyState &&
+      filePath &&
+      paneType &&
+      sliceMarkers.length === 0
+    ) {
       runSliceDetection();
     }
-  }, [slicingOpen, isEmptyState, filePath, paneType, sliceMarkers.length, runSliceDetection]);
+  }, [
+    slicingOpen,
+    isEmptyState,
+    filePath,
+    paneType,
+    sliceMarkers.length,
+    runSliceDetection,
+  ]);
 
   // Clear slice markers and overrides when file changes or empty state
   const prevFilePathRef = useRef<string | null>(null);
@@ -789,6 +1013,8 @@ export const AudioPreview = ({
       setSlicePositionOverrides(new Map<string, number>());
       setUserAddedSlices([]);
       sliceDetectionRunForRef.current = null;
+      setSliceVisibleCount(8);
+      setGrooveAutoDebug(null);
       prevFilePathRef.current = filePath;
       return;
     }
@@ -799,6 +1025,8 @@ export const AudioPreview = ({
       setSlicePositionOverrides(new Map<string, number>());
       setUserAddedSlices([]);
       sliceDetectionRunForRef.current = null;
+      setSliceVisibleCount(8);
+      setGrooveAutoDebug(null);
       prevFilePathRef.current = filePath;
     }
   }, [isEmptyState, filePath]);
@@ -811,7 +1039,9 @@ export const AudioPreview = ({
   }, [duration]);
 
   useEffect(() => {
-    setPlayStart((prev) => Math.max(loopStart, Math.min(loopEnd || duration, prev)));
+    setPlayStart((prev) =>
+      Math.max(loopStart, Math.min(loopEnd || duration, prev)),
+    );
   }, [duration, loopEnd, loopStart]);
 
   useEffect(() => {
@@ -866,9 +1096,15 @@ export const AudioPreview = ({
       const isMultiMode = playerState.mode === "multi";
       const weState = useWaveformEditorStore.getState();
       const storeFilePath = weState.filePath;
-      const isSwitchingToNewFile = !isMultiMode && storeFilePath && storeFilePath !== filePath;
+      const isSwitchingToNewFile =
+        !isMultiMode && storeFilePath && storeFilePath !== filePath;
       const isEditorClosingOrEmpty = !weState.isOpen || weState.isEmptyState;
-      if (!multiSampleId && !isMultiMode && !isSwitchingToNewFile && isEditorClosingOrEmpty) {
+      if (
+        !multiSampleId &&
+        !isMultiMode &&
+        !isSwitchingToNewFile &&
+        isEditorClosingOrEmpty
+      ) {
         stopPlayer();
       }
       setWavesurferPlaying(false);
@@ -889,7 +1125,9 @@ export const AudioPreview = ({
 
     // Prevent re-initializing with the same audioUrl
     if (currentAudioUrlRef.current === audioUrl && wavesurferRef.current) {
-      console.log("WaveSurfer already initialized with this audioUrl, skipping...");
+      console.log(
+        "WaveSurfer already initialized with this audioUrl, skipping...",
+      );
       return;
     }
 
@@ -940,7 +1178,12 @@ export const AudioPreview = ({
 
       setIsLoading(true);
       const playerState = usePlayerStore.getState();
-      if (playerState.isPlaying && playerState.mode === "single" && filePath && paneType) {
+      if (
+        playerState.isPlaying &&
+        playerState.mode === "single" &&
+        filePath &&
+        paneType
+      ) {
         requestSwitchAtNextBar(filePath, paneType);
       }
       // Never stop player during WaveSurfer init; this can race against sample switching.
@@ -1003,19 +1246,37 @@ export const AudioPreview = ({
         if (filePath && paneType && mode === "overdub") {
           try {
             if (isRemotePath(filePath)) {
-              toast.error("Cannot overdub remote samples. Download to a local folder first.");
+              toast.error(
+                "Cannot overdub remote samples. Download to a local folder first.",
+              );
               return;
             }
-            const existingResult = await getAudioBlobForPath(filePath, paneType);
+            const existingResult = await getAudioBlobForPath(
+              filePath,
+              paneType,
+            );
             if (!existingResult.success || !existingResult.data) {
               toast.error("Could not load existing audio for overdub");
               return;
             }
-            const decodableUrl = await ensureAudioDecodable(existingResult.data, filePath);
-            const existingBlob = await fetch(decodableUrl).then((r) => r.blob());
-            const mixed = await mixOverdub(existingBlob, blob, recordStartTimeRef.current);
+            const decodableUrl = await ensureAudioDecodable(
+              existingResult.data,
+              filePath,
+            );
+            const existingBlob = await fetch(decodableUrl).then((r) =>
+              r.blob(),
+            );
+            const mixed = await mixOverdub(
+              existingBlob,
+              blob,
+              recordStartTimeRef.current,
+            );
             if (mixed) {
-              const result = await fileSystemService.writeBlobToPath(filePath, mixed, paneType);
+              const result = await fileSystemService.writeBlobToPath(
+                filePath,
+                mixed,
+                paneType,
+              );
               if (result.success) {
                 toast.success("Overdub saved");
                 onFileSavedRef.current?.(paneType);
@@ -1033,15 +1294,33 @@ export const AudioPreview = ({
         } else if (filePath && paneType && mode === "replace") {
           try {
             if (isRemotePath(filePath)) {
-              toast.error("Cannot replace remote samples. Download to a local folder first.");
+              toast.error(
+                "Cannot replace remote samples. Download to a local folder first.",
+              );
               return;
             }
-            const existingResult = await getAudioBlobForPath(filePath, paneType);
+            const existingResult = await getAudioBlobForPath(
+              filePath,
+              paneType,
+            );
             if (existingResult.success && existingResult.data) {
-              const decodableUrl = await ensureAudioDecodable(existingResult.data, filePath);
-              const existingBlob = await fetch(decodableUrl).then((r) => r.blob());
-              const replaced = await replaceSegment(existingBlob, blob, recordStartTimeRef.current);
-              const result = await fileSystemService.writeBlobToPath(filePath, replaced, paneType);
+              const decodableUrl = await ensureAudioDecodable(
+                existingResult.data,
+                filePath,
+              );
+              const existingBlob = await fetch(decodableUrl).then((r) =>
+                r.blob(),
+              );
+              const replaced = await replaceSegment(
+                existingBlob,
+                blob,
+                recordStartTimeRef.current,
+              );
+              const result = await fileSystemService.writeBlobToPath(
+                filePath,
+                replaced,
+                paneType,
+              );
               if (result.success) {
                 toast.success("Recording saved");
                 onFileSavedRef.current?.(paneType);
@@ -1053,12 +1332,19 @@ export const AudioPreview = ({
                 toast.error(result.error || "Failed to save recording");
               }
             } else {
-              const dirPath = filePath.substring(0, filePath.lastIndexOf("/")) || "/";
-              const baseName = filePath.substring(filePath.lastIndexOf("/") + 1);
+              const dirPath =
+                filePath.substring(0, filePath.lastIndexOf("/")) || "/";
+              const baseName = filePath.substring(
+                filePath.lastIndexOf("/") + 1,
+              );
               const nameWithoutExt = baseName.replace(/\.[^.]+$/, "");
               const newName = `${nameWithoutExt}_recorded_${Date.now()}.wav`;
               const file = new File([blob], newName, { type: "audio/wav" });
-              const result = await fileSystemService.addFileFromDrop(file, dirPath, paneType);
+              const result = await fileSystemService.addFileFromDrop(
+                file,
+                dirPath,
+                paneType,
+              );
               if (result.success) {
                 toast.success(`Recorded and saved: ${newName}`);
                 onFileSavedRef.current?.(paneType);
@@ -1071,12 +1357,17 @@ export const AudioPreview = ({
           }
         } else if (filePath && paneType) {
           try {
-            const dirPath = filePath.substring(0, filePath.lastIndexOf("/")) || "/";
+            const dirPath =
+              filePath.substring(0, filePath.lastIndexOf("/")) || "/";
             const baseName = filePath.substring(filePath.lastIndexOf("/") + 1);
             const nameWithoutExt = baseName.replace(/\.[^.]+$/, "");
             const newName = `${nameWithoutExt}_recorded_${Date.now()}.wav`;
             const file = new File([blob], newName, { type: "audio/wav" });
-            const result = await fileSystemService.addFileFromDrop(file, dirPath, paneType);
+            const result = await fileSystemService.addFileFromDrop(
+              file,
+              dirPath,
+              paneType,
+            );
             if (result.success) {
               toast.success(`Recorded and saved: ${newName}`);
               onFileSavedRef.current?.(paneType);
@@ -1093,9 +1384,18 @@ export const AudioPreview = ({
 
       // Add Timeline plugin - use ref for format so BPM parse doesn't trigger WaveSurfer re-init
       const tf = timelineFormatRef.current;
-      const timelineTimeInterval = tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat / 4 : 0.2;
-      const timelinePrimaryInterval = tf.timeDisplayMode === "bars" && tf.secondsPerBar > 0 ? tf.secondsPerBar : 5;
-      const timelineSecondaryInterval = tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0 ? tf.secondsPerBeat : 1;
+      const timelineTimeInterval =
+        tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0
+          ? tf.secondsPerBeat / 4
+          : 0.2;
+      const timelinePrimaryInterval =
+        tf.timeDisplayMode === "bars" && tf.secondsPerBar > 0
+          ? tf.secondsPerBar
+          : 5;
+      const timelineSecondaryInterval =
+        tf.timeDisplayMode === "bars" && tf.secondsPerBeat > 0
+          ? tf.secondsPerBeat
+          : 1;
       const timeline = TimelinePlugin.create({
         height: 20,
         insertPosition: "beforebegin",
@@ -1104,7 +1404,9 @@ export const AudioPreview = ({
         secondaryLabelInterval: timelineSecondaryInterval,
         formatTimeCallback: (sec: number) => {
           const t = timelineFormatRef.current;
-          return t.timeDisplayMode === "bars" ? t.formatBarsBeats(sec) : t.formatTime(sec);
+          return t.timeDisplayMode === "bars"
+            ? t.formatBarsBeats(sec)
+            : t.formatTime(sec);
         },
         style: {
           fontSize: "10px",
@@ -1165,7 +1467,10 @@ export const AudioPreview = ({
         const decodedData = wavesurfer.getDecodedData();
         const channelCount = decodedData?.numberOfChannels ?? 1;
         if (channelCount > 1) {
-          const perChannelHeight = Math.max(40, Math.floor(debouncedWaveformHeight / channelCount));
+          const perChannelHeight = Math.max(
+            40,
+            Math.floor(debouncedWaveformHeight / channelCount),
+          );
           wavesurfer.setOptions({
             splitChannels: Array.from({ length: channelCount }, () => ({
               overlay: false,
@@ -1204,11 +1509,15 @@ export const AudioPreview = ({
         isInitializingRef.current = false;
         // Ignore AbortError - it's expected when switching files or destroying WaveSurfer
         if (isAbortError(error)) {
-          console.log("WaveSurfer load aborted (expected when switching files)");
+          console.log(
+            "WaveSurfer load aborted (expected when switching files)",
+          );
           return;
         }
         console.error("WaveSurfer error:", error);
-        setErrorMessage(`Failed to load audio: ${error instanceof Error ? error.message : "Unknown error"}`);
+        setErrorMessage(
+          `Failed to load audio: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
         setIsLoading(false);
       });
 
@@ -1279,7 +1588,10 @@ export const AudioPreview = ({
       try {
         // Remove minimap event listener if attached
         if (minimapContainerRef.current) {
-          minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
+          minimapContainerRef.current.removeEventListener(
+            "mousedown",
+            stableMinimapHandler,
+          );
           minimapContainerRef.current = null;
         }
         if (wavesurferRef.current) {
@@ -1320,7 +1632,8 @@ export const AudioPreview = ({
       const isMultiMode = playerState.mode === "multi";
       const weState = useWaveformEditorStore.getState();
       const storeFilePath = weState.filePath;
-      const isSwitchingToNewFile = !isMultiMode && storeFilePath && storeFilePath !== filePath;
+      const isSwitchingToNewFile =
+        !isMultiMode && storeFilePath && storeFilePath !== filePath;
       const isEditorClosingOrEmpty = !weState.isOpen || weState.isEmptyState;
       if (!isMultiMode && !isSwitchingToNewFile && isEditorClosingOrEmpty) {
         stopPlayer();
@@ -1349,19 +1662,28 @@ export const AudioPreview = ({
     // Find the minimap element (inserted by WaveSurfer with part="minimap")
     const findMinimap = () => {
       if (waveformRef.current) {
-        const wrapper = wavesurferRef.current?.getWrapper?.() as HTMLElement | undefined;
-        const wrapperRoot = wrapper?.getRootNode?.() as ShadowRoot | Document | undefined;
-        const minimapInParent = waveformRef.current.parentElement?.querySelector(
-          '[part="minimap"]',
-        ) as HTMLDivElement | null;
-        const minimapInWrapperRoot = (wrapperRoot as ParentNode | undefined)?.querySelector?.(
-          '[part="minimap"]',
-        ) as HTMLDivElement | null;
+        const wrapper = wavesurferRef.current?.getWrapper?.() as
+          | HTMLElement
+          | undefined;
+        const wrapperRoot = wrapper?.getRootNode?.() as
+          | ShadowRoot
+          | Document
+          | undefined;
+        const minimapInParent =
+          waveformRef.current.parentElement?.querySelector(
+            '[part="minimap"]',
+          ) as HTMLDivElement | null;
+        const minimapInWrapperRoot = (
+          wrapperRoot as ParentNode | undefined
+        )?.querySelector?.('[part="minimap"]') as HTMLDivElement | null;
         const minimapElement = minimapInParent || minimapInWrapperRoot;
         if (minimapElement) {
           if (minimapContainerRef.current !== minimapElement) {
             if (minimapContainerRef.current) {
-              minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
+              minimapContainerRef.current.removeEventListener(
+                "mousedown",
+                stableMinimapHandler,
+              );
             }
             minimapContainerRef.current = minimapElement;
             minimapElement.style.cursor = "crosshair";
@@ -1380,7 +1702,10 @@ export const AudioPreview = ({
         clearTimeout(timeout);
         clearTimeout(timeout2);
         if (minimapContainerRef.current) {
-          minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
+          minimapContainerRef.current.removeEventListener(
+            "mousedown",
+            stableMinimapHandler,
+          );
           minimapContainerRef.current = null;
         }
       };
@@ -1388,7 +1713,10 @@ export const AudioPreview = ({
 
     return () => {
       if (minimapContainerRef.current) {
-        minimapContainerRef.current.removeEventListener("mousedown", stableMinimapHandler);
+        minimapContainerRef.current.removeEventListener(
+          "mousedown",
+          stableMinimapHandler,
+        );
         minimapContainerRef.current = null;
       }
     };
@@ -1399,11 +1727,15 @@ export const AudioPreview = ({
       if (!minimapContainerRef.current) return;
       const rect = minimapContainerRef.current.getBoundingClientRect();
       const inside =
-        e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
       if (!inside) return;
     };
     window.addEventListener("pointerdown", handlePointerDownCapture, true);
-    return () => window.removeEventListener("pointerdown", handlePointerDownCapture, true);
+    return () =>
+      window.removeEventListener("pointerdown", handlePointerDownCapture, true);
   }, []);
 
   // Update zoom
@@ -1454,10 +1786,13 @@ export const AudioPreview = ({
   useEffect(() => {
     if (!waveformRef.current || isLoading || !duration) return;
     const findAndUpdateEnvelope = () => {
-      const wrapper = wavesurferRef.current?.getWrapper?.() as HTMLElement | undefined;
+      const wrapper = wavesurferRef.current?.getWrapper?.() as
+        | HTMLElement
+        | undefined;
       const envelopeEl =
-        waveformRef.current?.parentElement?.querySelector('[part="envelope"]') ??
-        wrapper?.querySelector('[part="envelope"]');
+        waveformRef.current?.parentElement?.querySelector(
+          '[part="envelope"]',
+        ) ?? wrapper?.querySelector('[part="envelope"]');
       const el = envelopeEl as HTMLElement | null;
       if (!el) return false;
       const showEnvelope = envelopeEnabled && !slicingOpen;
@@ -1485,7 +1820,9 @@ export const AudioPreview = ({
       recordingModeRef.current = mode;
       recordStartTimeRef.current = wavesurferRef.current.getCurrentTime();
       try {
-        const opts = selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : undefined;
+        const opts = selectedDeviceId
+          ? { deviceId: { exact: selectedDeviceId } }
+          : undefined;
         await plugin.startRecording(opts);
         setIsRecording(true);
         setIsRecordPaused(false);
@@ -1503,7 +1840,10 @@ export const AudioPreview = ({
       recordPluginRef.current?.stopRecording();
       return;
     }
-    const clampedPlayStart = Math.max(loopStart, Math.min(loopEnd || duration, playStart));
+    const clampedPlayStart = Math.max(
+      loopStart,
+      Math.min(loopEnd || duration, playStart),
+    );
     if (isRecordArmed) {
       startRecordingFromHere(recordArmedModeRef.current);
       return;
@@ -1606,15 +1946,26 @@ export const AudioPreview = ({
     (e: React.MouseEvent) => {
       if (isLoading || isAnalyzing) return;
       e.preventDefault();
-      const max = Math.max(1, sliceMarkers.length);
-      numSlicesDragRef.current = { startY: e.clientY, startX: e.clientX, startValue: numSlices };
+      const combined = combinedSliceMarkersRef.current;
+      const max = Math.max(1, combined.length);
+      numSlicesDragRef.current = {
+        startY: e.clientY,
+        startX: e.clientX,
+        startRank: Math.min(
+          Math.max(1, sliceVisibleCount),
+          combined.length || 1,
+        ),
+      };
       const onMove = (moveE: MouseEvent) => {
         if (!numSlicesDragRef.current) return;
         const dy = numSlicesDragRef.current.startY - moveE.clientY;
         const dx = moveE.clientX - numSlicesDragRef.current.startX;
         const steps = Math.round((dy + dx) / 8);
-        const next = Math.max(1, Math.min(max, numSlicesDragRef.current.startValue + steps));
-        setNumSlices(next);
+        const next = Math.max(
+          1,
+          Math.min(max, numSlicesDragRef.current.startRank + steps),
+        );
+        setSliceVisibleCount(next);
       };
       const onUp = () => {
         numSlicesDragRef.current = null;
@@ -1624,27 +1975,34 @@ export const AudioPreview = ({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [isLoading, isAnalyzing, numSlices, sliceMarkers.length],
+    [isLoading, isAnalyzing, sliceVisibleCount],
   );
 
   const removeSlice = useCallback(
     (originalTime: number, isUserAdded: boolean) => {
       const key = sliceKey(originalTime);
       if (isUserAdded) {
-        setUserAddedSlices((prev) => prev.filter((s) => Math.abs(s.time - originalTime) > 0.001));
+        setUserAddedSlices((prev) =>
+          prev.filter((s) => Math.abs(s.time - originalTime) > 0.001),
+        );
       } else {
         setSliceConfidenceOverrides((prev) => new Map(prev).set(key, 0));
       }
-      setNumSlices((prev) => Math.max(1, prev - 1));
     },
     [sliceKey],
   );
 
   const addSliceAtTime = useCallback(
     (clickTime: number) => {
-      const selected = selectTopSlices(combinedSliceMarkers, numSlices);
-      const minConfidence = selected.length > 0 ? Math.min(...selected.map((s) => s.confidence)) : 0.5;
-      const threshold = minConfidence + 0.01;
+      const selected = selectTopNSlicesWithMeta(
+        combinedSliceMarkers,
+        sliceVisibleCount,
+      ).selected;
+      const minConfidence =
+        selected.length > 0
+          ? Math.min(...selected.map((s) => s.confidence))
+          : 0.5;
+      const addConf = minConfidence + 0.01;
       const minSpacingSec = 20 / 1000;
       const excluded = new Set(selected.map((s) => sliceKey(s.time)));
       const allMarked = [...selected, ...userAddedSlices];
@@ -1654,7 +2012,9 @@ export const AudioPreview = ({
       for (const m of sliceMarkers) {
         const key = sliceKey(m.time);
         if (excluded.has(key)) continue;
-        const tooClose = allMarked.some((s) => Math.abs(s.time - m.time) < minSpacingSec);
+        const tooClose = allMarked.some(
+          (s) => Math.abs(s.time - m.time) < minSpacingSec,
+        );
         if (tooClose) continue;
         const dist = Math.abs(m.time - clickTime);
         if (dist < bestDist) {
@@ -1663,10 +2023,19 @@ export const AudioPreview = ({
         }
       }
       const timeToAdd = best ? best.time : clickTime;
-      setUserAddedSlices((prev) => [...prev, { time: timeToAdd, confidence: Math.min(1, threshold) }]);
-      setNumSlices((prev) => prev + 1);
+      setUserAddedSlices((prev) => [
+        ...prev,
+        { time: timeToAdd, confidence: Math.min(1, addConf) },
+      ]);
+      setSliceVisibleCount((prev) => prev + 1);
     },
-    [combinedSliceMarkers, numSlices, sliceMarkers, userAddedSlices, sliceKey],
+    [
+      combinedSliceMarkers,
+      sliceVisibleCount,
+      sliceMarkers,
+      userAddedSlices,
+      sliceKey,
+    ],
   );
 
   const updateSlicePosition = useCallback(
@@ -1750,13 +2119,19 @@ export const AudioPreview = ({
       const bars = Math.floor(parts.bars);
       const beats = Math.floor(parts.beats);
       const sixteenths = Math.floor(parts.sixteenths);
-      let totalBeats = bars * parsedTimeSignature.beatsPerBar + beats + sixteenths / 4;
+      let totalBeats =
+        bars * parsedTimeSignature.beatsPerBar + beats + sixteenths / 4;
       totalBeats = Math.max(0.25, totalBeats); // min 1 sixteenth
       const nextEnd = clampToDuration(loopStart + totalBeats * secondsPerBeat);
       if (nextEnd <= loopStart) return;
       setLoopEnd(nextEnd);
     },
-    [clampToDuration, loopStart, parsedTimeSignature.beatsPerBar, secondsPerBeat],
+    [
+      clampToDuration,
+      loopStart,
+      parsedTimeSignature.beatsPerBar,
+      secondsPerBeat,
+    ],
   );
 
   const handleTempoChange = useCallback(
@@ -1771,9 +2146,15 @@ export const AudioPreview = ({
         const beatUnitFactor = 4 / parsedTimeSignature.beatUnit;
         const oldSecondsPerBeat = (60 / Math.max(1, oldTempo)) * beatUnitFactor;
         const newSecondsPerBeat = (60 / n) * beatUnitFactor;
-        const totalBeats = oldSecondsPerBeat > 0 ? Math.max(0, effectiveLoopEnd - loopStart) / oldSecondsPerBeat : 0;
+        const totalBeats =
+          oldSecondsPerBeat > 0
+            ? Math.max(0, effectiveLoopEnd - loopStart) / oldSecondsPerBeat
+            : 0;
         if (totalBeats > 0) {
-          const nextEnd = Math.max(loopStart + 0.001, Math.min(duration, loopStart + totalBeats * newSecondsPerBeat));
+          const nextEnd = Math.max(
+            loopStart + 0.001,
+            Math.min(duration, loopStart + totalBeats * newSecondsPerBeat),
+          );
           setLoopEnd(nextEnd);
         }
       }
@@ -1856,7 +2237,14 @@ export const AudioPreview = ({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [clampToDuration, duration, loopEnd, loopStart, snapToSixteenth, timeDisplayMode],
+    [
+      clampToDuration,
+      duration,
+      loopEnd,
+      loopStart,
+      snapToSixteenth,
+      timeDisplayMode,
+    ],
   );
 
   const handleSampleBoundaryDrag = useCallback(
@@ -1876,18 +2264,27 @@ export const AudioPreview = ({
         const dx = moveE.clientX - startX;
         const delta = (dx / rect.width) * dragDuration;
         if (which === "start") {
-          const nextStart = Math.max(0, Math.min(startLoopEnd - minLength, startLoopStart + delta));
+          const nextStart = Math.max(
+            0,
+            Math.min(startLoopEnd - minLength, startLoopStart + delta),
+          );
           setLoopStart(nextStart);
           setPlayStart((prev) => Math.max(nextStart, prev));
           return;
         }
         if (which === "end") {
-          const nextEnd = Math.max(startLoopStart + minLength, Math.min(dragDuration, startLoopEnd + delta));
+          const nextEnd = Math.max(
+            startLoopStart + minLength,
+            Math.min(dragDuration, startLoopEnd + delta),
+          );
           setLoopEnd(nextEnd);
           setPlayStart((prev) => Math.min(nextEnd, prev));
           return;
         }
-        const nextPlayStart = Math.max(startLoopStart, Math.min(startLoopEnd, startPlayStart + delta));
+        const nextPlayStart = Math.max(
+          startLoopStart,
+          Math.min(startLoopEnd, startPlayStart + delta),
+        );
         setPlayStart(nextPlayStart);
       };
 
@@ -1906,8 +2303,17 @@ export const AudioPreview = ({
     (part: "bars" | "beats" | "sixteenths", e: React.MouseEvent) => {
       e.preventDefault();
       const loopParts = getLoopLengthParts();
-      const startValue = part === "bars" ? loopParts.bars : part === "beats" ? loopParts.beats : loopParts.sixteenths;
-      loopPartDragRef.current = { startY: e.clientY, startX: e.clientX, startValue };
+      const startValue =
+        part === "bars"
+          ? loopParts.bars
+          : part === "beats"
+            ? loopParts.beats
+            : loopParts.sixteenths;
+      loopPartDragRef.current = {
+        startY: e.clientY,
+        startX: e.clientX,
+        startValue,
+      };
 
       const onMove = (moveE: MouseEvent) => {
         if (!loopPartDragRef.current) return;
@@ -1940,8 +2346,10 @@ export const AudioPreview = ({
       else return;
       e.preventDefault();
       const next = { ...getLoopLengthParts() };
-      const maxBars = secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999;
-      if (part === "bars") next.bars = Math.min(maxBars, Math.max(0, next.bars + delta));
+      const maxBars =
+        secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999;
+      if (part === "bars")
+        next.bars = Math.min(maxBars, Math.max(0, next.bars + delta));
       else if (part === "beats") next.beats = next.beats + delta;
       else if (part === "sixteenths") next.sixteenths = next.sixteenths + delta;
       applyLoopLengthParts(next);
@@ -1957,18 +2365,25 @@ export const AudioPreview = ({
         toast.error(blobResult.error || "Failed to load audio");
         return;
       }
-      const decodableUrl = await ensureAudioDecodable(blobResult.data, filePath);
+      const decodableUrl = await ensureAudioDecodable(
+        blobResult.data,
+        filePath,
+      );
       const blob = await fetch(decodableUrl).then((r) => r.blob());
       const regs = regionsRef.current?.getRegions() ?? [];
       const region = regs[0];
       const regionStart = region?.start ?? 0;
       const regionEnd = region?.end ?? duration;
       const clampedLoopStart = Math.max(0, Math.min(duration, loopStart));
-      const clampedLoopEnd = Math.max(clampedLoopStart + 0.001, Math.min(duration, loopEnd || duration));
+      const clampedLoopEnd = Math.max(
+        clampedLoopStart + 0.001,
+        Math.min(duration, loopEnd || duration),
+      );
       // Use RegionsPlugin region if it exists; otherwise use loop start/end (user's start/end points)
       const regionBoundsStart = region ? regionStart : clampedLoopStart;
       const regionBoundsEnd = region ? regionEnd : clampedLoopEnd;
-      const useFullSample = markerOptions === null ? false : !markerOptions.exportRegionOnly;
+      const useFullSample =
+        markerOptions === null ? false : !markerOptions.exportRegionOnly;
       const effectiveRegionStart = useFullSample ? 0 : regionBoundsStart;
       const effectiveRegionEnd = useFullSample ? duration : regionBoundsEnd;
       const pts = envelopeRef.current?.getPoints() ?? [];
@@ -1976,43 +2391,51 @@ export const AudioPreview = ({
       const slices = displayedSlices.map((s) => ({ time: s.time }));
       const hasSlices = slices.length > 0;
 
-      const useDownloadMode = !hasDirectoryPickerSupport() || isTempPath(filePath);
+      const useDownloadMode =
+        !hasDirectoryPickerSupport() || isTempPath(filePath);
       const statsResult =
         isRemotePath(filePath) || useDownloadMode
           ? { success: false, data: undefined }
           : await fileSystemService.getFileStats(filePath, paneType);
       const willOverwrite = statsResult.success && statsResult.data;
 
-      let saveAsTarget: { dirHandle: FileSystemDirectoryHandle; filename: string } | null = null;
+      let saveAsTarget: {
+        dirHandle: FileSystemDirectoryHandle;
+        filename: string;
+      } | null = null;
       if (!useDownloadMode) {
         if (isRemotePath(filePath)) {
           setExportSaveAsFilename(fileName ?? "export.wav");
           setExportSaveAsDirHandle(null);
           setExportSaveAsOpen(true);
-          const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>(
-            (resolve) => {
-              exportSaveAsResolverRef.current = resolve;
-            },
-          );
+          const result = await new Promise<{
+            dirHandle: FileSystemDirectoryHandle;
+            filename: string;
+          } | null>((resolve) => {
+            exportSaveAsResolverRef.current = resolve;
+          });
           setExportSaveAsOpen(false);
           setExportSaveAsDirHandle(null);
           if (!result) return;
           saveAsTarget = result;
         } else if (willOverwrite) {
           setExportOverwriteOpen(true);
-          const choice = await new Promise<"abort" | "overwrite" | "saveAs">((resolve) => {
-            exportOverwriteResolverRef.current = resolve;
-          });
+          const choice = await new Promise<"abort" | "overwrite" | "saveAs">(
+            (resolve) => {
+              exportOverwriteResolverRef.current = resolve;
+            },
+          );
           if (choice === "abort") return;
           if (choice === "saveAs") {
             setExportSaveAsFilename(fileName ?? "export.wav");
             setExportSaveAsDirHandle(null);
             setExportSaveAsOpen(true);
-            const result = await new Promise<{ dirHandle: FileSystemDirectoryHandle; filename: string } | null>(
-              (resolve) => {
-                exportSaveAsResolverRef.current = resolve;
-              },
-            );
+            const result = await new Promise<{
+              dirHandle: FileSystemDirectoryHandle;
+              filename: string;
+            } | null>((resolve) => {
+              exportSaveAsResolverRef.current = resolve;
+            });
             setExportSaveAsOpen(false);
             setExportSaveAsDirHandle(null);
             if (!result) return;
@@ -2027,14 +2450,19 @@ export const AudioPreview = ({
         const tempo = Number.isFinite(tempoBpm) ? tempoBpm : bpmResult?.bpm;
         const parsedRootKey = Number.parseInt(rootKey.trim(), 10);
         const rootKeyValue =
-          Number.isFinite(parsedRootKey) && parsedRootKey >= 0 && parsedRootKey <= 127 ? parsedRootKey : undefined;
+          Number.isFinite(parsedRootKey) &&
+          parsedRootKey >= 0 &&
+          parsedRootKey <= 127
+            ? parsedRootKey
+            : undefined;
 
         const params = {
           regionStart: effectiveRegionStart,
           regionEnd: effectiveRegionEnd,
           envelopePoints,
           slices: hasSlices ? slices : undefined,
-          embeddedMarkers: hasSlices && (markerOptions?.embeddedMarkers ?? true),
+          embeddedMarkers:
+            hasSlices && (markerOptions?.embeddedMarkers ?? true),
           ixmlMetadata: markerOptions?.ixmlMetadata ?? true,
           exportSliceFiles: hasSlices && (markerOptions?.sliceFiles ?? false),
           tempo,
@@ -2045,9 +2473,15 @@ export const AudioPreview = ({
           tuningCents,
         };
 
-        const { mainBlob, sliceBlobs } = await exportAudioWithEdits(blob, params, duration);
+        const { mainBlob, sliceBlobs } = await exportAudioWithEdits(
+          blob,
+          params,
+          duration,
+        );
 
-        const mainFileName = saveAsTarget ? saveAsTarget.filename : (fileName ?? "export.wav");
+        const mainFileName = saveAsTarget
+          ? saveAsTarget.filename
+          : (fileName ?? "export.wav");
         const mainName = `${mainFileName.replace(/\.wav$/i, "")}.wav`;
 
         if (useDownloadMode) {
@@ -2067,7 +2501,9 @@ export const AudioPreview = ({
             a.download = `${baseName}_slices.zip`;
             a.click();
             URL.revokeObjectURL(url);
-            toast.success(`Exported ${mainName} and ${sliceBlobs.length} slices`);
+            toast.success(
+              `Exported ${mainName} and ${sliceBlobs.length} slices`,
+            );
           } else {
             const url = URL.createObjectURL(mainBlob);
             const a = document.createElement("a");
@@ -2078,45 +2514,66 @@ export const AudioPreview = ({
             toast.success(`Exported ${mainName}`);
           }
         } else if (saveAsTarget) {
-          const result = await fileSystemService.writeBlobToDirectoryHandle(saveAsTarget.dirHandle, mainName, mainBlob);
+          const result = await fileSystemService.writeBlobToDirectoryHandle(
+            saveAsTarget.dirHandle,
+            mainName,
+            mainBlob,
+          );
           if (!result.success) {
             toast.error(result.error || "Export failed");
             return;
           }
           if (sliceBlobs && sliceBlobs.length > 0) {
             const baseName = mainFileName.replace(/\.wav$/i, "");
-            const sliceFolderHandle = await saveAsTarget.dirHandle.getDirectoryHandle(baseName, {
-              create: true,
-            });
+            const sliceFolderHandle =
+              await saveAsTarget.dirHandle.getDirectoryHandle(baseName, {
+                create: true,
+              });
             const padWidth = Math.max(2, String(sliceBlobs.length).length);
             for (let i = 0; i < sliceBlobs.length; i++) {
               const num = String(i + 1).padStart(padWidth, "0");
-              const sliceResult = await fileSystemService.writeBlobToDirectoryHandle(
-                sliceFolderHandle,
-                `${baseName}_${num}.wav`,
-                sliceBlobs[i],
-              );
+              const sliceResult =
+                await fileSystemService.writeBlobToDirectoryHandle(
+                  sliceFolderHandle,
+                  `${baseName}_${num}.wav`,
+                  sliceBlobs[i],
+                );
               if (!sliceResult.success) {
-                toast.error(sliceResult.error || `Failed to export slice ${i + 1}`);
+                toast.error(
+                  sliceResult.error || `Failed to export slice ${i + 1}`,
+                );
                 return;
               }
             }
-            toast.success(`Exported ${mainName} and ${sliceBlobs.length} slices`);
+            toast.success(
+              `Exported ${mainName} and ${sliceBlobs.length} slices`,
+            );
           } else {
             toast.success(`Exported ${mainName}`);
           }
         } else {
-          const result = await fileSystemService.writeBlobToPath(filePath, mainBlob, paneType);
+          const result = await fileSystemService.writeBlobToPath(
+            filePath,
+            mainBlob,
+            paneType,
+          );
           if (!result.success) {
             toast.error(result.error || "Export failed");
             return;
           }
           if (sliceBlobs && sliceBlobs.length > 0) {
             const baseName = (fileName ?? "export").replace(/\.wav$/i, "");
-            const dirPath = filePath.substring(0, filePath.lastIndexOf("/")) || "/";
-            const folderResult = await fileSystemService.createFolder(dirPath, baseName, paneType);
+            const dirPath =
+              filePath.substring(0, filePath.lastIndexOf("/")) || "/";
+            const folderResult = await fileSystemService.createFolder(
+              dirPath,
+              baseName,
+              paneType,
+            );
             if (!folderResult.success) {
-              toast.error(folderResult.error || "Failed to create slice folder");
+              toast.error(
+                folderResult.error || "Failed to create slice folder",
+              );
               return;
             }
             const sliceFolderPath = `${dirPath}/${baseName}`;
@@ -2124,13 +2581,21 @@ export const AudioPreview = ({
             for (let i = 0; i < sliceBlobs.length; i++) {
               const num = String(i + 1).padStart(padWidth, "0");
               const slicePath = `${sliceFolderPath}/${baseName}_${num}.wav`;
-              const sliceResult = await fileSystemService.writeBlobToPath(slicePath, sliceBlobs[i], paneType);
+              const sliceResult = await fileSystemService.writeBlobToPath(
+                slicePath,
+                sliceBlobs[i],
+                paneType,
+              );
               if (!sliceResult.success) {
-                toast.error(sliceResult.error || `Failed to export slice ${i + 1}`);
+                toast.error(
+                  sliceResult.error || `Failed to export slice ${i + 1}`,
+                );
                 return;
               }
             }
-            toast.success(`Exported ${fileName} and ${sliceBlobs.length} slices`);
+            toast.success(
+              `Exported ${fileName} and ${sliceBlobs.length} slices`,
+            );
           } else {
             toast.success(`Exported ${fileName}`);
           }
@@ -2204,10 +2669,15 @@ export const AudioPreview = ({
     const regionStart = region?.start ?? 0;
     const regionEnd = region?.end ?? duration;
     const loopStartClamped = Math.max(0, Math.min(duration, loopStart));
-    const loopEndClamped = Math.max(loopStartClamped + 0.001, Math.min(duration, loopEnd || duration));
+    const loopEndClamped = Math.max(
+      loopStartClamped + 0.001,
+      Math.min(duration, loopEnd || duration),
+    );
     // Show region option when: RegionsPlugin region exists, OR loop start/end differ from full (user's start/end points)
     const hasRegion =
-      !!(region && (regionStart > 0 || regionEnd < duration)) || loopStartClamped > 0 || loopEndClamped < duration;
+      !!(region && (regionStart > 0 || regionEnd < duration)) ||
+      loopStartClamped > 0 ||
+      loopEndClamped < duration;
 
     if (hasSlices || hasRegion) {
       setExportOptionsOpen(true);
@@ -2222,7 +2692,9 @@ export const AudioPreview = ({
     performExport(exportMarkerOptions);
   }, [exportMarkerOptions, performExport]);
 
-  const handleExportOverwriteChoice = (choice: "abort" | "overwrite" | "saveAs") => {
+  const handleExportOverwriteChoice = (
+    choice: "abort" | "overwrite" | "saveAs",
+  ) => {
     setExportOverwriteOpen(false);
     exportOverwriteResolverRef.current?.(choice);
     exportOverwriteResolverRef.current = null;
@@ -2270,21 +2742,33 @@ export const AudioPreview = ({
         // Horizontal: scroll visible area - drag right = scroll right, drag left = scroll left
         try {
           const ws = wavesurferRef.current;
-          if (typeof ws.getScroll === "function" && typeof ws.setScroll === "function") {
+          if (
+            typeof ws.getScroll === "function" &&
+            typeof ws.setScroll === "function"
+          ) {
             const overlayEl = minimapContainerRef.current?.querySelector(
               '[part="minimap-overlay"]',
             ) as HTMLElement | null;
             const waveformRect = waveformRef.current?.getBoundingClientRect();
             // Axis lock: ignore tiny/secondary horizontal jitter during mostly vertical drags.
             const shouldApplyHorizontal =
-              Math.abs(actualDeltaX) >= Math.abs(actualDeltaY) && Math.abs(actualDeltaX) >= 2;
+              Math.abs(actualDeltaX) >= Math.abs(actualDeltaY) &&
+              Math.abs(actualDeltaX) >= 2;
             // Map mouse pixels to minimap overlay pixels (~1:1 feel): one mouse px moves overlay by one px.
             // dScroll = dOverlay * (visibleWindowPx / overlayWidthPx)
             const overlayWidth = overlayEl?.getBoundingClientRect().width ?? 0;
             const visibleWindow = waveformRect?.width ?? 0;
-            const minimapPixelToScroll = overlayWidth > 0 && visibleWindow > 0 ? visibleWindow / overlayWidth : 1;
-            const mappedDeltaX = shouldApplyHorizontal ? actualDeltaX * minimapPixelToScroll : 0;
-            const newScroll = Math.max(0, dragStateRef.current.startScroll + mappedDeltaX);
+            const minimapPixelToScroll =
+              overlayWidth > 0 && visibleWindow > 0
+                ? visibleWindow / overlayWidth
+                : 1;
+            const mappedDeltaX = shouldApplyHorizontal
+              ? actualDeltaX * minimapPixelToScroll
+              : 0;
+            const newScroll = Math.max(
+              0,
+              dragStateRef.current.startScroll + mappedDeltaX,
+            );
             ws.setScroll(newScroll);
             if (dragStateRef.current.debugScrollSamples < 6) {
               dragStateRef.current.debugScrollSamples += 1;
@@ -2297,7 +2781,10 @@ export const AudioPreview = ({
         // Keep zoom response linear/predictable in both directions.
         const zoomPerPixel = 0.8;
         const zoomDelta = -actualDeltaY * zoomPerPixel;
-        const newZoom = Math.max(0, Math.min(500, dragStateRef.current.startZoom + zoomDelta));
+        const newZoom = Math.max(
+          0,
+          Math.min(500, dragStateRef.current.startZoom + zoomDelta),
+        );
         if (dragStateRef.current.debugMoveSamples < 3) {
           dragStateRef.current.debugMoveSamples += 1;
         }
@@ -2378,7 +2865,10 @@ export const AudioPreview = ({
         moveE.preventDefault();
         const dy = moveE.clientY - heightDragStartRef.current.y;
         // Drag down = smaller, drag up = bigger (inverted so handle at top behaves intuitively)
-        const newH = Math.max(80, Math.min(500, heightDragStartRef.current.h - dy));
+        const newH = Math.max(
+          80,
+          Math.min(500, heightDragStartRef.current.h - dy),
+        );
         setWaveformHeight(newH);
       };
       const handleUp = () => {
@@ -2399,12 +2889,24 @@ export const AudioPreview = ({
     return Math.min(512, Math.ceil(duration / secondsPerBar));
   }, [duration, secondsPerBar]);
   const timelineDuration = duration > 0 ? duration : 1;
-  const loopEndClamped = Math.min(timelineDuration, loopEnd > 0 ? loopEnd : timelineDuration);
-  const loopStartClamped = Math.max(0, Math.min(loopEndClamped - 0.001, loopStart));
-  const playStartClamped = Math.max(loopStartClamped, Math.min(loopEndClamped, playStart));
+  const loopEndClamped = Math.min(
+    timelineDuration,
+    loopEnd > 0 ? loopEnd : timelineDuration,
+  );
+  const loopStartClamped = Math.max(
+    0,
+    Math.min(loopEndClamped - 0.001, loopStart),
+  );
+  const playStartClamped = Math.max(
+    loopStartClamped,
+    Math.min(loopEndClamped, playStart),
+  );
 
   return (
-    <div className="border-t border-border bg-card p-4 space-y-3 shrink-0" data-testid={`audio-preview-${paneType}`}>
+    <div
+      className="border-t border-border bg-card p-4 space-y-3 shrink-0"
+      data-testid={`audio-preview-${paneType}`}
+    >
       {/* Resize handle - top border of filename row, drag to adjust waveform height */}
       <div
         className="-mt-4 -mx-4 mb-1 h-4 cursor-ns-resize flex items-center justify-center hover:bg-muted/50 transition-colors select-none touch-none"
@@ -2429,11 +2931,34 @@ export const AudioPreview = ({
           {!isEmptyState && duration > 0 && (
             <>
               {devMode && sampleRate > 0 && (
-                <div className="text-[10px] font-mono text-muted-foreground" title="Loop length in samples">
-                  {Math.round(Math.max(0, (loopEnd || duration) - loopStart) * sampleRate).toLocaleString()}
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className="text-[10px] font-mono text-muted-foreground shrink-0"
+                    title="Loop length in samples"
+                  >
+                    {Math.round(
+                      Math.max(0, (loopEnd || duration) - loopStart) *
+                        sampleRate,
+                    ).toLocaleString()}
+                  </div>
+                  {grooveAutoDebug && (
+                    <div
+                      className="text-[10px] font-mono text-pink-500 truncate max-w-[16rem]"
+                      title="Last wand auto: inferred slice confidence threshold and method"
+                    >
+                      conf≥
+                      {formatSliceConfidenceChip(
+                        grooveAutoDebug.sliceConfidenceThreshold,
+                      )}{" "}
+                      · {grooveAutoDebug.sliceCountMethod} · n=
+                      {grooveAutoDebug.numSlices}
+                    </div>
+                  )}
                 </div>
               )}
-              <div className="text-[10px] uppercase text-muted-foreground">Len</div>
+              <div className="text-[10px] uppercase text-muted-foreground">
+                Len
+              </div>
               <div
                 role="group"
                 aria-label="Loop length (bars : beats : sixteenths)"
@@ -2446,7 +2971,11 @@ export const AudioPreview = ({
                   aria-label="Loop length bars"
                   aria-valuenow={loopLengthParts.bars}
                   aria-valuemin={0}
-                  aria-valuemax={secondsPerBar > 0 ? Math.floor(duration / secondsPerBar) : 999}
+                  aria-valuemax={
+                    secondsPerBar > 0
+                      ? Math.floor(duration / secondsPerBar)
+                      : 999
+                  }
                   className="w-6 shrink-0 flex items-center justify-center cursor-move hover:bg-muted/50 rounded-l-[5px]"
                   onMouseDown={(e) => handleLoopPartDragStart("bars", e)}
                   onKeyDown={(e) => handleLoopPartKeyDown("bars", e)}
@@ -2454,7 +2983,9 @@ export const AudioPreview = ({
                 >
                   {String(loopLengthParts.bars).padStart(3, " ")}
                 </span>
-                <span className="w-3 shrink-0 flex items-center justify-center text-muted-foreground">:</span>
+                <span className="w-3 shrink-0 flex items-center justify-center text-muted-foreground">
+                  :
+                </span>
                 <span
                   role="spinbutton"
                   tabIndex={0}
@@ -2470,7 +3001,9 @@ export const AudioPreview = ({
                 >
                   {String(loopLengthParts.beats).padStart(2, " ")}
                 </span>
-                <span className="w-3 shrink-0 flex items-center justify-center text-muted-foreground">:</span>
+                <span className="w-3 shrink-0 flex items-center justify-center text-muted-foreground">
+                  :
+                </span>
                 <span
                   role="spinbutton"
                   tabIndex={0}
@@ -2493,7 +3026,11 @@ export const AudioPreview = ({
                 className="h-7 w-7 p-0 shrink-0"
                 onClick={() => setLoopEnabled(!loopEnabled)}
                 disabled={isLoading}
-                title={loopEnabled ? "Loop on: playback loops within region" : "Loop off: playback stops at region end"}
+                title={
+                  loopEnabled
+                    ? "Loop on: playback loops within region"
+                    : "Loop off: playback stops at region end"
+                }
                 aria-pressed={loopEnabled}
               >
                 <Repeat className="w-3.5 h-3.5" />
@@ -2506,21 +3043,28 @@ export const AudioPreview = ({
                 disabled={isLoading}
                 title="Time signature"
               />
-              <div className="flex items-stretch rounded-md border border-input bg-background" title="Tempo BPM">
+              <div
+                className="flex items-stretch rounded-md border border-input bg-background"
+                title="Tempo BPM"
+              >
                 <Input
                   data-testid="audio-preview-tempo"
                   className="h-7 w-[52px] rounded-r-none border-0 bg-transparent text-xs font-mono focus-visible:ring-0 focus-visible:ring-offset-0"
                   inputMode="numeric"
                   value={tempoEditingValue ?? String(Math.round(tempoBpm))}
-                  onFocus={() => setTempoEditingValue(String(Math.round(tempoBpm)))}
+                  onFocus={() =>
+                    setTempoEditingValue(String(Math.round(tempoBpm)))
+                  }
                   onChange={(e) => setTempoEditingValue(e.target.value)}
                   onBlur={() => {
                     const n = Number.parseFloat(tempoEditingValue ?? "");
-                    if (Number.isFinite(n) && n >= 50 && n <= 240) handleTempoChange(n);
+                    if (Number.isFinite(n) && n >= 50 && n <= 240)
+                      handleTempoChange(n);
                     setTempoEditingValue(null);
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Enter")
+                      (e.target as HTMLInputElement).blur();
                   }}
                   disabled={isLoading}
                   title="Tempo BPM"
@@ -2580,8 +3124,8 @@ export const AudioPreview = ({
                 className="h-7 w-7 p-0 shrink-0"
                 onClick={() => handleAutoLoop()}
                 disabled={isLoading || isAutoRunning}
-                title="Auto: detect BPM, trim leading silence, loop point"
-                aria-label="Auto-detect BPM and loop bounds"
+                title="Auto: audio BPM, multi-bar loop, beat-aligned start, slice markers"
+                aria-label="Auto-detect BPM, loop, and slices from audio"
                 data-testid="audio-preview-auto-loop"
               >
                 <Wand2 className="w-3.5 h-3.5" />
@@ -2598,7 +3142,9 @@ export const AudioPreview = ({
               <Input
                 data-testid="audio-preview-tuning-cents"
                 className="h-7 w-[70px] text-xs font-mono"
-                value={Number.isFinite(tuningCents) ? tuningCents.toFixed(2) : "0.00"}
+                value={
+                  Number.isFinite(tuningCents) ? tuningCents.toFixed(2) : "0.00"
+                }
                 onChange={(e) => {
                   const v = Number.parseFloat(e.target.value);
                   if (Number.isFinite(v)) setTuningCents(v);
@@ -2613,19 +3159,34 @@ export const AudioPreview = ({
             <>
               <div
                 role="spinbutton"
-                aria-valuenow={numSlices}
+                aria-valuenow={sliceVisibleCount}
                 aria-valuemin={1}
-                aria-valuemax={Math.max(1, sliceMarkers.length)}
+                aria-valuemax={Math.max(1, combinedSliceMarkers.length)}
                 tabIndex={0}
                 onMouseDown={handleNumSlicesDragStart}
-                className="h-7 min-w-10 px-2 flex items-center justify-center rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
-                title="Drag up/right to increase, down/left to decrease"
+                className="h-7 min-w-[5.5rem] px-1.5 flex items-center justify-center gap-0.5 rounded-md border border-input bg-background text-xs font-mono cursor-move select-none hover:bg-muted/50"
+                title="Drag to change how many slices to keep (top N by confidence). Floor = weakest kept; next = next ghost if you add one."
               >
-                {numSlices} slices
+                <span className="tabular-nums">
+                  {displayedSlices.length}/{combinedSliceMarkers.length}
+                </span>
+                <span className="text-muted-foreground ml-0.5 text-[10px] leading-tight flex flex-col items-end">
+                  <span>
+                    ↓{formatSliceConfidenceChip(sliceFloorConfidence)}
+                  </span>
+                  {sliceNextConfidence != null &&
+                    sliceVisibleCount < combinedSliceMarkers.length && (
+                      <span className="opacity-80">
+                        +{formatSliceConfidenceChip(sliceNextConfidence)}
+                      </span>
+                    )}
+                </span>
               </div>
               <Select
                 value={sliceDetectionMode}
-                onValueChange={(v) => setSliceDetectionMode(v as SliceDetectionMode)}
+                onValueChange={(v) =>
+                  setSliceDetectionMode(v as SliceDetectionMode)
+                }
                 disabled={isLoading || isAnalyzing}
               >
                 <SelectTrigger className="h-7 w-[90px]">
@@ -2637,7 +3198,11 @@ export const AudioPreview = ({
                   <SelectItem value="both">Both</SelectItem>
                 </SelectContent>
               </Select>
-              {isAnalyzing && <span className="text-xs text-muted-foreground">Analyzing…</span>}
+              {isAnalyzing && (
+                <span className="text-xs text-muted-foreground">
+                  Analyzing…
+                </span>
+              )}
               <Button
                 size="sm"
                 variant={addMarkerMode ? "default" : "outline"}
@@ -2684,7 +3249,10 @@ export const AudioPreview = ({
       )}
 
       {/* Waveform - resizable height (overflow-hidden to contain minimap) */}
-      <div className="relative overflow-hidden" style={{ minHeight: debouncedWaveformHeight + 60 }}>
+      <div
+        className="relative overflow-hidden"
+        style={{ minHeight: debouncedWaveformHeight + 60 }}
+      >
         <div
           ref={waveformRef}
           data-testid="audio-preview-waveform"
@@ -2702,20 +3270,44 @@ export const AudioPreview = ({
             Record or load a file to get started
           </div>
         )}
-        {!isEmptyState && duration > 0 && timeDisplayMode === "bars" && totalBars > 0 && (
+        {!isEmptyState &&
+          duration > 0 &&
+          timeDisplayMode === "bars" &&
+          totalBars > 0 && (
+            <div
+              data-testid="audio-preview-bar-background"
+              className="absolute top-0 left-0 right-0 z-[2] pointer-events-none"
+              style={{ height: debouncedWaveformHeight }}
+            >
+              {Array.from({ length: totalBars }).map((_, i) => (
+                <div
+                  key={`bar-bg-${i}`}
+                  className="absolute top-0 h-full"
+                  style={{
+                    left: `${(i / totalBars) * 100}%`,
+                    width: `${100 / totalBars}%`,
+                    backgroundColor:
+                      i % 2 === 0
+                        ? "rgba(90,90,90,0.07)"
+                        : "rgba(120,120,120,0.11)",
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        {devMode && grooveAutoDebug && !isEmptyState && duration > 0 && (
           <div
-            data-testid="audio-preview-bar-background"
-            className="absolute top-0 left-0 right-0 z-[2] pointer-events-none"
+            className="absolute top-0 left-0 right-0 z-[3] pointer-events-none"
             style={{ height: debouncedWaveformHeight }}
+            aria-hidden
           >
-            {Array.from({ length: totalBars }).map((_, i) => (
+            {grooveAutoDebug.quarterTimes.map((t) => (
               <div
-                key={`bar-bg-${i}`}
-                className="absolute top-0 h-full"
+                key={`groove-quarter-${t.toFixed(6)}`}
+                className="absolute top-0 w-px h-full"
                 style={{
-                  left: `${(i / totalBars) * 100}%`,
-                  width: `${100 / totalBars}%`,
-                  backgroundColor: i % 2 === 0 ? "rgba(90,90,90,0.07)" : "rgba(120,120,120,0.11)",
+                  left: `${(t / duration) * 100}%`,
+                  backgroundColor: "rgba(236, 72, 153, 0.88)",
                 }}
               />
             ))}
@@ -2739,7 +3331,9 @@ export const AudioPreview = ({
               type="button"
               aria-label="Sample range start"
               className="absolute top-1 h-2 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0 min-w-[24px] flex items-center justify-center overflow-visible"
-              style={{ left: `${(loopStartClamped / timelineDuration) * 100}%` }}
+              style={{
+                left: `${(loopStartClamped / timelineDuration) * 100}%`,
+              }}
               onMouseDown={(e) => handleLoopBoundaryDrag("start", e)}
               data-testid="sample-range-start-handle"
               title="Loop start (hold Shift to nudge loop)"
@@ -2753,7 +3347,9 @@ export const AudioPreview = ({
               type="button"
               aria-label="Play start"
               className="absolute top-3 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0"
-              style={{ left: `${(playStartClamped / timelineDuration) * 100}%` }}
+              style={{
+                left: `${(playStartClamped / timelineDuration) * 100}%`,
+              }}
               onMouseDown={(e) => handleSampleBoundaryDrag("play", e)}
               data-testid="sample-range-play-start-handle"
             >
@@ -2785,7 +3381,10 @@ export const AudioPreview = ({
           >
             <div
               className="absolute top-0 left-0 h-full"
-              style={{ width: `${(Math.max(0, loopStart) / duration) * 100}%`, backgroundColor: "rgba(0,0,0,0.28)" }}
+              style={{
+                width: `${(Math.max(0, loopStart) / duration) * 100}%`,
+                backgroundColor: "rgba(0,0,0,0.28)",
+              }}
             />
             <div
               className="absolute top-0 right-0 h-full"
@@ -2818,7 +3417,10 @@ export const AudioPreview = ({
                   if (!rect || !wavesurferRef.current) return;
                   const dx = moveE.clientX - startX;
                   const timeDelta = (dx / rect.width) * duration;
-                  const newTime = Math.max(0, Math.min(duration, startTime + timeDelta));
+                  const newTime = Math.max(
+                    0,
+                    Math.min(duration, startTime + timeDelta),
+                  );
                   wavesurferRef.current.seekTo(newTime / duration);
                 };
                 const handleUp = () => {
@@ -2831,92 +3433,145 @@ export const AudioPreview = ({
             />
           </div>
         )}
-        {/* Slice markers overlay - pointer-events-none on container so waveform receives taps; auto on markers for remove/drag */}
-        {slicingOpen && !isEmptyState && duration > 0 && displayedSlices.length > 0 && (
-          <div
-            className="absolute top-0 left-0 right-0 z-[5] pointer-events-none"
-            style={{ height: debouncedWaveformHeight }}
-          >
-            {displayedSlices.map((slice, i) => {
-              const key = sliceKey(slice.originalTime);
-              const isHovered = hoveredSliceKey === key;
-              return (
-                <div
-                  key={`${key}-${i}`}
-                  className="absolute top-0 h-full flex flex-col items-center pointer-events-auto"
-                  style={{
-                    left: `${(slice.time / duration) * 100}%`,
-                    transform: "translateX(-50%)",
-                    width: 16,
-                  }}
-                  onMouseEnter={() => setHoveredSliceKey(key)}
-                  onMouseLeave={() => setHoveredSliceKey(null)}
-                >
+        {/* Slice markers: ghost = below confidence threshold (updates live while dragging) */}
+        {slicingOpen &&
+          !isEmptyState &&
+          duration > 0 &&
+          combinedSliceMarkers.length > 0 && (
+            <div
+              className="absolute top-0 left-0 right-0 z-[4] pointer-events-none"
+              style={{ height: debouncedWaveformHeight }}
+              aria-hidden
+            >
+              {ghostSliceMarkers.map((m) => {
+                const k = sliceKey(m.time);
+                const posT = slicePositionOverrides.get(k);
+                const t = posT !== undefined ? posT : m.time;
+                return (
                   <div
-                    className="absolute top-0 w-0.5 h-full pointer-events-none"
-                    style={{ left: "50%", transform: "translateX(-50%)", backgroundColor: "rgba(255, 118, 77, 0.5)" }}
+                    key={`ghost-${k}`}
+                    className="absolute top-0 h-full w-px"
+                    style={{
+                      left: `${(t / duration) * 100}%`,
+                      transform: "translateX(-50%)",
+                      backgroundColor: "rgba(148, 163, 184, 0.35)",
+                    }}
                   />
-                  {isHovered && (
-                    <>
-                      <button
-                        type="button"
-                        className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-destructive/10 hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeSlice(slice.originalTime, slice.isUserAdded);
-                        }}
-                        title="Remove slice"
+                );
+              })}
+            </div>
+          )}
+        {/* Active slice markers - pointer-events-none on container so waveform receives taps; auto on markers for remove/drag */}
+        {slicingOpen &&
+          !isEmptyState &&
+          duration > 0 &&
+          displayedSlices.length > 0 && (
+            <div
+              className="absolute top-0 left-0 right-0 z-[5] pointer-events-none"
+              style={{ height: debouncedWaveformHeight }}
+            >
+              {displayedSlices.map((slice, i) => {
+                const key = sliceKey(slice.originalTime);
+                const isHovered = hoveredSliceKey === key;
+                return (
+                  <div
+                    key={`${key}-${i}`}
+                    className="absolute top-0 h-full flex flex-col items-center pointer-events-auto"
+                    style={{
+                      left: `${(slice.time / duration) * 100}%`,
+                      transform: "translateX(-50%)",
+                      width: 16,
+                    }}
+                    onMouseEnter={() => setHoveredSliceKey(key)}
+                    onMouseLeave={() => setHoveredSliceKey(null)}
+                  >
+                    <div
+                      className="absolute top-0 w-0.5 h-full pointer-events-none"
+                      style={{
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        backgroundColor: "rgba(255, 118, 77, 0.5)",
+                      }}
+                    />
+                    {devMode && (
+                      <span
+                        className="absolute top-0.5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-foreground/80 bg-background/85 px-0.5 rounded border border-border/60 pointer-events-none max-w-[3rem] truncate z-[6]"
+                        title="Slice confidence"
                       >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        className="absolute top-6 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-primary/10 hover:text-primary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playSlice(i);
-                        }}
-                        title="Play slice"
-                      >
-                        <Play className="w-3 h-3" />
-                      </button>
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-6 h-6 rounded flex items-center justify-center bg-background/90 border border-border shadow-sm cursor-ew-resize z-10"
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          const startX = e.clientX;
-                          const startTime = slice.time;
-                          const handleMove = (moveE: MouseEvent) => {
-                            const rect = waveformRef.current?.getBoundingClientRect();
-                            if (!rect) return;
-                            const dx = moveE.clientX - startX;
-                            const timeDelta = (dx / rect.width) * duration;
-                            const newTime = Math.max(0, Math.min(duration, startTime + timeDelta));
-                            updateSlicePosition(slice.originalTime, newTime);
-                          };
-                          const handleUp = () => {
-                            window.removeEventListener("mousemove", handleMove);
-                            window.removeEventListener("mouseup", handleUp);
-                          };
-                          window.addEventListener("mousemove", handleMove);
-                          window.addEventListener("mouseup", handleUp);
-                        }}
-                        title="Drag to reposition"
-                      >
-                        <GripVertical className="w-3 h-3 text-muted-foreground" />
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                        {slice.confidence.toFixed(2)}
+                      </span>
+                    )}
+                    {isHovered && (
+                      <>
+                        <button
+                          type="button"
+                          className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-destructive/10 hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeSlice(slice.originalTime, slice.isUserAdded);
+                          }}
+                          title="Remove slice"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="absolute top-6 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-primary/10 hover:text-primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            playSlice(i);
+                          }}
+                          title="Play slice"
+                        >
+                          <Play className="w-3 h-3" />
+                        </button>
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-6 h-6 rounded flex items-center justify-center bg-background/90 border border-border shadow-sm cursor-ew-resize z-10"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const startX = e.clientX;
+                            const startTime = slice.time;
+                            const handleMove = (moveE: MouseEvent) => {
+                              const rect =
+                                waveformRef.current?.getBoundingClientRect();
+                              if (!rect) return;
+                              const dx = moveE.clientX - startX;
+                              const timeDelta = (dx / rect.width) * duration;
+                              const newTime = Math.max(
+                                0,
+                                Math.min(duration, startTime + timeDelta),
+                              );
+                              updateSlicePosition(slice.originalTime, newTime);
+                            };
+                            const handleUp = () => {
+                              window.removeEventListener(
+                                "mousemove",
+                                handleMove,
+                              );
+                              window.removeEventListener("mouseup", handleUp);
+                            };
+                            window.addEventListener("mousemove", handleMove);
+                            window.addEventListener("mouseup", handleUp);
+                          }}
+                          title="Drag to reposition"
+                        >
+                          <GripVertical className="w-3 h-3 text-muted-foreground" />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
       </div>
 
       {/* Transport bar: playback, time, volume, zoom, envelope, export, advanced */}
-      <div className="relative z-10 flex items-center gap-3 flex-wrap" style={{ minHeight: "2rem" }}>
+      <div
+        className="relative z-10 flex items-center gap-3 flex-wrap"
+        style={{ minHeight: "2rem" }}
+      >
         <div className="flex items-center gap-2 shrink-0">
           <Button
             size="sm"
@@ -2929,7 +3584,11 @@ export const AudioPreview = ({
           </Button>
           <Button
             size="sm"
-            variant={isRecordArmed && recordArmedMode === "replace" ? "default" : "outline"}
+            variant={
+              isRecordArmed && recordArmedMode === "replace"
+                ? "default"
+                : "outline"
+            }
             className="h-8 gap-1 shrink-0"
             onClick={handleRecordClick}
             disabled={isLoading}
@@ -2959,12 +3618,22 @@ export const AudioPreview = ({
               <Play className="w-4 h-4" />
             )}
           </Button>
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0" onClick={skipForward} disabled={isLoading}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 p-0 shrink-0"
+            onClick={skipForward}
+            disabled={isLoading}
+          >
             <SkipForward className="w-4 h-4" />
           </Button>
           <Button
             size="sm"
-            variant={isRecordArmed && recordArmedMode === "overdub" ? "default" : "outline"}
+            variant={
+              isRecordArmed && recordArmedMode === "overdub"
+                ? "default"
+                : "outline"
+            }
             className="h-8 gap-1 shrink-0"
             onClick={handleOverdubClick}
             disabled={isLoading}
@@ -2987,14 +3656,24 @@ export const AudioPreview = ({
           style={{ minWidth: "130px" }}
         >
           <span data-testid="audio-preview-current-time">
-            {timeDisplayMode === "bars" ? formatBarsBeats(currentTime) : formatTime(currentTime)}
+            {timeDisplayMode === "bars"
+              ? formatBarsBeats(currentTime)
+              : formatTime(currentTime)}
           </span>
           <span>/</span>
           <span data-testid="audio-preview-total-time">
-            {timeDisplayMode === "bars" ? formatBarsBeats(duration) : formatTime(duration)}
+            {timeDisplayMode === "bars"
+              ? formatBarsBeats(duration)
+              : formatTime(duration)}
           </span>
-          <Select value={timeDisplayMode} onValueChange={(v) => setTimeDisplayMode(v as "clock" | "bars")}>
-            <SelectTrigger data-testid="audio-preview-time-mode" className="h-7 w-[84px] text-[11px]">
+          <Select
+            value={timeDisplayMode}
+            onValueChange={(v) => setTimeDisplayMode(v as "clock" | "bars")}
+          >
+            <SelectTrigger
+              data-testid="audio-preview-time-mode"
+              className="h-7 w-[84px] text-[11px]"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -3005,14 +3684,21 @@ export const AudioPreview = ({
         </div>
 
         {/* Volume Control */}
-        <div className="flex items-center gap-2 shrink-0" style={{ width: "128px", minWidth: "128px" }}>
+        <div
+          className="flex items-center gap-2 shrink-0"
+          style={{ width: "128px", minWidth: "128px" }}
+        >
           <button
             type="button"
             onClick={() => setMuted(!muted)}
             className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 -m-0.5 rounded"
             aria-label={muted ? "Unmute" : "Mute"}
           >
-            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            {muted ? (
+              <VolumeX className="w-4 h-4" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
           </button>
           <Slider
             value={[volume]}
@@ -3023,7 +3709,13 @@ export const AudioPreview = ({
           />
         </div>
 
-        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleZoomOut} disabled={isLoading}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0"
+          onClick={handleZoomOut}
+          disabled={isLoading}
+        >
           <ZoomOut className="w-3.5 h-3.5" />
         </Button>
         <div className="flex items-center gap-2 w-28">
@@ -3038,20 +3730,37 @@ export const AudioPreview = ({
             className="cursor-pointer"
           />
         </div>
-        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={handleZoomIn} disabled={isLoading}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0"
+          onClick={handleZoomIn}
+          disabled={isLoading}
+        >
           <ZoomIn className="w-3.5 h-3.5" />
         </Button>
 
         {/* Microphone device selection */}
         <div className="flex items-center gap-2 shrink-0">
-          <Label htmlFor="audio-device" className="text-xs text-muted-foreground shrink-0 sr-only">
+          <Label
+            htmlFor="audio-device"
+            className="text-xs text-muted-foreground shrink-0 sr-only"
+          >
             Input device
           </Label>
-          <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={refreshAudioDevices}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs shrink-0"
+            onClick={refreshAudioDevices}
+          >
             Refresh
           </Button>
           {audioDevices.length > 0 && (
-            <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+            <Select
+              value={selectedDeviceId}
+              onValueChange={setSelectedDeviceId}
+            >
               <SelectTrigger id="audio-device" className="h-7 w-[160px]">
                 <SelectValue placeholder="Input device" />
               </SelectTrigger>
@@ -3170,7 +3879,13 @@ export const AudioPreview = ({
 
                 {/* Region Controls */}
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addRegion} disabled={isLoading}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={addRegion}
+                    disabled={isLoading}
+                  >
                     Add Region
                   </Button>
                   <Button
@@ -3219,7 +3934,8 @@ export const AudioPreview = ({
           <DialogHeader>
             <DialogTitle>Choose Save Location</DialogTitle>
             <DialogDescription>
-              Pick a folder and enter a filename to export the sample to a different location.
+              Pick a folder and enter a filename to export the sample to a
+              different location.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -3230,7 +3946,8 @@ export const AudioPreview = ({
                 variant="outline"
                 className="w-full justify-start"
                 onClick={async () => {
-                  const result = await fileSystemService.pickDirectoryForSaveAs();
+                  const result =
+                    await fileSystemService.pickDirectoryForSaveAs();
                   if (result.success && result.data) {
                     setExportSaveAsDirHandle(result.data);
                   } else if (!result.cancelled && result.error) {
@@ -3253,9 +3970,16 @@ export const AudioPreview = ({
                 onChange={(e) => setExportSaveAsFilename(e.target.value)}
                 placeholder="export.wav"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && exportSaveAsDirHandle && exportSaveAsFilename.trim()) {
+                  if (
+                    e.key === "Enter" &&
+                    exportSaveAsDirHandle &&
+                    exportSaveAsFilename.trim()
+                  ) {
                     const name = `${exportSaveAsFilename.trim().replace(/\.wav$/i, "")}.wav`;
-                    exportSaveAsResolverRef.current?.({ dirHandle: exportSaveAsDirHandle, filename: name });
+                    exportSaveAsResolverRef.current?.({
+                      dirHandle: exportSaveAsDirHandle,
+                      filename: name,
+                    });
                     exportSaveAsResolverRef.current = null;
                   }
                 }}
@@ -3276,7 +4000,10 @@ export const AudioPreview = ({
             <Button
               onClick={() => {
                 const name = `${exportSaveAsFilename.trim().replace(/\.wav$/i, "")}.wav`;
-                exportSaveAsResolverRef.current?.({ dirHandle: exportSaveAsDirHandle!, filename: name });
+                exportSaveAsResolverRef.current?.({
+                  dirHandle: exportSaveAsDirHandle!,
+                  filename: name,
+                });
                 exportSaveAsResolverRef.current = null;
               }}
               disabled={!exportSaveAsDirHandle || !exportSaveAsFilename.trim()}
@@ -3299,8 +4026,15 @@ export const AudioPreview = ({
           const rStart = r?.start ?? 0;
           const rEnd = r?.end ?? duration;
           const lStart = Math.max(0, Math.min(duration, loopStart));
-          const lEnd = Math.max(lStart + 0.001, Math.min(duration, loopEnd || duration));
-          return !!(r && (rStart > 0 || rEnd < duration)) || lStart > 0 || lEnd < duration;
+          const lEnd = Math.max(
+            lStart + 0.001,
+            Math.min(duration, loopEnd || duration),
+          );
+          return (
+            !!(r && (rStart > 0 || rEnd < duration)) ||
+            lStart > 0 ||
+            lEnd < duration
+          );
         })()}
         showSliceOptions={displayedSlices.length > 0}
       />
@@ -3310,7 +4044,9 @@ export const AudioPreview = ({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Sample Info</DialogTitle>
-            <DialogDescription>{fileName ?? "Audio file"} — technical details</DialogDescription>
+            <DialogDescription>
+              {fileName ?? "Audio file"} — technical details
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2 font-mono text-sm">
             {audioFileInfo ? (
@@ -3331,7 +4067,11 @@ export const AudioPreview = ({
                 </div>
                 <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span className="text-muted-foreground">Bit depth</span>
-                  <span>{audioFileInfo.bitsPerSample != null ? `${audioFileInfo.bitsPerSample}-bit` : "—"}</span>
+                  <span>
+                    {audioFileInfo.bitsPerSample != null
+                      ? `${audioFileInfo.bitsPerSample}-bit`
+                      : "—"}
+                  </span>
                 </div>
                 <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span className="text-muted-foreground">Total samples</span>
@@ -3377,7 +4117,9 @@ export const AudioPreview = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Export As</DialogTitle>
-            <DialogDescription>Enter a filename for the exported audio.</DialogDescription>
+            <DialogDescription>
+              Enter a filename for the exported audio.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
@@ -3389,7 +4131,9 @@ export const AudioPreview = ({
                 placeholder="recording.wav"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    exportFilenameResolverRef.current?.(exportFilename.trim() || "recording.wav");
+                    exportFilenameResolverRef.current?.(
+                      exportFilename.trim() || "recording.wav",
+                    );
                     exportFilenameResolverRef.current = null;
                     setExportFilenameOpen(false);
                   }
@@ -3398,12 +4142,17 @@ export const AudioPreview = ({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setExportFilenameOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setExportFilenameOpen(false)}
+            >
               Cancel
             </Button>
             <Button
               onClick={() => {
-                exportFilenameResolverRef.current?.(exportFilename.trim() || "recording.wav");
+                exportFilenameResolverRef.current?.(
+                  exportFilename.trim() || "recording.wav",
+                );
                 exportFilenameResolverRef.current = null;
                 setExportFilenameOpen(false);
               }}
