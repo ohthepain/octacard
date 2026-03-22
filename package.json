@@ -84,7 +84,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1014.0",
-    "@aws-sdk/client-sesv2": "^3.1008.0",
+    "@aws-sdk/client-sesv2": "^3.1014.0",
     "@aws-sdk/s3-request-presigner": "^3.1011.0",
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "^0.12.2",
@@ -179,9 +179,6 @@
     "wait-on": "^9.0.4"
   },
   "pnpm": {
-    "overrides": {
-      "@aws-sdk/client-s3": "3.1014.0"
-    },
     "patchedDependencies": {
       "wavesurfer.js": "patches/wavesurfer.js.patch"
     }
