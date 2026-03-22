@@ -110,8 +110,8 @@ importers:
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-hotkeys':
-        specifier: ^0.4.1
-        version: 0.4.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: ^0.4.2
+        version: 0.4.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-query':
         specifier: ^5.90.21
         version: 5.90.21(react@19.2.4)
@@ -3283,15 +3283,15 @@ packages:
     resolution: {integrity: sha512-NaOGLRrddszbQj9upGat6HG/4TKvXLvu+osAIgfxPYA+eIvYKv8GKDJOrY2D3/U9MRnKfMWD7bU4jeD4xmqyIg==}
     engines: {node: '>=20.19'}
 
-  '@tanstack/hotkeys@0.4.1':
-    resolution: {integrity: sha512-EGHqcdKP2jzy0dEkahA3ABtEXohMqPlU3Ac04sBQjgesJqr9xWuesJotOfWPh3P68kQQg8krNAtFTydIN3+WSw==}
+  '@tanstack/hotkeys@0.4.2':
+    resolution: {integrity: sha512-dCCu6Q91wZ2Mz7Vb+tzzpbKH0cSY9JXqJS7ZyouxewNL8oVmI228P9BmP94/1255g5WjPS+njenyrbWVeEQP5Q==}
     engines: {node: '>=18'}
 
   '@tanstack/query-core@5.90.20':
     resolution: {integrity: sha512-OMD2HLpNouXEfZJWcKeVKUgQ5n+n3A2JFmBaScpNDUqSrQSjiveC7dKMe53uJUg1nDG16ttFPz2xfilz6i2uVg==}
 
-  '@tanstack/react-hotkeys@0.4.1':
-    resolution: {integrity: sha512-hFh/kKQODn4kSytfIsEE/Vf1AaAb+NAFi4lx+OB49NmKY5z/BNH1/uEdYlVgOEvnDm4QrCISIMBOVpMgK5QNQg==}
+  '@tanstack/react-hotkeys@0.4.2':
+    resolution: {integrity: sha512-7AMAmX+l1k0tHCaDgT5lHHF0cmtrmK0aaKxR6DliSdAVVjfmyraPZQapLwpyNKoTKNYIROj+2Wg+OvWYP52Oog==}
     engines: {node: '>=18'}
     peerDependencies:
       react: '>=16.8'
@@ -10721,15 +10721,15 @@ snapshots:
 
   '@tanstack/history@1.161.6': {}
 
-  '@tanstack/hotkeys@0.4.1':
+  '@tanstack/hotkeys@0.4.2':
     dependencies:
       '@tanstack/store': 0.9.2
 
   '@tanstack/query-core@5.90.20': {}
 
-  '@tanstack/react-hotkeys@0.4.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@tanstack/react-hotkeys@0.4.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
-      '@tanstack/hotkeys': 0.4.1
+      '@tanstack/hotkeys': 0.4.2
       '@tanstack/react-store': 0.9.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
