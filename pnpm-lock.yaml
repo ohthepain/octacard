@@ -110,7 +110,7 @@ importers:
         specifier: ^0.5.1
         version: 0.5.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-query':
-        specifier: ^5.95.0
+        specifier: ^5.94.5
         version: 5.95.0(react@19.2.4)
       '@tanstack/react-router':
         specifier: ^1.168.2
