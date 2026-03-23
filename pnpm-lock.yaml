@@ -107,8 +107,8 @@ importers:
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-hotkeys':
-        specifier: ^0.4.2
-        version: 0.4.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: ^0.5.1
+        version: 0.5.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-query':
         specifier: ^5.94.5
         version: 5.94.5(react@19.2.4)
@@ -3162,15 +3162,15 @@ packages:
     resolution: {integrity: sha512-NaOGLRrddszbQj9upGat6HG/4TKvXLvu+osAIgfxPYA+eIvYKv8GKDJOrY2D3/U9MRnKfMWD7bU4jeD4xmqyIg==}
     engines: {node: '>=20.19'}
 
-  '@tanstack/hotkeys@0.4.2':
-    resolution: {integrity: sha512-dCCu6Q91wZ2Mz7Vb+tzzpbKH0cSY9JXqJS7ZyouxewNL8oVmI228P9BmP94/1255g5WjPS+njenyrbWVeEQP5Q==}
+  '@tanstack/hotkeys@0.4.3':
+    resolution: {integrity: sha512-xl4ri2ALFS6U+5lUqZUGchsABIXi+fkfBgOxjW9i7KqmMcac8ZUZw/c99SYxnpOdSY7jSs7J09XHcrPz/ieFOw==}
     engines: {node: '>=18'}
 
   '@tanstack/query-core@5.94.5':
     resolution: {integrity: sha512-Vx1JJiBURW/wdNGP45afjrqn0LfxYwL7K/bSrQvNRtyLGF1bxQPgUXCpzscG29e+UeFOh9hz1KOVala0N+bZiA==}
 
-  '@tanstack/react-hotkeys@0.4.2':
-    resolution: {integrity: sha512-7AMAmX+l1k0tHCaDgT5lHHF0cmtrmK0aaKxR6DliSdAVVjfmyraPZQapLwpyNKoTKNYIROj+2Wg+OvWYP52Oog==}
+  '@tanstack/react-hotkeys@0.5.1':
+    resolution: {integrity: sha512-YWuUDUNS96FC/TtlsRK57StaGIqyhjO1oSjEOKq6P0mVgAYY1k6GejxIyXNqcadCuG5iy+peYmN62VEUc35y0A==}
     engines: {node: '>=18'}
     peerDependencies:
       react: '>=16.8'
@@ -3219,12 +3219,6 @@ packages:
     peerDependencies:
       react: '>=18.0.0 || >=19.0.0'
       react-dom: '>=18.0.0 || >=19.0.0'
-
-  '@tanstack/react-store@0.9.1':
-    resolution: {integrity: sha512-YzJLnRvy5lIEFTLWBAZmcOjK3+2AepnBv/sr6NZmiqJvq7zTQggyK99Gw8fqYdMdHPQWXjz0epFKJXC+9V2xDA==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@tanstack/react-store@0.9.2':
     resolution: {integrity: sha512-Vt5usJE5sHG/cMechQfmwvwne6ktGCELe89Lmvoxe3LKRoFrhPa8OCKWs0NliG8HTJElEIj7PLtaBQIcux5pAQ==}
@@ -3439,9 +3433,6 @@ packages:
 
   '@tanstack/store@0.7.7':
     resolution: {integrity: sha512-xa6pTan1bcaqYDS9BDpSiS63qa6EoDkPN9RsRaxHuDdVDNntzq3xNwR5YKTU/V3SkSyC9T4YVOPh2zRQN0nhIQ==}
-
-  '@tanstack/store@0.9.1':
-    resolution: {integrity: sha512-+qcNkOy0N1qSGsP7omVCW0SDrXtaDcycPqBDE726yryiA5eTDFpjBReaYjghVJwNf1pcPMyzIwTGlYjCSQR0Fg==}
 
   '@tanstack/store@0.9.2':
     resolution: {integrity: sha512-K013lUJEFJK2ofFQ/hZKJUmCnpcV00ebLyOyFOWQvyQHUOZp/iYO84BM6aOGiV81JzwbX0APTVmW8YI7yiG5oA==}
@@ -10274,15 +10265,15 @@ snapshots:
 
   '@tanstack/history@1.161.6': {}
 
-  '@tanstack/hotkeys@0.4.2':
+  '@tanstack/hotkeys@0.4.3':
     dependencies:
       '@tanstack/store': 0.9.2
 
   '@tanstack/query-core@5.94.5': {}
 
-  '@tanstack/react-hotkeys@0.4.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@tanstack/react-hotkeys@0.5.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
-      '@tanstack/hotkeys': 0.4.2
+      '@tanstack/hotkeys': 0.4.3
       '@tanstack/react-store': 0.9.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
@@ -10295,7 +10286,7 @@ snapshots:
   '@tanstack/react-router@1.163.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@tanstack/history': 1.161.4
-      '@tanstack/react-store': 0.9.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@tanstack/react-store': 0.9.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/router-core': 1.163.2
       isbot: 5.1.35
       react: 19.2.4
@@ -10428,13 +10419,6 @@ snapshots:
     transitivePeerDependencies:
       - crossws
 
-  '@tanstack/react-store@0.9.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
-    dependencies:
-      '@tanstack/store': 0.9.1
-      react: 19.2.4
-      react-dom: 19.2.4(react@19.2.4)
-      use-sync-external-store: 1.6.0(react@19.2.4)
-
   '@tanstack/react-store@0.9.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@tanstack/store': 0.9.2
@@ -10455,7 +10439,7 @@ snapshots:
   '@tanstack/router-core@1.163.2':
     dependencies:
       '@tanstack/history': 1.161.4
-      '@tanstack/store': 0.9.1
+      '@tanstack/store': 0.9.2
       cookie-es: 2.0.0
       seroval: 1.5.0
       seroval-plugins: 1.5.0(seroval@1.5.0)
@@ -10465,7 +10449,7 @@ snapshots:
   '@tanstack/router-core@1.163.3':
     dependencies:
       '@tanstack/history': 1.161.4
-      '@tanstack/store': 0.9.1
+      '@tanstack/store': 0.9.2
       cookie-es: 2.0.0
       seroval: 1.5.0
       seroval-plugins: 1.5.0(seroval@1.5.0)
@@ -11061,8 +11045,6 @@ snapshots:
       - yaml
 
   '@tanstack/store@0.7.7': {}
-
-  '@tanstack/store@0.9.1': {}
 
   '@tanstack/store@0.9.2': {}
 
