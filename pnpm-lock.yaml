@@ -30,10 +30,10 @@ importers:
         version: 0.12.2
       '@hono/node-server':
         specifier: ^1.13.7
-        version: 1.19.11(hono@4.12.8)
+        version: 1.19.11(hono@4.12.9)
       '@hono/zod-validator':
         specifier: ^0.7.6
-        version: 0.7.6(hono@4.12.8)(zod@4.3.6)
+        version: 0.7.6(hono@4.12.9)(zod@4.3.6)
       '@liveblocks/client':
         specifier: ^3.15.4
         version: 3.15.4(@types/json-schema@7.0.15)
@@ -158,8 +158,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       hono:
-        specifier: ^4.12.8
-        version: 4.12.8
+        specifier: ^4.12.9
+        version: 4.12.9
       idb-keyval:
         specifier: ^6.2.2
         version: 6.2.2
@@ -4890,8 +4890,8 @@ packages:
     resolution: {integrity: sha512-U7tt8JsyrxSRKspfhtLET79pU8K+tInj5QZXs1jSugO1Vq5dFj3kmZsRldo29mTBfcjDRVRXrEZ6LS63Cog9ZA==}
     engines: {node: '>=16.9.0'}
 
-  hono@4.12.8:
-    resolution: {integrity: sha512-VJCEvtrezO1IAR+kqEYnxUOoStaQPGrCmX3j4wDTNOcD1uRPFpGlwQUIW8niPuvHXaTUxeOUl5MMDGrl+tmO9A==}
+  hono@4.12.9:
+    resolution: {integrity: sha512-wy3T8Zm2bsEvxKZM5w21VdHDDcwVS1yUFFY6i8UobSsKfFceT7TOwhbhfKsDyx7tYQlmRM5FLpIuYvNFyjctiA==}
     engines: {node: '>=16.9.0'}
 
   hookable@5.5.3:
@@ -6480,8 +6480,8 @@ packages:
     resolution: {integrity: sha512-qC9iz2FlN7DQl3+wjwn3802RTyjCx7sDvfQEXchwa6CWOx07/WVfh91gBmQ9fahw8snwGEWU3xGzOt4tFyHLxg==}
     engines: {node: '>= 0.6'}
 
-  srvx@0.11.12:
-    resolution: {integrity: sha512-AQfrGqntqVPXgP03pvBDN1KyevHC+KmYVqb8vVf4N+aomQqdhaZxjvoVp+AOm4u6x+GgNQY3MVzAUIn+TqwkOA==}
+  srvx@0.11.13:
+    resolution: {integrity: sha512-oknN6qduuMPafxKtHucUeG32Q963pjriA5g3/Bl05cwEsUe5VVbIU4qR9LrALHbipSCyBe+VmfDGGydqazDRkw==}
     engines: {node: '>=20.16.0'}
     hasBin: true
 
@@ -8558,17 +8558,17 @@ snapshots:
     dependencies:
       '@hapi/hoek': 11.0.7
 
-  '@hono/node-server@1.19.11(hono@4.12.8)':
+  '@hono/node-server@1.19.11(hono@4.12.9)':
     dependencies:
-      hono: 4.12.8
+      hono: 4.12.9
 
   '@hono/node-server@1.19.9(hono@4.11.4)':
     dependencies:
       hono: 4.11.4
 
-  '@hono/zod-validator@0.7.6(hono@4.12.8)(zod@4.3.6)':
+  '@hono/zod-validator@0.7.6(hono@4.12.9)(zod@4.3.6)':
     dependencies:
-      hono: 4.12.8
+      hono: 4.12.9
       zod: 4.3.6
 
   '@huggingface/jinja@0.2.2': {}
@@ -12599,7 +12599,7 @@ snapshots:
   h3@2.0.1-rc.14:
     dependencies:
       rou3: 0.7.12
-      srvx: 0.11.12
+      srvx: 0.11.13
 
   has-bigints@1.1.0: {}
 
@@ -12630,7 +12630,7 @@ snapshots:
 
   hono@4.11.4: {}
 
-  hono@4.12.8: {}
+  hono@4.12.9: {}
 
   hookable@5.5.3: {}
 
@@ -14427,7 +14427,7 @@ snapshots:
 
   sqlstring@2.3.3: {}
 
-  srvx@0.11.12: {}
+  srvx@0.11.13: {}
 
   stackback@0.0.2: {}
 
