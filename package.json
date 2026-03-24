@@ -90,7 +90,7 @@
     "@ffmpeg/util": "^0.12.2",
     "@hono/node-server": "^1.13.7",
     "@hono/zod-validator": "^0.7.6",
-    "@liveblocks/client": "^3.15.4",
+    "@liveblocks/client": "^3.15.5",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
