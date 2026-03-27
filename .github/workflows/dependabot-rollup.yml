@@ -42,7 +42,7 @@ jobs:
       - name: Run dependabot rollup
         id: rollup
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.ROLLUP_GH_TOKEN != '' && secrets.ROLLUP_GH_TOKEN || github.token }}
           BASE_BRANCH: ${{ inputs.base_branch || 'main' }}
           MAX_PRS: ${{ inputs.max_prs || '20' }}
           OPENAI_MODEL: ${{ inputs.openai_model || 'gpt-4.1-mini' }}
