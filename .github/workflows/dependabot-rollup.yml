@@ -1,0 +1,62 @@
+name: dependabot-rollup
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_branch:
+        description: "Base branch to target"
+        required: true
+        default: "main"
+        type: string
+      max_prs:
+        description: "Max Dependabot PRs to roll up"
+        required: true
+        default: "20"
+        type: string
+      openai_model:
+        description: "OpenAI model for summary (when OPENAI_API_KEY is set)"
+        required: true
+        default: "gpt-4.1-mini"
+        type: string
+  schedule:
+    - cron: "30 3 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependabot-rollup-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run dependabot rollup
+        id: rollup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_BRANCH: ${{ inputs.base_branch || 'main' }}
+          MAX_PRS: ${{ inputs.max_prs || '20' }}
+          OPENAI_MODEL: ${{ inputs.openai_model || 'gpt-4.1-mini' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: .github/scripts/dependabot-rollup.sh
+
+      - name: Job summary
+        run: |
+          {
+            echo "## Dependabot Rollup"
+            echo
+            echo "- Merged PRs: ${{ steps.rollup.outputs.merged_count || '0' }}"
+            echo "- Rollup branch: \`${{ steps.rollup.outputs.rollup_branch || 'n/a' }}\`"
+            if [ -n "${{ steps.rollup.outputs.rollup_pr_url }}" ]; then
+              echo "- Rollup PR: ${{ steps.rollup.outputs.rollup_pr_url }}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
