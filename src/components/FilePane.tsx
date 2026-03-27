@@ -286,7 +286,7 @@ export const FilePane = ({
   autoNavigateToCard = false,
   convertFiles = false,
   showNewFolderButton = false,
-  showSidebar = true,
+  showSidebar = false,
   onPathChange,
   onSelectionChange,
   dropMode = "convert",
@@ -1909,13 +1909,7 @@ export const FilePane = ({
     if (!pathChanged && !retryFailedRoot) return;
     void navigateToFolder(requestedPath);
     onRequestedPathHandled?.();
-  }, [
-    requestedPath,
-    currentRootPath,
-    pathDoesNotExist,
-    navigateToFolder,
-    onRequestedPathHandled,
-  ]);
+  }, [requestedPath, currentRootPath, pathDoesNotExist, navigateToFolder, onRequestedPathHandled]);
 
   useEffect(() => {
     if (requestedRevealPath) {
@@ -4454,7 +4448,6 @@ export const FilePane = ({
                             type="button"
                             onClick={() => handleFavoriteClick(favorite.path)}
                             className="flex items-center gap-2 flex-1 min-w-0 shrink-0"
-                            data-testid={`favorite-open-${paneName}-${favorite.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`}
                           >
                             <Star className="w-3 h-3 shrink-0 fill-current" />
                             <span className="truncate text-left">{favorite.name}</span>

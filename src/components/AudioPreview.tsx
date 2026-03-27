@@ -25,12 +25,21 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import WaveSurfer from "wavesurfer.js";
 import EnvelopePlugin from "wavesurfer.js/dist/plugins/envelope";
 import MinimapPlugin from "wavesurfer.js/dist/plugins/minimap";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record";
+import type { Region as WaveSurferRegion } from "wavesurfer.js/dist/plugins/regions";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline";
 import { useShallow } from "zustand/react/shallow";
@@ -46,6 +55,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -79,6 +97,8 @@ import {
 } from "@/lib/exportAudio";
 import { fileSystemService } from "@/lib/fileSystem";
 import { analyzeGrooveAuto } from "@/lib/grooveAutoAnalysis";
+import { pathToPackEntrySourceRef } from "@/lib/pack-source-ref";
+import { trimSilenceInRegion } from "@/lib/regionSilenceTrim";
 import {
   detectSliceMarkers,
   formatSliceConfidenceChip,
@@ -89,10 +109,14 @@ import {
 } from "@/lib/sliceDetection";
 import { isTempPath } from "@/lib/temp-files-store";
 import { parseBpmFromString } from "@/lib/tempoUtils";
+import { cn } from "@/lib/utils";
 import { useAppOptionsStore } from "@/stores/app-options-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { EMPTY_SLOTS, useProjectStore } from "@/stores/project-store";
-import { useSampleEditsStore } from "@/stores/sample-edits-store";
+import {
+  useSampleEditsStore,
+  type PersistedNamedRegion,
+} from "@/stores/sample-edits-store";
 import { useWaveformEditorStore } from "@/stores/waveform-editor-store";
 
 function isAbortError(e: unknown): boolean {
@@ -100,6 +124,244 @@ function isAbortError(e: unknown): boolean {
     e instanceof Error &&
     (e.name === "AbortError" || e.message?.includes("aborted"))
   );
+}
+
+/** Audio time (seconds) at viewport X — matches WaveSurfer click/seek (wrapper width includes zoom). */
+function getWaveformTimeAtClientX(
+  ws: WaveSurfer,
+  clientX: number,
+): number | null {
+  const wrapper = ws.getWrapper();
+  const rect = wrapper.getBoundingClientRect();
+  const w = rect.width;
+  if (w <= 0) return null;
+  const x = clientX - rect.left;
+  const relativeX = Math.max(0, Math.min(1, x / w));
+  const dur = ws.getDuration();
+  if (dur <= 0) return null;
+  return relativeX * dur;
+}
+
+/**
+ * Which WaveSurfer region (if any) contains the pointer — matches the orange overlay
+ * even when time-from-x math disagrees (shadow DOM, scroll, sub-pixel layout).
+ * If several overlap, prefer the widest span so thin markers don’t steal the hit.
+ */
+function pickWaveRegionAtClientPoint(
+  clientX: number,
+  clientY: number,
+  regions: WaveSurferRegion[],
+): WaveSurferRegion | null {
+  const hits: WaveSurferRegion[] = [];
+  for (const r of regions) {
+    const el = r.element;
+    if (!el) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    ) {
+      hits.push(r);
+    }
+  }
+  if (hits.length === 0) return null;
+  if (hits.length === 1) return hits[0];
+  hits.sort((a, b) => Math.abs(b.end - b.start) - Math.abs(a.end - a.start));
+  return hits[0] ?? null;
+}
+
+const NAMED_WAVE_REGION_PREFIX = "named:";
+const OCTACARD_PACK_ENTRY_DRAG_TYPE = "octacard-pack-entry";
+
+const DEFAULT_WAVE_SELECTION_COLOR = "#FF764D4D";
+const DEFAULT_NAMED_REGION_COLOR = "#FF764D4D";
+
+/** Preset fills for the wave context menu (CSS hex + alpha). */
+const WAVE_REGION_COLOR_PALETTE = [
+  "#FF764D4D",
+  "#3B82F64D",
+  "#22C55E4D",
+  "#A855F74D",
+  "#EAB3084D",
+  "#EF44444D",
+  "#06B6D44D",
+  "#EC48994D",
+  "#6366F14D",
+  "#F973164D",
+  "#14B8A64D",
+  "#78716C4D",
+] as const;
+
+function waveRegionColorKey(css: string | undefined): string {
+  return (css ?? "").trim().toLowerCase();
+}
+
+const namedRegionPackDragAttached = new WeakSet<WaveSurferRegion>();
+
+function waveNamedRegionLabel(region: WaveSurferRegion): string {
+  const raw = region.getContent(false);
+  if (typeof raw === "string") return raw.replace(/<[^>]*>/g, "").trim();
+  return (raw as HTMLElement | undefined)?.textContent?.trim() ?? "";
+}
+
+function serializePersistedNamedRegions(
+  waveRegions: WaveSurferRegion[],
+): PersistedNamedRegion[] {
+  const named = waveRegions.filter((r) =>
+    r.id.startsWith(NAMED_WAVE_REGION_PREFIX),
+  );
+  named.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+  return named.map((r, i) => ({
+    id: r.id.slice(NAMED_WAVE_REGION_PREFIX.length),
+    name: waveNamedRegionLabel(r) || "Region",
+    start: r.start,
+    end: r.end,
+    color: r.color || DEFAULT_NAMED_REGION_COLOR,
+    sortOrder: i,
+  }));
+}
+
+function namedRegionsPersistenceSignature(
+  list: PersistedNamedRegion[] | undefined,
+): string {
+  if (!list?.length) return "";
+  const sorted = [...list].sort(
+    (a, b) =>
+      (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+      a.start - b.start ||
+      a.id.localeCompare(b.id),
+  );
+  return JSON.stringify(
+    sorted.map((x) => ({
+      id: x.id,
+      name: x.name,
+      start: x.start,
+      end: x.end,
+      color: x.color ?? DEFAULT_NAMED_REGION_COLOR,
+      sortOrder: x.sortOrder ?? 0,
+    })),
+  );
+}
+
+function getPrimaryWaveSelectionRegion(
+  regs: WaveSurferRegion[],
+): WaveSurferRegion | undefined {
+  return regs.find((r) => !r.id.startsWith(NAMED_WAVE_REGION_PREFIX));
+}
+
+function addPersistedNamedRegionsToPlugin(
+  plugin: ReturnType<typeof RegionsPlugin.create>,
+  list: PersistedNamedRegion[],
+  dur: number,
+) {
+  if (list.length === 0 || dur <= 0) return;
+  const sorted = [...list].sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+  );
+  for (const p of sorted) {
+    const s = Math.max(0, Math.min(dur, p.start));
+    const e = Math.max(s + 1e-4, Math.min(dur, p.end));
+    plugin.addRegion({
+      id: `${NAMED_WAVE_REGION_PREFIX}${p.id}`,
+      start: s,
+      end: e,
+      content: p.name,
+      color: p.color ?? DEFAULT_NAMED_REGION_COLOR,
+      drag: false,
+      resize: true,
+    });
+  }
+}
+
+/** HTML5 drag to pack editor; keeps WaveSurfer `drag: false` so the region is not moved. */
+function attachNamedRegionPackDrag(
+  region: WaveSurferRegion,
+  sourceRef: MutableRefObject<{
+    path: string | null;
+    pane: "source" | "dest" | null;
+  }>,
+  depth = 0,
+) {
+  if (!region.id.startsWith(NAMED_WAVE_REGION_PREFIX)) return;
+  region.setOptions({ drag: false, resize: true });
+  if (namedRegionPackDragAttached.has(region)) return;
+
+  const el = region.element;
+  if (!el) {
+    if (depth < 24) {
+      requestAnimationFrame(() =>
+        attachNamedRegionPackDrag(region, sourceRef, depth + 1),
+      );
+    }
+    return;
+  }
+
+  namedRegionPackDragAttached.add(region);
+
+  const onDragStart = (e: DragEvent) => {
+    const { path, pane } = sourceRef.current;
+    const dt = e.dataTransfer;
+    if (!dt || !path || !pane) {
+      e.preventDefault();
+      return;
+    }
+    e.stopPropagation();
+    const payload = {
+      sourceRef: pathToPackEntrySourceRef(path, pane),
+      regionStart: region.start,
+      regionEnd: region.end,
+      defaultName: waveNamedRegionLabel(region) || "Region",
+      ...(region.id.startsWith(NAMED_WAVE_REGION_PREFIX)
+        ? {
+            sourceNamedRegionId: region.id.slice(
+              NAMED_WAVE_REGION_PREFIX.length,
+            ),
+          }
+        : {}),
+    };
+    dt.setData(OCTACARD_PACK_ENTRY_DRAG_TYPE, JSON.stringify(payload));
+    dt.setData("text/plain", payload.defaultName);
+    dt.effectAllowed = "copy";
+    // Avoid the browser using the live region node as the drag preview; that
+    // interacts badly with WaveSurfer's virtualAppend (detaches off-screen DOM).
+    const ghost = new Image();
+    ghost.src =
+      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    dt.setDragImage(ghost, 0, 0);
+  };
+
+  const onDragEnd = () => {
+    queueMicrotask(() => {
+      try {
+        // virtualAppend may have removed the region element from the container
+        // while the cursor was over another panel; re-emit layout so it re-attaches.
+        region.setOptions({
+          start: region.start,
+          end: region.end,
+          drag: false,
+          resize: true,
+        });
+      } catch {
+        /* ignore */
+      }
+    });
+  };
+
+  el.draggable = true;
+  el.addEventListener("dragstart", onDragStart);
+  el.addEventListener("dragend", onDragEnd);
+
+  const detach = () => {
+    el.removeEventListener("dragstart", onDragStart);
+    el.removeEventListener("dragend", onDragEnd);
+    el.draggable = false;
+    namedRegionPackDragAttached.delete(region);
+  };
+
+  region.once("remove", detach);
 }
 
 function createSilentWavDataUrl(durationSeconds: number): string {
@@ -157,8 +419,27 @@ export const AudioPreview = ({
   const envelopeRef = useRef<EnvelopePlugin | null>(null);
   const recordPluginRef = useRef<RecordPlugin | null>(null);
   const disableDragSelectionRef = useRef<(() => void) | null>(null);
+  const waveContextTimeRef = useRef<number | null>(null);
+  const waveContextRegionRef = useRef<WaveSurferRegion | null>(null);
+  /** Same as ref, but state so Radix menu content re-renders with the hit region (refs alone can look stale). */
+  const [waveContextMenuRegion, setWaveContextMenuRegion] =
+    useState<WaveSurferRegion | null>(null);
+  const packDragSourceRef = useRef<{
+    path: string | null;
+    pane: "source" | "dest" | null;
+  }>({ path: null, pane: null });
+  packDragSourceRef.current = {
+    path: filePath ?? null,
+    pane:
+      paneType === "dest" ? "dest" : paneType === "source" ? "source" : null,
+  };
   const isInitializingRef = useRef<boolean>(false);
   const currentAudioUrlRef = useRef<string>("");
+  /** Avoid persisting to sample-edits while replacing named regions from project/store. */
+  const isSyncingNamedRegionsRef = useRef(false);
+  /** >0 while tearing down/re-adding named regions; cleared after paint (covers deferred WS events). */
+  const namedRegionsPersistSuppressRef = useRef(0);
+  const namedRegionsAppliedSigRef = useRef<string>("");
 
   const [envelopeEnabled, setEnvelopeEnabled] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
@@ -195,9 +476,61 @@ export const AudioPreview = ({
     useState<ExportMarkerOptions>(() => ({
       ...DEFAULT_EXPORT_OPTIONS,
     }));
+  const [namedRegionPrompt, setNamedRegionPrompt] = useState<{
+    mode: "create" | "rename";
+    regionId: string;
+  } | null>(null);
+  const [namedRegionNameInput, setNamedRegionNameInput] = useState("");
 
   const setEdits = useSampleEditsStore((s) => s.setEdits);
   const getEdits = useSampleEditsStore((s) => s.getEdits);
+
+  const syncNamedRegionsFromStore = useCallback((dur: number) => {
+    const plugin = regionsRef.current;
+    if (!plugin || !filePath || dur <= 0) return;
+    const list = useSampleEditsStore.getState().getEdits(filePath)?.namedRegions;
+    const sig = namedRegionsPersistenceSignature(list);
+    if (sig === namedRegionsAppliedSigRef.current) return;
+    isSyncingNamedRegionsRef.current = true;
+    namedRegionsPersistSuppressRef.current += 1;
+    try {
+      for (const r of [...plugin.getRegions()]) {
+        if (r.id.startsWith(NAMED_WAVE_REGION_PREFIX)) r.remove();
+      }
+      addPersistedNamedRegionsToPlugin(plugin, list ?? [], dur);
+      namedRegionsAppliedSigRef.current = sig;
+    } finally {
+      // Microtasks alone were insufficient: some builds emit region-removed after rAF/layout.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          namedRegionsPersistSuppressRef.current = Math.max(
+            0,
+            namedRegionsPersistSuppressRef.current - 1,
+          );
+          isSyncingNamedRegionsRef.current = false;
+        });
+      });
+    }
+    queueMicrotask(() => {
+      for (const reg of plugin.getRegions()) {
+        if (!reg.id.startsWith(NAMED_WAVE_REGION_PREFIX)) continue;
+        reg.setOptions({ drag: false, resize: true });
+        attachNamedRegionPackDrag(reg, packDragSourceRef);
+      }
+    });
+  }, [filePath]);
+
+  const namedStoreSig = useSampleEditsStore((s) => {
+    if (!filePath) return "";
+    return namedRegionsPersistenceSignature(
+      s.getEdits(filePath)?.namedRegions,
+    );
+  });
+
+  const persistedSelectionRegionColor = useSampleEditsStore((s) =>
+    filePath ? s.getEdits(filePath)?.region?.color : undefined,
+  );
+
   const playerIsPlaying = usePlayerStore((s) => s.isPlaying);
   const requestRestartWithNewLoop = usePlayerStore(
     (s) => s.requestRestartWithNewLoop,
@@ -237,6 +570,21 @@ export const AudioPreview = ({
     const t = setTimeout(() => setDebouncedWaveformHeight(waveformHeight), 150);
     return () => clearTimeout(t);
   }, [waveformHeight]);
+
+  useEffect(() => {
+    namedRegionsAppliedSigRef.current = "";
+  }, [filePath]);
+
+  useEffect(() => {
+    if (!filePath || isLoading || duration <= 0) return;
+    syncNamedRegionsFromStore(duration);
+  }, [
+    filePath,
+    duration,
+    isLoading,
+    namedStoreSig,
+    syncNamedRegionsFromStore,
+  ]);
 
   const playingSamplePosition = useProjectStore((s) => s.playingSamplePosition);
 
@@ -1478,6 +1826,10 @@ export const AudioPreview = ({
             })),
           });
         }
+
+        if (filePath) {
+          syncNamedRegionsFromStore(dur);
+        }
       });
 
       wavesurfer.on("play", () => {
@@ -1529,32 +1881,114 @@ export const AudioPreview = ({
         }
       });
 
-      // Sync region changes to store
+      // Sync region changes to store; named regions are not moved by drag (pack DnD instead).
       regions.on("region-updated", (region) => {
-        if (cancelled || !filePath) return;
+        if (
+          cancelled ||
+          !filePath ||
+          isSyncingNamedRegionsRef.current ||
+          namedRegionsPersistSuppressRef.current > 0
+        )
+          return;
+        if (region.id.startsWith(NAMED_WAVE_REGION_PREFIX)) {
+          region.setOptions({ drag: false, resize: true });
+          attachNamedRegionPackDrag(region, packDragSourceRef);
+        }
         const pts = envelope.getPoints();
+        const all = regions.getRegions();
+        const primary = getPrimaryWaveSelectionRegion(all);
+        const prev = useSampleEditsStore.getState().getEdits(filePath) ?? {};
         setEdits(filePath, {
-          region: { start: region.start, end: region.end },
+          ...prev,
+          region: primary
+            ? {
+                start: primary.start,
+                end: primary.end,
+                color: primary.color,
+              }
+            : null,
           envelopePoints: pts.length > 0 ? pts : undefined,
+          namedRegions: serializePersistedNamedRegions(all),
+        });
+      });
+      regions.on("region-created", (region) => {
+        if (
+          cancelled ||
+          !filePath ||
+          isSyncingNamedRegionsRef.current ||
+          namedRegionsPersistSuppressRef.current > 0
+        )
+          return;
+        if (region.id.startsWith(NAMED_WAVE_REGION_PREFIX)) {
+          region.setOptions({ drag: false, resize: true });
+          attachNamedRegionPackDrag(region, packDragSourceRef);
+        }
+        const pts = envelope.getPoints();
+        const all = regions.getRegions();
+        const primary = getPrimaryWaveSelectionRegion(all);
+        const prev = useSampleEditsStore.getState().getEdits(filePath) ?? {};
+        setEdits(filePath, {
+          ...prev,
+          region: primary
+            ? {
+                start: primary.start,
+                end: primary.end,
+                color: primary.color,
+              }
+            : null,
+          envelopePoints: pts.length > 0 ? pts : undefined,
+          namedRegions: serializePersistedNamedRegions(all),
         });
       });
       regions.on("region-removed", () => {
-        if (cancelled || !filePath) return;
+        if (
+          cancelled ||
+          !filePath ||
+          isSyncingNamedRegionsRef.current ||
+          namedRegionsPersistSuppressRef.current > 0
+        )
+          return;
         const pts = envelope.getPoints();
+        const all = regions.getRegions();
+        const primary = getPrimaryWaveSelectionRegion(all);
+        const prev = useSampleEditsStore.getState().getEdits(filePath) ?? {};
         setEdits(filePath, {
-          region: null,
+          ...prev,
+          region: primary
+            ? {
+                start: primary.start,
+                end: primary.end,
+                color: primary.color,
+              }
+            : null,
           envelopePoints: pts.length > 0 ? pts : undefined,
+          namedRegions: serializePersistedNamedRegions(all),
         });
       });
 
       // Sync envelope changes to store
       envelope.on("points-change", (newPoints) => {
-        if (cancelled || !filePath) return;
+        if (
+          cancelled ||
+          !filePath ||
+          isSyncingNamedRegionsRef.current ||
+          namedRegionsPersistSuppressRef.current > 0
+        )
+          return;
         const regs = regions.getRegions();
-        const r = regs[0];
+        const primary = getPrimaryWaveSelectionRegion(regs);
+        const prev = useSampleEditsStore.getState().getEdits(filePath) ?? {};
         setEdits(filePath, {
-          region: r ? { start: r.start, end: r.end } : undefined,
+          ...prev,
+          region: primary
+            ? {
+                start: primary.start,
+                end: primary.end,
+                color: primary.color,
+              }
+            : null,
           envelopePoints: newPoints.length > 0 ? newPoints : undefined,
+          namedRegions: serializePersistedNamedRegions(regs),
         });
       });
 
@@ -1653,6 +2087,7 @@ export const AudioPreview = ({
     paneType,
     zoom,
     stableMinimapHandler,
+    syncNamedRegionsFromStore,
   ]);
 
   // Effect to find and attach handler to minimap element after it's created
@@ -1774,13 +2209,23 @@ export const AudioPreview = ({
 
     if (!envelopeEnabled) {
       const disable = regionsRef.current.enableDragSelection({
-        color: "rgba(255, 118, 77, 0.3)",
+        color:
+          persistedSelectionRegionColor ?? DEFAULT_WAVE_SELECTION_COLOR,
         drag: true,
         resize: true,
       });
       disableDragSelectionRef.current = disable;
     }
-  }, [envelopeEnabled, isLoading]);
+
+    queueMicrotask(() => {
+      const regs = regionsRef.current?.getRegions() ?? [];
+      for (const reg of regs) {
+        if (!reg.id.startsWith(NAMED_WAVE_REGION_PREFIX)) continue;
+        reg.setOptions({ drag: false, resize: true });
+        attachNamedRegionPackDrag(reg, packDragSourceRef);
+      }
+    });
+  }, [envelopeEnabled, isLoading, persistedSelectionRegionColor]);
 
   // Hide envelope when slicing is open so the first slice marker is visible (avoids overlap with first envelope point)
   useEffect(() => {
@@ -2066,10 +2511,14 @@ export const AudioPreview = ({
   const addRegion = () => {
     if (!wavesurferRef.current || !regionsRef.current) return;
     const currentTime = wavesurferRef.current.getCurrentTime();
+    const savedColor =
+      (filePath &&
+        useSampleEditsStore.getState().getEdits(filePath)?.region?.color) ||
+      DEFAULT_WAVE_SELECTION_COLOR;
     const region = regionsRef.current.addRegion({
       start: currentTime,
       end: Math.min(duration, currentTime + 5),
-      color: "#FF764D4D", // Orange region with transparency (Ableton orange, ~30% opacity)
+      color: savedColor,
       drag: true,
       resize: true,
     });
@@ -2094,6 +2543,204 @@ export const AudioPreview = ({
       }
     });
   };
+
+  const isNamedWaveRegion = useCallback(
+    (r: WaveSurferRegion) => r.id.startsWith(NAMED_WAVE_REGION_PREFIX),
+    [],
+  );
+
+  const openCreateNamedRegionDialog = useCallback(() => {
+    const r = waveContextRegionRef.current;
+    if (!r || isNamedWaveRegion(r) || r.end - r.start < 0.2) return;
+    const base = (fileName ?? "Sample").replace(/\.[^/.]+$/, "");
+    const namedCount =
+      regionsRef.current
+        ?.getRegions()
+        .filter((reg) => reg.id.startsWith(NAMED_WAVE_REGION_PREFIX)).length ??
+      0;
+    const suggested = `${base}-${namedCount + 1}`;
+    setNamedRegionNameInput(suggested);
+    setNamedRegionPrompt({ mode: "create", regionId: r.id });
+  }, [fileName, isNamedWaveRegion]);
+
+  const openRenameNamedRegionDialog = useCallback(() => {
+    const r = waveContextRegionRef.current;
+    if (!r || !isNamedWaveRegion(r)) return;
+    const raw = r.getContent(false);
+    const label =
+      typeof raw === "string"
+        ? raw.replace(/<[^>]*>/g, "").trim()
+        : ((raw as HTMLElement | undefined)?.textContent?.trim() ?? "");
+    setNamedRegionNameInput(label.length > 0 ? label : "Region");
+    setNamedRegionPrompt({ mode: "rename", regionId: r.id });
+  }, [isNamedWaveRegion]);
+
+  const deleteNamedRegionFromContext = useCallback(() => {
+    const r = waveContextRegionRef.current;
+    if (!r || !isNamedWaveRegion(r)) return;
+    r.remove();
+    toast.success("Named region removed");
+  }, [isNamedWaveRegion]);
+
+  const autoDetectNamedRegionFromContext = useCallback(async () => {
+    const r = waveContextRegionRef.current;
+    if (!r || !isNamedWaveRegion(r)) return;
+    if (isEmptyState || !filePath || !paneType || !regionsRef.current) {
+      toast.error("Load a sample before trimming region silence");
+      return;
+    }
+    try {
+      const result = await getAudioBlobForPath(filePath, paneType);
+      if (!result.success || !result.data) {
+        toast.error("Could not load audio for region auto-detect");
+        return;
+      }
+      const decodableUrl = await ensureAudioDecodable(result.data, filePath);
+      const res = await fetch(decodableUrl);
+      const arrayBuffer = await res.arrayBuffer();
+      const ctx = new AudioContext();
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      await ctx.close();
+
+      const trimmed = trimSilenceInRegion(buffer, r.start, r.end);
+      if (!trimmed.trimmedStart && !trimmed.trimmedEnd) {
+        toast.message("No leading/trailing silence detected in named region");
+        return;
+      }
+
+      r.setOptions({ start: trimmed.start, end: trimmed.end });
+      setWaveContextMenuRegion(r);
+
+      const all = regionsRef.current.getRegions();
+      const primary = getPrimaryWaveSelectionRegion(all);
+      const prev = useSampleEditsStore.getState().getEdits(filePath) ?? {};
+      setEdits(filePath, {
+        ...prev,
+        region: primary
+          ? {
+              start: primary.start,
+              end: primary.end,
+              color: primary.color,
+            }
+          : null,
+        namedRegions: serializePersistedNamedRegions(all),
+      });
+
+      toast.success(
+        `Named region trimmed to ${trimmed.start.toFixed(3)}s - ${trimmed.end.toFixed(3)}s`,
+      );
+    } catch (err) {
+      console.warn("Named region auto-detect failed:", err);
+      toast.error("Auto-detect region failed");
+    }
+  }, [filePath, isEmptyState, isNamedWaveRegion, paneType, setEdits]);
+
+  const applyWaveContextRegionColor = useCallback(
+    (hex: string) => {
+      const reg = waveContextRegionRef.current;
+      if (!reg || !filePath || !regionsRef.current) return;
+      reg.setOptions({ color: hex });
+      const all = regionsRef.current.getRegions();
+      const primary = getPrimaryWaveSelectionRegion(all);
+      const prev = useSampleEditsStore.getState().getEdits(filePath) ?? {};
+      setEdits(filePath, {
+        ...prev,
+        ...(primary
+          ? {
+              region: {
+                start: primary.start,
+                end: primary.end,
+                color: primary.color,
+              },
+            }
+          : {}),
+        namedRegions: serializePersistedNamedRegions(all),
+      });
+    },
+    [filePath, setEdits],
+  );
+
+  const submitNamedRegionDialog = useCallback(() => {
+    const promptState = namedRegionPrompt;
+    if (!promptState || !regionsRef.current) return;
+    const name = namedRegionNameInput.trim();
+    if (!name) {
+      toast.error("Enter a name");
+      return;
+    }
+    const r = regionsRef.current
+      .getRegions()
+      .find((reg) => reg.id === promptState.regionId);
+    if (!r) {
+      toast.error("Region no longer exists");
+      setNamedRegionPrompt(null);
+      return;
+    }
+    if (promptState.mode === "create") {
+      r.setOptions({
+        id: `${NAMED_WAVE_REGION_PREFIX}${crypto.randomUUID()}`,
+        content: name,
+        drag: false,
+        resize: true,
+      });
+      toast.success(`Named region "${name}"`);
+    } else {
+      r.setContent(name);
+      r.setOptions({ drag: false, resize: true });
+      toast.success("Region renamed");
+    }
+    if (filePath) {
+      const all = regionsRef.current.getRegions();
+      const prev = useSampleEditsStore.getState().getEdits(filePath) ?? {};
+      setEdits(filePath, {
+        ...prev,
+        namedRegions: serializePersistedNamedRegions(all),
+      });
+    }
+    setNamedRegionPrompt(null);
+  }, [filePath, namedRegionNameInput, namedRegionPrompt, setEdits]);
+
+  const handleWaveformContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      const ws = wavesurferRef.current;
+      if (isEmptyState || isLoading || !ws || ws.getDuration() <= 0) {
+        waveContextTimeRef.current = null;
+        waveContextRegionRef.current = null;
+        setWaveContextMenuRegion(null);
+        return;
+      }
+      const minimapRect = minimapContainerRef.current?.getBoundingClientRect();
+      if (
+        minimapRect &&
+        e.clientX >= minimapRect.left &&
+        e.clientX <= minimapRect.right &&
+        e.clientY >= minimapRect.top &&
+        e.clientY <= minimapRect.bottom
+      ) {
+        waveContextTimeRef.current = null;
+        waveContextRegionRef.current = null;
+        setWaveContextMenuRegion(null);
+        return;
+      }
+      const regs = regionsRef.current?.getRegions() ?? [];
+      const picked = pickWaveRegionAtClientPoint(e.clientX, e.clientY, regs);
+      const t = getWaveformTimeAtClientX(ws, e.clientX);
+      waveContextTimeRef.current = t;
+      const eps = 1e-3;
+      const resolved =
+        picked ??
+        (t != null
+          ? (regs.find(
+              (region) => t >= region.start - eps && t <= region.end + eps,
+            ) ?? null)
+          : null);
+      waveContextRegionRef.current = resolved;
+      flushSync(() => {
+        setWaveContextMenuRegion(resolved);
+      });
+    },
+    [isEmptyState, isLoading],
+  );
 
   const getLoopLengthParts = useCallback(() => {
     const len = Math.max(0, loopEnd - loopStart);
@@ -2439,7 +3086,7 @@ export const AudioPreview = ({
       );
       const blob = await fetch(decodableUrl).then((r) => r.blob());
       const regs = regionsRef.current?.getRegions() ?? [];
-      const region = regs[0];
+      const region = getPrimaryWaveSelectionRegion(regs);
       const regionStart = region?.start ?? 0;
       const regionEnd = region?.end ?? duration;
       const clampedLoopStart = Math.max(0, Math.min(duration, loopStart));
@@ -2733,7 +3380,7 @@ export const AudioPreview = ({
 
     const hasSlices = displayedSlices.length > 0;
     const regs = regionsRef.current?.getRegions() ?? [];
-    const region = regs[0];
+    const region = getPrimaryWaveSelectionRegion(regs);
     const regionStart = region?.start ?? 0;
     const regionEnd = region?.end ?? duration;
     const loopStartClamped = Math.max(0, Math.min(duration, loopStart));
@@ -2887,24 +3534,19 @@ export const AudioPreview = ({
         state &&
         !state.hasMoved &&
         !state.isMinimapDrag &&
-        waveformRef.current &&
         wavesurferRef.current &&
         !isLoading
       ) {
-        const rect = waveformRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const width = rect.width;
-        if (width > 0 && x >= 0 && x <= width) {
-          const currentDuration = wavesurferRef.current.getDuration();
-          if (currentDuration > 0) {
-            const clickTime = (x / width) * currentDuration;
-            if (addMarkerModeRef.current) {
-              addSliceAtTimeRef.current(clickTime);
-            } else if (slicingOpen && sliceMarkersRef.current.length > 0) {
-              addSliceAtTimeRef.current(clickTime);
-            } else {
-              wavesurferRef.current.seekTo(clickTime / currentDuration);
-            }
+        const ws = wavesurferRef.current;
+        const clickTime = getWaveformTimeAtClientX(ws, e.clientX);
+        const currentDuration = ws.getDuration();
+        if (clickTime != null && currentDuration > 0) {
+          if (addMarkerModeRef.current) {
+            addSliceAtTimeRef.current(clickTime);
+          } else if (slicingOpen && sliceMarkersRef.current.length > 0) {
+            addSliceAtTimeRef.current(clickTime);
+          } else {
+            ws.seekTo(clickTime / currentDuration);
           }
         }
       }
@@ -3292,7 +3934,7 @@ export const AudioPreview = ({
             disabled={isEmptyState || isLoading}
             title="Show slice markers on waveform"
           >
-            Slicing
+            Slices
           </Button>
         </div>
         <Button
@@ -3321,318 +3963,442 @@ export const AudioPreview = ({
         className="relative overflow-hidden"
         style={{ minHeight: debouncedWaveformHeight + 60 }}
       >
-        <div
-          ref={waveformRef}
-          data-testid="audio-preview-waveform"
-          className="w-full cursor-pointer"
-          style={{ height: debouncedWaveformHeight }}
-          onMouseDown={handleWaveformMouseDown}
-        />
-        {isLoading && !isEmptyState && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/50">
-            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-        {isEmptyState && !audioUrl && (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
-            Record or load a file to get started
-          </div>
-        )}
-        {!isEmptyState &&
-          duration > 0 &&
-          timeDisplayMode === "bars" &&
-          totalBars > 0 && (
+        <ContextMenu
+          onOpenChange={(open) => {
+            if (!open) setWaveContextMenuRegion(null);
+          }}
+        >
+          <ContextMenuTrigger asChild>
             <div
-              data-testid="audio-preview-bar-background"
-              className="absolute top-0 left-0 right-0 z-[2] pointer-events-none"
-              style={{ height: debouncedWaveformHeight }}
+              className="relative w-full cursor-pointer"
+              style={{ minHeight: debouncedWaveformHeight + 60 }}
+              onMouseDown={handleWaveformMouseDown}
+              onContextMenu={handleWaveformContextMenu}
             >
-              {Array.from({ length: totalBars }).map((_, i) => (
-                <div
-                  key={`bar-bg-${i}`}
-                  className="absolute top-0 h-full"
-                  style={{
-                    left: `${(i / totalBars) * 100}%`,
-                    width: `${100 / totalBars}%`,
-                    backgroundColor:
-                      i % 2 === 0
-                        ? "rgba(90,90,90,0.07)"
-                        : "rgba(120,120,120,0.11)",
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        {devMode && grooveAutoDebug && !isEmptyState && duration > 0 && (
-          <div
-            className="absolute top-0 left-0 right-0 z-[3] pointer-events-none"
-            style={{ height: debouncedWaveformHeight }}
-            aria-hidden
-          >
-            {grooveAutoDebug.quarterTimes.map((t) => (
               <div
-                key={`groove-quarter-${t.toFixed(6)}`}
-                className="absolute top-0 w-px h-full"
-                style={{
-                  left: `${(t / duration) * 100}%`,
-                  backgroundColor: "rgba(236, 72, 153, 0.88)",
-                }}
+                ref={waveformRef}
+                data-testid="audio-preview-waveform"
+                className="w-full"
+                style={{ height: debouncedWaveformHeight }}
               />
-            ))}
-          </div>
-        )}
-        {!isEmptyState && !isLoading && duration > 0 && (
-          <div
-            className="absolute left-0 right-0 top-0 z-[12] pointer-events-none"
-            style={{ height: debouncedWaveformHeight }}
-            data-testid="sample-range-overlay"
-          >
-            <div
-              className="absolute top-1 h-2 rounded-sm bg-[#2D193E]"
-              style={{
-                left: `${(loopStartClamped / timelineDuration) * 100}%`,
-                width: `${(Math.max(0.001, loopEndClamped - loopStartClamped) / timelineDuration) * 100}%`,
-              }}
-              data-testid="sample-range-bar"
-            />
-            <button
-              type="button"
-              aria-label="Sample range start"
-              className="absolute top-1 h-2 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0 min-w-[24px] flex items-center justify-center overflow-visible"
-              style={{
-                left: `${(loopStartClamped / timelineDuration) * 100}%`,
-              }}
-              onMouseDown={(e) => handleLoopBoundaryDrag("start", e)}
-              data-testid="sample-range-start-handle"
-              title="Loop start (hold Shift to nudge loop)"
-            >
-              <span
-                className="block w-0 h-0 border-t-[4px] border-b-[4px] border-l-[8px] border-t-transparent border-b-transparent border-l-[#D3D3D3] shrink-0"
-                title="Sample start"
-              />
-            </button>
-            <button
-              type="button"
-              aria-label="Play start"
-              className="absolute top-3 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0"
-              style={{
-                left: `${(playStartClamped / timelineDuration) * 100}%`,
-              }}
-              onMouseDown={(e) => handleSampleBoundaryDrag("play", e)}
-              data-testid="sample-range-play-start-handle"
-            >
-              <span
-                className="block w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#D3D3D3]"
-                title="Play start"
-              />
-            </button>
-            <button
-              type="button"
-              aria-label="Sample range end"
-              className="absolute top-1 h-2 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0 min-w-[24px] flex items-center justify-center overflow-visible"
-              style={{ left: `${(loopEndClamped / timelineDuration) * 100}%` }}
-              onMouseDown={(e) => handleLoopBoundaryDrag("end", e)}
-              data-testid="sample-range-end-handle"
-              title="Loop end (hold Shift to nudge loop)"
-            >
-              <span
-                className="block w-0 h-0 border-t-[4px] border-b-[4px] border-r-[8px] border-t-transparent border-b-transparent border-r-[#D3D3D3] shrink-0"
-                title="Sample end"
-              />
-            </button>
-          </div>
-        )}
-        {!isEmptyState && duration > 0 && (
-          <div
-            className="absolute top-0 left-0 right-0 z-[6] pointer-events-none"
-            style={{ height: debouncedWaveformHeight }}
-          >
-            <div
-              className="absolute top-0 left-0 h-full"
-              style={{
-                width: `${(Math.max(0, loopStart) / duration) * 100}%`,
-                backgroundColor: "rgba(0,0,0,0.28)",
-              }}
-            />
-            <div
-              className="absolute top-0 right-0 h-full"
-              style={{
-                width: `${((duration - Math.min(duration, loopEnd || duration)) / duration) * 100}%`,
-                backgroundColor: "rgba(0,0,0,0.28)",
-              }}
-            />
-          </div>
-        )}
-        {/* Playhead overlay with dragger handle - only when we have audio */}
-        {!isEmptyState && duration > 0 && (
-          <div
-            className="absolute top-0 left-0 w-0.5 pointer-events-none z-10"
-            style={{
-              left: `${(currentTime / duration) * 100}%`,
-              height: debouncedWaveformHeight,
-              backgroundColor: "#FF764D",
-            }}
-          >
-            <div
-              className="absolute -top-1 -left-2 w-4 h-3 rounded-sm cursor-ew-resize pointer-events-auto shadow-sm border border-border"
-              style={{ backgroundColor: "#FF764D" }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                const startX = e.clientX;
-                const startTime = currentTime;
-                const handleMove = (moveE: MouseEvent) => {
-                  const rect = waveformRef.current?.getBoundingClientRect();
-                  if (!rect || !wavesurferRef.current) return;
-                  const dx = moveE.clientX - startX;
-                  const timeDelta = (dx / rect.width) * duration;
-                  const newTime = Math.max(
-                    0,
-                    Math.min(duration, startTime + timeDelta),
-                  );
-                  wavesurferRef.current.seekTo(newTime / duration);
-                };
-                const handleUp = () => {
-                  window.removeEventListener("mousemove", handleMove);
-                  window.removeEventListener("mouseup", handleUp);
-                };
-                window.addEventListener("mousemove", handleMove);
-                window.addEventListener("mouseup", handleUp);
-              }}
-            />
-          </div>
-        )}
-        {/* Slice markers: ghost = below confidence threshold (updates live while dragging) */}
-        {slicingOpen &&
-          !isEmptyState &&
-          duration > 0 &&
-          combinedSliceMarkers.length > 0 && (
-            <div
-              className="absolute top-0 left-0 right-0 z-[4] pointer-events-none"
-              style={{ height: debouncedWaveformHeight }}
-              aria-hidden
-            >
-              {ghostSliceMarkers.map((m) => {
-                const k = sliceKey(m.time);
-                const posT = slicePositionOverrides.get(k);
-                const t = posT !== undefined ? posT : m.time;
-                return (
+              {isLoading && !isEmptyState && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/50">
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {isEmptyState && !audioUrl && (
+                <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
+                  Record or load a file to get started
+                </div>
+              )}
+              {!isEmptyState &&
+                duration > 0 &&
+                timeDisplayMode === "bars" &&
+                totalBars > 0 && (
                   <div
-                    key={`ghost-${k}`}
-                    className="absolute top-0 h-full w-px"
-                    style={{
-                      left: `${(t / duration) * 100}%`,
-                      transform: "translateX(-50%)",
-                      backgroundColor: "rgba(148, 163, 184, 0.35)",
-                    }}
-                  />
-                );
-              })}
-            </div>
-          )}
-        {/* Active slice markers - pointer-events-none on container so waveform receives taps; auto on markers for remove/drag */}
-        {slicingOpen &&
-          !isEmptyState &&
-          duration > 0 &&
-          displayedSlices.length > 0 && (
-            <div
-              className="absolute top-0 left-0 right-0 z-[5] pointer-events-none"
-              style={{ height: debouncedWaveformHeight }}
-            >
-              {displayedSlices.map((slice, i) => {
-                const key = sliceKey(slice.originalTime);
-                const isHovered = hoveredSliceKey === key;
-                return (
-                  <div
-                    key={`${key}-${i}`}
-                    className="absolute top-0 h-full flex flex-col items-center pointer-events-auto"
-                    style={{
-                      left: `${(slice.time / duration) * 100}%`,
-                      transform: "translateX(-50%)",
-                      width: 16,
-                    }}
-                    onMouseEnter={() => setHoveredSliceKey(key)}
-                    onMouseLeave={() => setHoveredSliceKey(null)}
+                    data-testid="audio-preview-bar-background"
+                    className="absolute top-0 left-0 right-0 z-[2] pointer-events-none"
+                    style={{ height: debouncedWaveformHeight }}
                   >
+                    {Array.from({ length: totalBars }).map((_, i) => (
+                      <div
+                        key={`bar-bg-${i}`}
+                        className="absolute top-0 h-full"
+                        style={{
+                          left: `${(i / totalBars) * 100}%`,
+                          width: `${100 / totalBars}%`,
+                          backgroundColor:
+                            i % 2 === 0
+                              ? "rgba(90,90,90,0.07)"
+                              : "rgba(120,120,120,0.11)",
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              {devMode && grooveAutoDebug && !isEmptyState && duration > 0 && (
+                <div
+                  className="absolute top-0 left-0 right-0 z-[3] pointer-events-none"
+                  style={{ height: debouncedWaveformHeight }}
+                  aria-hidden
+                >
+                  {grooveAutoDebug.quarterTimes.map((t) => (
                     <div
-                      className="absolute top-0 w-0.5 h-full pointer-events-none"
+                      key={`groove-quarter-${t.toFixed(6)}`}
+                      className="absolute top-0 w-px h-full"
                       style={{
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        backgroundColor: "rgba(255, 118, 77, 0.5)",
+                        left: `${(t / duration) * 100}%`,
+                        backgroundColor: "rgba(236, 72, 153, 0.88)",
                       }}
                     />
-                    {devMode && (
-                      <span
-                        className="absolute top-0.5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-foreground/80 bg-background/85 px-0.5 rounded border border-border/60 pointer-events-none max-w-[3rem] truncate z-[6]"
-                        title="Slice confidence"
-                      >
-                        {slice.confidence.toFixed(2)}
-                      </span>
-                    )}
-                    {isHovered && (
-                      <>
-                        <button
-                          type="button"
-                          className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-destructive/10 hover:text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeSlice(slice.originalTime, slice.isUserAdded);
-                          }}
-                          title="Remove slice"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          className="absolute top-6 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-primary/10 hover:text-primary"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            playSlice(i);
-                          }}
-                          title="Play slice"
-                        >
-                          <Play className="w-3 h-3" />
-                        </button>
+                  ))}
+                </div>
+              )}
+              {!isEmptyState && !isLoading && duration > 0 && (
+                <div
+                  className="absolute left-0 right-0 top-0 z-[12] pointer-events-none"
+                  style={{ height: debouncedWaveformHeight }}
+                  data-testid="sample-range-overlay"
+                >
+                  <div
+                    className="absolute top-1 h-2 rounded-sm bg-[#2D193E]"
+                    style={{
+                      left: `${(loopStartClamped / timelineDuration) * 100}%`,
+                      width: `${(Math.max(0.001, loopEndClamped - loopStartClamped) / timelineDuration) * 100}%`,
+                    }}
+                    data-testid="sample-range-bar"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Sample range start"
+                    className="absolute top-1 h-2 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0 min-w-[24px] flex items-center justify-center overflow-visible"
+                    style={{
+                      left: `${(loopStartClamped / timelineDuration) * 100}%`,
+                    }}
+                    onMouseDown={(e) => handleLoopBoundaryDrag("start", e)}
+                    data-testid="sample-range-start-handle"
+                    title="Loop start (hold Shift to nudge loop)"
+                  >
+                    <span
+                      className="block w-0 h-0 border-t-[4px] border-b-[4px] border-l-[8px] border-t-transparent border-b-transparent border-l-[#D3D3D3] shrink-0"
+                      title="Sample start"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Play start"
+                    className="absolute top-3 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0"
+                    style={{
+                      left: `${(playStartClamped / timelineDuration) * 100}%`,
+                    }}
+                    onMouseDown={(e) => handleSampleBoundaryDrag("play", e)}
+                    data-testid="sample-range-play-start-handle"
+                  >
+                    <span
+                      className="block w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-[#D3D3D3]"
+                      title="Play start"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Sample range end"
+                    className="absolute top-1 h-2 -translate-x-1/2 pointer-events-auto cursor-ew-resize p-0 bg-transparent border-0 min-w-[24px] flex items-center justify-center overflow-visible"
+                    style={{
+                      left: `${(loopEndClamped / timelineDuration) * 100}%`,
+                    }}
+                    onMouseDown={(e) => handleLoopBoundaryDrag("end", e)}
+                    data-testid="sample-range-end-handle"
+                    title="Loop end (hold Shift to nudge loop)"
+                  >
+                    <span
+                      className="block w-0 h-0 border-t-[4px] border-b-[4px] border-r-[8px] border-t-transparent border-b-transparent border-r-[#D3D3D3] shrink-0"
+                      title="Sample end"
+                    />
+                  </button>
+                </div>
+              )}
+              {!isEmptyState && duration > 0 && (
+                <div
+                  className="absolute top-0 left-0 right-0 z-[6] pointer-events-none"
+                  style={{ height: debouncedWaveformHeight }}
+                >
+                  <div
+                    className="absolute top-0 left-0 h-full"
+                    style={{
+                      width: `${(Math.max(0, loopStart) / duration) * 100}%`,
+                      backgroundColor: "rgba(0,0,0,0.28)",
+                    }}
+                  />
+                  <div
+                    className="absolute top-0 right-0 h-full"
+                    style={{
+                      width: `${((duration - Math.min(duration, loopEnd || duration)) / duration) * 100}%`,
+                      backgroundColor: "rgba(0,0,0,0.28)",
+                    }}
+                  />
+                </div>
+              )}
+              {/* Playhead overlay with dragger handle - only when we have audio */}
+              {!isEmptyState && duration > 0 && (
+                <div
+                  className="absolute top-0 left-0 w-0.5 pointer-events-none z-10"
+                  style={{
+                    left: `${(currentTime / duration) * 100}%`,
+                    height: debouncedWaveformHeight,
+                    backgroundColor: "#FF764D",
+                  }}
+                >
+                  <div
+                    className="absolute -top-1 -left-2 w-4 h-3 rounded-sm cursor-ew-resize pointer-events-auto shadow-sm border border-border"
+                    style={{ backgroundColor: "#FF764D" }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      const startX = e.clientX;
+                      const startTime = currentTime;
+                      const handleMove = (moveE: MouseEvent) => {
+                        const rect =
+                          waveformRef.current?.getBoundingClientRect();
+                        if (!rect || !wavesurferRef.current) return;
+                        const dx = moveE.clientX - startX;
+                        const timeDelta = (dx / rect.width) * duration;
+                        const newTime = Math.max(
+                          0,
+                          Math.min(duration, startTime + timeDelta),
+                        );
+                        wavesurferRef.current.seekTo(newTime / duration);
+                      };
+                      const handleUp = () => {
+                        window.removeEventListener("mousemove", handleMove);
+                        window.removeEventListener("mouseup", handleUp);
+                      };
+                      window.addEventListener("mousemove", handleMove);
+                      window.addEventListener("mouseup", handleUp);
+                    }}
+                  />
+                </div>
+              )}
+              {/* Slice markers: ghost = below confidence threshold (updates live while dragging) */}
+              {slicingOpen &&
+                !isEmptyState &&
+                duration > 0 &&
+                combinedSliceMarkers.length > 0 && (
+                  <div
+                    className="absolute top-0 left-0 right-0 z-[4] pointer-events-none"
+                    style={{ height: debouncedWaveformHeight }}
+                    aria-hidden
+                  >
+                    {ghostSliceMarkers.map((m) => {
+                      const k = sliceKey(m.time);
+                      const posT = slicePositionOverrides.get(k);
+                      const t = posT !== undefined ? posT : m.time;
+                      return (
                         <div
-                          className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-6 h-6 rounded flex items-center justify-center bg-background/90 border border-border shadow-sm cursor-ew-resize z-10"
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            const startX = e.clientX;
-                            const startTime = slice.time;
-                            const handleMove = (moveE: MouseEvent) => {
-                              const rect =
-                                waveformRef.current?.getBoundingClientRect();
-                              if (!rect) return;
-                              const dx = moveE.clientX - startX;
-                              const timeDelta = (dx / rect.width) * duration;
-                              const newTime = Math.max(
-                                0,
-                                Math.min(duration, startTime + timeDelta),
-                              );
-                              updateSlicePosition(slice.originalTime, newTime);
-                            };
-                            const handleUp = () => {
-                              window.removeEventListener(
-                                "mousemove",
-                                handleMove,
-                              );
-                              window.removeEventListener("mouseup", handleUp);
-                            };
-                            window.addEventListener("mousemove", handleMove);
-                            window.addEventListener("mouseup", handleUp);
+                          key={`ghost-${k}`}
+                          className="absolute top-0 h-full w-px"
+                          style={{
+                            left: `${(t / duration) * 100}%`,
+                            transform: "translateX(-50%)",
+                            backgroundColor: "rgba(148, 163, 184, 0.35)",
                           }}
-                          title="Drag to reposition"
-                        >
-                          <GripVertical className="w-3 h-3 text-muted-foreground" />
-                        </div>
-                      </>
-                    )}
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
+                )}
+              {/* Active slice markers - pointer-events-none on container so waveform receives taps; auto on markers for remove/drag */}
+              {slicingOpen &&
+                !isEmptyState &&
+                duration > 0 &&
+                displayedSlices.length > 0 && (
+                  <div
+                    className="absolute top-0 left-0 right-0 z-[5] pointer-events-none"
+                    style={{ height: debouncedWaveformHeight }}
+                  >
+                    {displayedSlices.map((slice, i) => {
+                      const key = sliceKey(slice.originalTime);
+                      const isHovered = hoveredSliceKey === key;
+                      return (
+                        <div
+                          key={`${key}-${i}`}
+                          className="absolute top-0 h-full flex flex-col items-center pointer-events-auto"
+                          style={{
+                            left: `${(slice.time / duration) * 100}%`,
+                            transform: "translateX(-50%)",
+                            width: 16,
+                          }}
+                          onMouseEnter={() => setHoveredSliceKey(key)}
+                          onMouseLeave={() => setHoveredSliceKey(null)}
+                        >
+                          <div
+                            className="absolute top-0 w-0.5 h-full pointer-events-none"
+                            style={{
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              backgroundColor: "rgba(255, 118, 77, 0.5)",
+                            }}
+                          />
+                          {devMode && (
+                            <span
+                              className="absolute top-0.5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-foreground/80 bg-background/85 px-0.5 rounded border border-border/60 pointer-events-none max-w-[3rem] truncate z-[6]"
+                              title="Slice confidence"
+                            >
+                              {slice.confidence.toFixed(2)}
+                            </span>
+                          )}
+                          {isHovered && (
+                            <>
+                              <button
+                                type="button"
+                                className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-destructive/10 hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeSlice(
+                                    slice.originalTime,
+                                    slice.isUserAdded,
+                                  );
+                                }}
+                                title="Remove slice"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                className="absolute top-6 left-1/2 -translate-x-1/2 z-10 w-5 h-5 rounded flex items-center justify-center bg-background border border-border shadow-sm hover:bg-primary/10 hover:text-primary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  playSlice(i);
+                                }}
+                                title="Play slice"
+                              >
+                                <Play className="w-3 h-3" />
+                              </button>
+                              <div
+                                className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-6 h-6 rounded flex items-center justify-center bg-background/90 border border-border shadow-sm cursor-ew-resize z-10"
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  const startX = e.clientX;
+                                  const startTime = slice.time;
+                                  const handleMove = (moveE: MouseEvent) => {
+                                    const rect =
+                                      waveformRef.current?.getBoundingClientRect();
+                                    if (!rect) return;
+                                    const dx = moveE.clientX - startX;
+                                    const timeDelta =
+                                      (dx / rect.width) * duration;
+                                    const newTime = Math.max(
+                                      0,
+                                      Math.min(duration, startTime + timeDelta),
+                                    );
+                                    updateSlicePosition(
+                                      slice.originalTime,
+                                      newTime,
+                                    );
+                                  };
+                                  const handleUp = () => {
+                                    window.removeEventListener(
+                                      "mousemove",
+                                      handleMove,
+                                    );
+                                    window.removeEventListener(
+                                      "mouseup",
+                                      handleUp,
+                                    );
+                                  };
+                                  window.addEventListener(
+                                    "mousemove",
+                                    handleMove,
+                                  );
+                                  window.addEventListener("mouseup", handleUp);
+                                }}
+                                title="Drag to reposition"
+                              >
+                                <GripVertical className="w-3 h-3 text-muted-foreground" />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
             </div>
-          )}
+          </ContextMenuTrigger>
+          <ContextMenuContent className="z-[200] min-w-[10.5rem]">
+            {(() => {
+              const loaded = !isEmptyState && !isLoading && duration > 0;
+              if (!loaded) {
+                return (
+                  <ContextMenuItem disabled>
+                    Named regions need a loaded sample
+                  </ContextMenuItem>
+                );
+              }
+              const r = waveContextMenuRegion;
+              const minWidth = 0.2;
+              const isNamed =
+                r?.id.startsWith(NAMED_WAVE_REGION_PREFIX) ?? false;
+              const isSubstantial = r != null && r.end - r.start >= minWidth;
+              const canCreate = r != null && isSubstantial && !isNamed;
+              const showColorPicker =
+                r != null && (isNamed || isSubstantial);
+              const currentColorKey = waveRegionColorKey(r?.color);
+
+              const colorGrid = showColorPicker ? (
+                <>
+                  <ContextMenuLabel className="px-2 py-1.5 text-muted-foreground">
+                    Region color
+                  </ContextMenuLabel>
+                  <ContextMenuGroup className="mx-1 mb-1 grid grid-cols-6 gap-1 p-0">
+                    {WAVE_REGION_COLOR_PALETTE.map((hex) => (
+                      <ContextMenuItem
+                        key={hex}
+                        className="h-8 w-8 shrink-0 cursor-pointer justify-center p-0"
+                        onSelect={() => applyWaveContextRegionColor(hex)}
+                        aria-label={`Set region color ${hex}`}
+                      >
+                        <span
+                          className={cn(
+                            "block h-5 w-5 rounded-sm border border-border/80 shadow-sm",
+                            currentColorKey === waveRegionColorKey(hex) &&
+                              "ring-2 ring-primary ring-offset-1 ring-offset-popover",
+                          )}
+                          style={{ backgroundColor: hex }}
+                        />
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuGroup>
+                  <ContextMenuSeparator />
+                </>
+              ) : null;
+
+              if (isNamed) {
+                return (
+                  <>
+                    {colorGrid}
+                    <ContextMenuItem
+                      onSelect={() => openRenameNamedRegionDialog()}
+                    >
+                      Rename…
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onSelect={() => deleteNamedRegionFromContext()}
+                    >
+                      Delete
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onSelect={() => void autoDetectNamedRegionFromContext()}
+                    >
+                      Auto-detect region
+                    </ContextMenuItem>
+                  </>
+                );
+              }
+
+              return (
+                <>
+                  {colorGrid}
+                  <ContextMenuItem
+                    disabled={!canCreate}
+                    onSelect={() => openCreateNamedRegionDialog()}
+                  >
+                    Create named region
+                  </ContextMenuItem>
+                  {!canCreate && (
+                    <ContextMenuItem disabled className="text-muted-foreground">
+                      {r == null
+                        ? "Drag on the waveform to select a region first"
+                        : !isSubstantial
+                          ? "Selection too small (use a wider region)"
+                          : "This region is already named"}
+                    </ContextMenuItem>
+                  )}
+                </>
+              );
+            })()}
+          </ContextMenuContent>
+        </ContextMenu>
       </div>
 
       {/* Transport bar: playback, time, volume, zoom, envelope, export, advanced */}
@@ -3987,6 +4753,54 @@ export const AudioPreview = ({
         onChoice={handleExportOverwriteChoice}
       />
 
+      <Dialog
+        open={namedRegionPrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) setNamedRegionPrompt(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {namedRegionPrompt?.mode === "rename"
+                ? "Rename named region"
+                : "Create named region"}
+            </DialogTitle>
+            <DialogDescription>
+              Name appears on the waveform. Persisting to the library is not
+              wired yet.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="named-region-name">Name</Label>
+            <Input
+              id="named-region-name"
+              autoFocus
+              value={namedRegionNameInput}
+              onChange={(e) => setNamedRegionNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitNamedRegionDialog();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setNamedRegionPrompt(null)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => submitNamedRegionDialog()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Save As dialog - choose folder and filename when exporting to a different location */}
       <Dialog
         open={exportSaveAsOpen}
@@ -4090,7 +4904,7 @@ export const AudioPreview = ({
         onConfirm={handleExportOptionsConfirm}
         showRegionOption={(() => {
           const regs = regionsRef.current?.getRegions() ?? [];
-          const r = regs[0];
+          const r = getPrimaryWaveSelectionRegion(regs);
           const rStart = r?.start ?? 0;
           const rEnd = r?.end ?? duration;
           const lStart = Math.max(0, Math.min(duration, loopStart));

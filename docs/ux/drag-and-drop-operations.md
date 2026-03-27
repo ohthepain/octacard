@@ -22,7 +22,7 @@ If the user drops a global sample onto a local folder, the sample is downloaded 
 
 ## Drag local file onto local pack in the Pack Editor
 
-The local file is added to the local pack. It appears in the Pack Editor and is added to the pack.
+The local file is added to the local pack. It appears in the Pack Editor and is added to the pack as a PackSample.
 
 It will have the same name in the pack.
 
@@ -31,3 +31,8 @@ If the local file is dropped on the section "Drag samples from the stack or Temp
 If the local file is dropped onto a folder row in the Pack Editor, the file is added under that folder. If it is dropped on the root list area (or on a sample that already lives at pack root), it is added at pack root.
 
 **How this maps to the database (not `PackSample`):** Project local packs use **`ProjectPack`**, **`ProjectPackFolder`**, and **`ProjectPackEntry`** (`prisma/schema.prisma`). Each row in **`ProjectPackEntry`** is one sample slot in the pack: `displayName`, `sourceRef` (where to read the audio—local virtual path, `temp://…`, `remote://…`, etc.), and optional **`folderId`**. Set **`folderId`** to the id of a **`ProjectPackFolder`** to place the entry inside that folder; use **`null`** for the pack root. The global **`PackSample`** model ties published **`Pack`** records to content-addressed **`Sample`** rows and is unrelated to editing a **project** local pack structure.
+
+## Drag named region from wave editor onto local pack in the Pack Editor
+
+The user can convert a named region into a PackSample in the pack editor by drag-and-drop into the pack editor.
+The behavior is the same as dropping a file - see section "## Drag local file onto local pack in the Pack Editor"
