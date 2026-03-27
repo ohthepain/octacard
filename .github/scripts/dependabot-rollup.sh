@@ -31,7 +31,7 @@ pr_json="$(gh pr list \
   --base "${BASE_BRANCH}" \
   --limit 100 \
   --json number,title,headRefName,author,url \
-  --jq "map(select(.author.login==\"dependabot[bot]\"))")"
+  --jq 'map(select((.author.login | ascii_downcase | test("(^dependabot(\\[bot\\])?$)|(^app/dependabot$)|(^dependabot bot$)")) or (.headRefName | ascii_downcase | startswith("dependabot/")) ))')"
 
 selected_json="$(echo "${pr_json}" | jq ".[:${MAX_PRS}]")"
 selected_count="$(echo "${selected_json}" | jq 'length')"
