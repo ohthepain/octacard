@@ -85,7 +85,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1014.0",
     "@aws-sdk/client-sesv2": "^3.1018.0",
-    "@aws-sdk/s3-request-presigner": "^3.1014.0",
+    "@aws-sdk/s3-request-presigner": "^3.1018.0",
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@hono/node-server": "^1.13.7",
@@ -115,7 +115,7 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-hotkeys": "^0.8.1",
-    "@tanstack/react-router": "^1.168.2",
+    "@tanstack/react-router": "^1.168.7",
     "@tanstack/react-query": "^5.95.2",
     "@tanstack/router-plugin": "^1.166.13",
     "@tanstack/router-vite-plugin": "^1.166.23",
