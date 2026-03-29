@@ -25,7 +25,7 @@ export const DEFAULT_FORMAT_SETTINGS: FormatSettings = {
   sampleRate: "dont-change",
   sampleDepth: "dont-change",
   pitch: "dont-change",
-  sanitizeFilename: false,
+  sanitizeFilename: true,
   shortenFilename: false,
   shortenFilenameMaxLength: 32,
   mono: false,
