@@ -41,6 +41,8 @@ export interface ProjectPackEntry {
   sourceRef: string;
   regionStart: number;
   regionEnd: number;
+  /** Wave-editor named region id without `named:` prefix; optional provenance / future sync. */
+  sourceNamedRegionId?: string | null;
   sortOrder: number;
 }
 

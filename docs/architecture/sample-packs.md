@@ -37,3 +37,14 @@ Sample metadata can be stored in the project or the pack. When a sample is dragg
 Two versions of a pack can have different sample metadata, and the old metadata can be saved and versioned.
 
 When a sample is dragged from local into a sample pack, the pack gets a reference to the sample data and a reference to the sample metadata. When the sample is edited within the pack, the pack metadata is separate from the original sample metadata.
+
+# Exporting Sample Packs
+
+An exported sample pack is a folder structure that mirrors the structure of the Sample Pack in the sample pack editor.
+
+# Publishing Sample Packs
+
+Each PackSample is uploaded to the server as a WAV file if it doesn't already exist on the server. 
+An exported sample pack is a folder structure that mirrors the structure of the Sample Pack in the sample pack editor.
+
+

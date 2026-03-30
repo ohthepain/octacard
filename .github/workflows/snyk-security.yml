@@ -48,7 +48,7 @@ jobs:
         # For example for Node
         #- uses: actions/setup-node@v4
         #  with:
-        #    node-version: 20
+        #    node-version: 22
 
         env:
           # This is where you will need to introduce the Snyk API token created with your Snyk account

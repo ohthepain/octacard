@@ -75,6 +75,7 @@ const packEntrySchema = z.object({
   sourceRef: z.string().trim().min(1),
   regionStart: z.number().finite(),
   regionEnd: z.number().finite(),
+  sourceNamedRegionId: z.string().trim().min(1).nullable().optional(),
   sortOrder: z.number().int().min(0),
 });
 
@@ -648,6 +649,7 @@ projectsApp.get(
       sourceRef: e.sourceRef,
       regionStart: e.regionStart,
       regionEnd: e.regionEnd,
+      sourceNamedRegionId: e.sourceNamedRegionId,
       sortOrder: e.sortOrder,
     }));
 
@@ -702,6 +704,7 @@ projectsApp.put(
             sourceRef: e.sourceRef,
             regionStart: e.regionStart,
             regionEnd: e.regionEnd,
+            sourceNamedRegionId: e.sourceNamedRegionId ?? null,
             sortOrder: e.sortOrder,
           })),
         });

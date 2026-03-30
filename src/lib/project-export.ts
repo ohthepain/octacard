@@ -10,8 +10,36 @@ import { fromTempPath, getFile, isTempPath } from "./temp-files-store";
 import { parseRemoteSampleId } from "./audio-resolver";
 import type { ProjectDocument } from "./project-document";
 import { sanitizeFilenameMinimal } from "./filename";
+import type { ProjectPackEntry } from "./project-packs";
 import { getPackStructure } from "./project-packs";
 import { exportAudioWithEdits } from "./exportAudio";
+import { sourceRefToOpenParams } from "./pack-source-ref";
+import { useSampleEditsStore } from "@/stores/sample-edits-store";
+
+/** Prefer live named-region bounds from sample edits when entry is tied to a region id. */
+function resolvePackEntryRegionSeconds(
+  entry: Pick<
+    ProjectPackEntry,
+    | "sourceRef"
+    | "displayName"
+    | "regionStart"
+    | "regionEnd"
+    | "sourceNamedRegionId"
+  >,
+): { regionStart: number; regionEnd: number } {
+  const id = entry.sourceNamedRegionId?.trim();
+  if (id) {
+    const { path } = sourceRefToOpenParams(entry.sourceRef, entry.displayName);
+    const region = useSampleEditsStore
+      .getState()
+      .getEdits(path)
+      ?.namedRegions?.find((r) => r.id === id);
+    if (region && region.end > region.start) {
+      return { regionStart: region.start, regionEnd: region.end };
+    }
+  }
+  return { regionStart: entry.regionStart, regionEnd: entry.regionEnd };
+}
 
 /** Pack export config - from Pack model or inline when exporting from project */
 export interface PackExportConfig {
@@ -339,9 +367,10 @@ export async function exportProjectPackStructureToFolder(
     const blob = await resolvePathToBlob(entry.sourceRef, "source");
     if (!blob) continue;
 
+    const region = resolvePackEntryRegionSeconds(entry);
     const { mainBlob } = await exportAudioWithEdits(blob, {
-      regionStart: entry.regionStart,
-      regionEnd: entry.regionEnd,
+      regionStart: region.regionStart,
+      regionEnd: region.regionEnd,
     });
 
     const safeName = sanitizeFilenameMinimal(entry.displayName) || "sample";
@@ -408,9 +437,10 @@ export async function exportProjectPackStructureToZip(
     const blob = await resolvePathToBlob(entry.sourceRef, "source");
     if (!blob) continue;
 
+    const region = resolvePackEntryRegionSeconds(entry);
     const { mainBlob } = await exportAudioWithEdits(blob, {
-      regionStart: entry.regionStart,
-      regionEnd: entry.regionEnd,
+      regionStart: region.regionStart,
+      regionEnd: region.regionEnd,
     });
 
     const safeName = sanitizeFilenameMinimal(entry.displayName) || "sample";

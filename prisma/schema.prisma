@@ -214,6 +214,8 @@ model ProjectPackEntry {
   sourceRef   String   // temp://, remote://, local virtual path, or dest:/path when file lives on dest pane
   regionStart Float    // seconds
   regionEnd   Float    // seconds
+  /// Optional id of wave-editor named region (without named: prefix); aligns entry with sampleEdits.namedRegions.
+  sourceNamedRegionId String?
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -305,7 +307,6 @@ model TaxonomyValue {
   sortOrder   Int                       @default(0)
   attribute   TaxonomyAttribute         @relation(fields: [attributeId], references: [id], onDelete: Cascade)
   annotations SampleAnnotation[]
-  translations TaxonomyValueTranslation[]
   familyTypeLinks TaxonomyFamilyType[]  @relation("FamilyTypeFamily")
   typeFamilyLinks TaxonomyFamilyType[]  @relation("FamilyTypeType")
 
@@ -360,19 +361,6 @@ model SampleEmbedding {
   @@map("sample_embedding")
 }
 
-// Per-locale display labels for taxonomy values (localization)
-model TaxonomyValueTranslation {
-  id              String        @id @default(cuid())
-  taxonomyValueId String
-  locale          String        // en, de, etc.
-  label           String
-  taxonomyValue   TaxonomyValue @relation(fields: [taxonomyValueId], references: [id], onDelete: Cascade)
-
-  @@unique([taxonomyValueId, locale])
-  @@index([taxonomyValueId])
-  @@map("taxonomy_value_translation")
-}
-
 // Pack's reference to a sample. Sample ID = content hash.
 model PackSample {
   packId     String
@@ -405,6 +393,7 @@ model AuthCache {
   @@map("auth_cache")
 }
 
+/// User entitlement after acquiring a sample (pack purchase / credits); used in `library` and `sample-search` routes.
 model SampleCollection {
   id          String   @id @default(cuid())
   userId      String

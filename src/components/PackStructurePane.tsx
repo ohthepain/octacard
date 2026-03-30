@@ -1,10 +1,12 @@
 import {
   BarChart3,
   ChevronDown,
+  Download,
   FolderOpen,
   FolderPlus,
   Loader2,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -40,7 +42,13 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { parseRemoteSampleId } from "@/lib/audio-resolver";
 import { fileSystemService } from "@/lib/fileSystem";
-import { isPackEntryAudio, sourceRefToOpenParams } from "@/lib/pack-source-ref";
+import {
+  isPackEntryAudio,
+  packEntryMatchesWaveformEditor,
+  pathToPackEntrySourceRef,
+  sourceRefFileBasename,
+  sourceRefToOpenParams,
+} from "@/lib/pack-source-ref";
 import {
   getPackStructure,
   type PackStructure,
@@ -60,20 +68,25 @@ function isAudioFile(name: string): boolean {
   return AUDIO_EXT.test(name);
 }
 
-function pathToSourceRef(path: string, sourcePane: "source" | "dest"): string {
-  if (path.startsWith("temp://") || path.startsWith("remote://")) return path;
-  return sourcePane === "dest" ? `dest:${path}` : path;
-}
-
 function isAddEntryPayload(x: unknown): x is AddEntryPayload {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
-  return (
-    typeof o.sourceRef === "string" &&
-    typeof o.regionStart === "number" &&
-    typeof o.regionEnd === "number" &&
-    typeof o.defaultName === "string"
-  );
+  if (
+    typeof o.sourceRef !== "string" ||
+    typeof o.regionStart !== "number" ||
+    typeof o.regionEnd !== "number" ||
+    typeof o.defaultName !== "string"
+  ) {
+    return false;
+  }
+  if (
+    "sourceNamedRegionId" in o &&
+    o.sourceNamedRegionId != null &&
+    typeof o.sourceNamedRegionId !== "string"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /** Drag sources: custom pack payload, FilePane / TempFiles (`sourcePath` + `sourcePane`), or OS files. */
@@ -109,7 +122,7 @@ function parseSyncPackDropPayloads(e: React.DragEvent): AddEntryPayload[] {
           continue;
         if (!isAudioFile(o.name)) continue;
         out.push({
-          sourceRef: pathToSourceRef(o.path, sourcePane),
+          sourceRef: pathToPackEntrySourceRef(o.path, sourcePane),
           regionStart: 0,
           regionEnd: 0,
           defaultName: o.name,
@@ -128,7 +141,7 @@ function parseSyncPackDropPayloads(e: React.DragEvent): AddEntryPayload[] {
     if (!isAudioFile(base)) return [];
     return [
       {
-        sourceRef: pathToSourceRef(sourcePath, sourcePane),
+        sourceRef: pathToPackEntrySourceRef(sourcePath, sourcePane),
         regionStart: 0,
         regionEnd: 0,
         defaultName: base,
@@ -152,7 +165,7 @@ async function parseAsyncPackDropPayloads(
     const result = await resolveFileDrop(file, { paneType: "source" });
     if (result.success && result.path && result.name) {
       out.push({
-        sourceRef: pathToSourceRef(result.path, "source"),
+        sourceRef: pathToPackEntrySourceRef(result.path, "source"),
         regionStart: 0,
         regionEnd: 0,
         defaultName: result.name,
@@ -169,6 +182,7 @@ export interface AddEntryPayload {
   regionStart: number;
   regionEnd: number;
   defaultName: string;
+  sourceNamedRegionId?: string;
 }
 
 export type PackEntryOpenPayload = {
@@ -186,6 +200,16 @@ interface PackStructurePaneProps {
   onStructureChange?: (structure: PackStructure) => void;
   /** Sync file selection in navigation columns (BPM, etc.) when a pack entry is opened */
   onPackEntryOpen?: (payload: PackEntryOpenPayload) => void;
+  /** First time entries are added to a previously empty pack (e.g. prompt to name/edit metadata). */
+  onFirstEntriesAdded?: (packId: string) => void;
+  /** Local WAV preview: folder picker export (when supported). */
+  onPreviewBuildToFolder?: () => void;
+  onPreviewBuildZip?: () => void;
+  previewBuildBusy?: boolean;
+  canPickPreviewFolder?: boolean;
+  /** Creates library pack shell; WAV samples are uploaded separately. */
+  onPublishPack?: () => void;
+  publishPackBusy?: boolean;
 }
 
 function buildFolderTree(
@@ -496,6 +520,13 @@ export function PackStructurePane({
   packDisplayName = "This pack",
   onStructureChange,
   onPackEntryOpen,
+  onFirstEntriesAdded,
+  onPreviewBuildToFolder,
+  onPreviewBuildZip,
+  previewBuildBusy = false,
+  canPickPreviewFolder = false,
+  onPublishPack,
+  publishPackBusy = false,
 }: PackStructurePaneProps) {
   const [structure, setStructure] = useState<PackStructure | null>(null);
   const [loading, setLoading] = useState(true);
@@ -541,13 +572,14 @@ export function PackStructurePane({
   }, [load]);
 
   const save = useCallback(
-    async (next: PackStructure) => {
+    async (next: PackStructure, options?: { afterCommit?: () => void }) => {
       if (!projectId || !packId) return;
       setSaving(true);
       try {
         await putPackStructure(projectId, packId, next);
         setStructure(next);
         onStructureChange?.(next);
+        options?.afterCommit?.();
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "Failed to save pack structure",
@@ -647,6 +679,7 @@ export function PackStructurePane({
     (folderId: string | null, payloads: AddEntryPayload[]) => {
       if (payloads.length === 0) return;
       if (!structure) return;
+      const wasEmpty = structure.entries.length === 0;
       const newEntries: ProjectPackEntry[] = payloads.map((payload, i) => ({
         id: crypto.randomUUID(),
         folderId,
@@ -654,14 +687,22 @@ export function PackStructurePane({
         sourceRef: payload.sourceRef,
         regionStart: payload.regionStart,
         regionEnd: payload.regionEnd,
+        sourceNamedRegionId: payload.sourceNamedRegionId ?? null,
         sortOrder: structure.entries.length + i,
       }));
-      void save({
-        folders: structure.folders,
-        entries: [...structure.entries, ...newEntries],
-      });
+      void save(
+        {
+          folders: structure.folders,
+          entries: [...structure.entries, ...newEntries],
+        },
+        wasEmpty
+          ? {
+              afterCommit: () => onFirstEntriesAdded?.(packId),
+            }
+          : undefined,
+      );
     },
-    [structure, save],
+    [structure, save, onFirstEntriesAdded, packId],
   );
 
   const handlePackDrop = useCallback(
@@ -686,17 +727,22 @@ export function PackStructurePane({
   const handleEntryActivate = useCallback(
     (entry: ProjectPackEntry) => {
       if (!isPackEntryAudio(entry)) return;
-      const { path, paneType, name } = sourceRefToOpenParams(
+      const { path, paneType } = sourceRefToOpenParams(
         entry.sourceRef,
         entry.displayName,
       );
-      onPackEntryOpen?.({ path, name, paneType });
+      const waveFileName =
+        sourceRefFileBasename(entry.sourceRef).trim() || entry.displayName;
+      onPackEntryOpen?.({ path, name: waveFileName, paneType });
+      const wave = useWaveformEditorStore.getState();
+      const sameFileOpen = packEntryMatchesWaveformEditor(entry, wave);
       const previewMode =
         useProjectStore.getState().getActiveStack()?.previewMode ?? "single";
       if (previewMode === "multi") {
         useProjectStore
           .getState()
-          .putSampleInActiveSlot({ path, name, paneType });
+          .putSampleInActiveSlot({ path, name: waveFileName, paneType });
+        if (sameFileOpen) return;
         const active = useProjectStore.getState().getActiveStack();
         const slots = active?.slots ?? [];
         const activeSlotIndex = active?.activeSlotIndex ?? 0;
@@ -711,8 +757,10 @@ export function PackStructurePane({
               sample.id,
             );
         }
-      } else {
-        useWaveformEditorStore.getState().openWithFile(path, name, paneType);
+      } else if (!sameFileOpen) {
+        useWaveformEditorStore
+          .getState()
+          .openWithFile(path, waveFileName, paneType);
       }
     },
     [onPackEntryOpen],
@@ -739,13 +787,13 @@ export function PackStructurePane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2 py-2">
         <Input
           placeholder="New folder name"
           value={newFolderName}
           onChange={(e) => setNewFolderName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAddFolder()}
-          className="h-8 flex-1"
+          className="h-8 min-w-[120px] flex-1"
         />
         <Button
           size="sm"
@@ -756,6 +804,61 @@ export function PackStructurePane({
           <FolderPlus className="h-3.5 w-3.5" />
           Add folder
         </Button>
+        {onPreviewBuildZip || onPreviewBuildToFolder ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1"
+                disabled={previewBuildBusy}
+                aria-label="Preview pack build"
+              >
+                {previewBuildBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                Preview
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canPickPreviewFolder && onPreviewBuildToFolder ? (
+                <DropdownMenuItem
+                  onSelect={() => void onPreviewBuildToFolder()}
+                  disabled={previewBuildBusy}
+                >
+                  Write sliced WAVs to folder…
+                </DropdownMenuItem>
+              ) : null}
+              {onPreviewBuildZip ? (
+                <DropdownMenuItem
+                  onSelect={() => void onPreviewBuildZip()}
+                  disabled={previewBuildBusy}
+                >
+                  Download sliced WAVs as zip
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+        {onPublishPack ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 gap-1"
+            disabled={publishPackBusy}
+            onClick={() => void onPublishPack()}
+            aria-label="Publish pack to library"
+          >
+            {publishPackBusy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Upload className="h-3.5 w-3.5" />
+            )}
+            Publish
+          </Button>
+        ) : null}
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 p-2">

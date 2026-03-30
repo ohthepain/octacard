@@ -80,6 +80,7 @@ import {
   deleteProjectPack as deleteLocalProjectPack,
   getProjectLocalPackCoverDisplayUrl,
   listProjectPacks,
+  publishProjectPack,
   type ProjectLocalPack,
 } from "@/lib/project-packs";
 import {
@@ -260,6 +261,9 @@ const Index = () => {
   const [localPackEditor, setLocalPackEditor] = useState<LocalPackEditorState | null>(null);
   const [activeLocalPackId, setActiveLocalPackId] = useState<string | null>(null);
   const [exportingLocalPack, setExportingLocalPack] = useState(false);
+  const [publishingLocalPack, setPublishingLocalPack] = useState(false);
+  /** Skip auto-opening pack edit dialog right after create when user immediately adds first drop. */
+  const packCreateCooldownUntilRef = useRef<Map<string, number>>(new Map());
   const {
     favorites: sourceLocalFolders,
     addFavorite,
@@ -1147,6 +1151,7 @@ const Index = () => {
 
   const handleLocalPackSaved = useCallback((pack: ProjectLocalPack, saveMode: "create" | "edit") => {
     if (saveMode === "create") {
+      packCreateCooldownUntilRef.current.set(pack.id, Date.now() + 5000);
       setLocalProjectPacks((current) => [pack, ...current]);
       setEditorMode("pack");
       setActiveLocalPackId(pack.id);
@@ -1155,6 +1160,17 @@ const Index = () => {
       setLocalProjectPacks((current) => current.map((p) => (p.id === pack.id ? pack : p)));
     }
   }, []);
+
+  const handlePackFirstEntriesAdded = useCallback(
+    (packId: string) => {
+      const until = packCreateCooldownUntilRef.current.get(packId);
+      if (until != null && Date.now() < until) return;
+      const pack = localProjectPacks.find((p) => p.id === packId);
+      if (!pack) return;
+      setLocalPackEditor({ mode: "edit", pack });
+    },
+    [localProjectPacks],
+  );
 
   const handleOpenProjectPack = useCallback(
     (packId: string) => {
@@ -1313,6 +1329,31 @@ const Index = () => {
     }
   }, [activeLocalPack, projectId]);
 
+  const handlePublishLocalPack = useCallback(async () => {
+    if (!activeLocalPack || !projectId) {
+      toast.error("Select a local pack first");
+      return;
+    }
+    setPublishingLocalPack(true);
+    try {
+      const result = await publishProjectPack(projectId, activeLocalPack.id, {
+        packName: activeLocalPack.name,
+      });
+      toast.success(`Library pack “${result.packName}” created`, {
+        description:
+          "This only registers an empty pack in the global library. Upload each WAV via the Library flow (or API); local Preview still builds sliced files on disk.",
+        duration: 12000,
+      });
+    } catch (e) {
+      toast.error("Publish failed", {
+        description: e instanceof Error ? e.message : "Unknown error",
+        duration: 8000,
+      });
+    } finally {
+      setPublishingLocalPack(false);
+    }
+  }, [activeLocalPack, projectId]);
+
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
@@ -1364,19 +1405,19 @@ const Index = () => {
           {editorMode === "pack" && activeLocalPack ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" disabled={exportingLocalPack} aria-label="Export local pack">
+                <Button variant="outline" size="sm" disabled={exportingLocalPack} aria-label="Preview local pack build">
                   {exportingLocalPack ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                  Export
+                  Preview
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {hasDirectoryPickerSupport() && (
                   <DropdownMenuItem onClick={() => void handleExportLocalPackToFolder()} disabled={exportingLocalPack}>
-                    Export to folder...
+                    Write sliced WAVs to folder…
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={() => void handleExportLocalPackToZip()} disabled={exportingLocalPack}>
-                  Download as zip
+                  Download sliced WAVs as zip
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1616,7 +1657,7 @@ const Index = () => {
                     key={`source-${sourceRootVersion}`}
                     paneName="source"
                     title="Local Files"
-                    showSidebar={true}
+                    showSidebar={false}
                     onPathChange={handleSourcePathChange}
                     onSelectionChange={setSelectedSourceItem}
                     onRequestedPathHandled={handleRequestedSourcePathHandled}
@@ -1681,6 +1722,17 @@ const Index = () => {
                     packId={activeLocalPackId}
                     packDisplayName={activeLocalPack?.name ?? "Pack"}
                     onPackEntryOpen={handlePackEntryOpen}
+                    onFirstEntriesAdded={handlePackFirstEntriesAdded}
+                    onPreviewBuildToFolder={
+                      hasDirectoryPickerSupport()
+                        ? () => void handleExportLocalPackToFolder()
+                        : undefined
+                    }
+                    onPreviewBuildZip={() => void handleExportLocalPackToZip()}
+                    previewBuildBusy={exportingLocalPack}
+                    canPickPreviewFolder={hasDirectoryPickerSupport()}
+                    onPublishPack={() => void handlePublishLocalPack()}
+                    publishPackBusy={publishingLocalPack}
                   />
                 ) : editorMode === "pack" ? (
                   <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground text-center">

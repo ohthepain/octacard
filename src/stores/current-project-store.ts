@@ -20,6 +20,17 @@ import {
   isOurSavedProject,
 } from "@/lib/liveblocks-project-sync";
 
+function waitForSampleEditsPersistenceHydration(): Promise<void> {
+  const p = useSampleEditsStore.persist;
+  if (p.hasHydrated()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsub = p.onFinishHydration(() => {
+      unsub();
+      resolve();
+    });
+  });
+}
+
 interface CurrentProjectState {
   isHydrating: boolean;
   loadProject: () => Promise<boolean>;
@@ -49,6 +60,7 @@ export const useCurrentProjectStore = create<CurrentProjectState>((set, get) => 
     const project = await getProject();
     if (!project) return false;
 
+    await waitForSampleEditsPersistenceHydration();
     await get().persistToProject();
     useRoomStore.getState().leaveRoom();
 
