@@ -464,6 +464,11 @@ export function ProjectColumn({
                             highlightedLocalFolderId === folder.id ? "bg-primary/10 text-primary" : "",
                           )}
                           onClick={() => onOpenLocalFolder(folder.id)}
+                          data-testid={
+                            folder.path
+                              ? `favorite-open-source-${folder.path.replace(/[^a-zA-Z0-9_-]/g, "_")}`
+                              : undefined
+                          }
                         >
                           <Star className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">{folder.name}</span>

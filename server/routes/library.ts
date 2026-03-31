@@ -1227,7 +1227,7 @@ libraryApp.get("/packs/:id/cover", async (c) => {
     where: { id },
     select: { coverImageS3Key: true },
   });
-  if (!pack || !pack.coverImageS3Key) {
+  if (!pack?.coverImageS3Key) {
     throw new HTTPException(404, { message: "Pack cover not found" });
   }
 

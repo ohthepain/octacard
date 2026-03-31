@@ -368,11 +368,37 @@ export function testInitScript() {
       destPane: "dest",
     });
   });
-  if (!localStorage.getItem("octacard_favorites_source__default")) {
-    localStorage.setItem("octacard_favorites_source__default", JSON.stringify([{ path: "/Alpha", name: "Alpha" }]));
-  }
-  if (!localStorage.getItem("octacard_favorites_dest__default")) {
-    localStorage.setItem("octacard_favorites_dest__default", JSON.stringify([{ path: "/Beta", name: "Beta" }]));
+  // Match getLegacyStorageKey("source__default") / ("dest__default") in favorites-store.ts.
+  // After a mid-test reload, legacy can be "[]" and v2 can exist with an empty source bucket; the app
+  // prefers v2 and would show no favorites unless we re-seed and drop that stale v2.
+  const parseList = (key) => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const ensurePath = (key, path, name) => {
+    const list = parseList(key);
+    if (!list.some((f) => f && f.path === path)) {
+      list.push({ path, name });
+      localStorage.setItem(key, JSON.stringify(list));
+    }
+  };
+  ensurePath("octacard_favorites_source_default", "/Alpha", "Alpha");
+  ensurePath("octacard_favorites_dest_default", "/Beta", "Beta");
+  try {
+    const v2raw = localStorage.getItem("octacard_favorites_store_v2");
+    if (v2raw) {
+      const v2 = JSON.parse(v2raw);
+      const src = v2?.favoritesByVolume?.source__default;
+      if (!Array.isArray(src) || src.length === 0) {
+        localStorage.removeItem("octacard_favorites_store_v2");
+      }
+    }
+  } catch {
+    localStorage.removeItem("octacard_favorites_store_v2");
   }
 
   window.addEventListener("octacard-test-drop", async (e) => {

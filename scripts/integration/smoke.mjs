@@ -274,12 +274,12 @@ try {
 
   const breadcrumbFavoriteButton = page.getByTestId("breadcrumb-favorite-source");
   const sourceFavoritesBeforeToggle = JSON.parse(
-    (await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"))) ?? "[]",
+    (await page.evaluate(() => localStorage.getItem("octacard_favorites_source_default"))) ?? "[]",
   );
   await breadcrumbFavoriteButton.click();
   await waitForAriaPressed(page, "breadcrumb-favorite-source", "true");
 
-  let storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
+  let storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source_default"));
   assert.ok(storedFavorites, "Source favorites should be persisted.");
   const parsedFavoritesAfterAdd = JSON.parse(storedFavorites);
   assert.equal(
@@ -327,7 +327,7 @@ try {
   const breadcrumbFavoriteButtonAfterReload = page.getByTestId("breadcrumb-favorite-source");
   await breadcrumbFavoriteButtonAfterReload.click();
   await waitForAriaPressed(page, "breadcrumb-favorite-source", "false");
-  storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source__default"));
+  storedFavorites = await page.evaluate(() => localStorage.getItem("octacard_favorites_source_default"));
   assert.ok(storedFavorites, "Source favorites storage should exist after toggle.");
   const parsedFavoritesAfterRemove = JSON.parse(storedFavorites);
   assert.ok(
