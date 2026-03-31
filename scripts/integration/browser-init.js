@@ -219,11 +219,34 @@
       destPane: "dest",
     });
   });
-  if (!localStorage.getItem("octacard_favorites_source__default")) {
-    localStorage.setItem("octacard_favorites_source__default", JSON.stringify([{ path: "/Alpha", name: "Alpha" }]));
-  }
-  if (!localStorage.getItem("octacard_favorites_dest__default")) {
-    localStorage.setItem("octacard_favorites_dest__default", JSON.stringify([{ path: "/Beta", name: "Beta" }]));
+  const parseList = (key) => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const ensurePath = (key, path, name) => {
+    const list = parseList(key);
+    if (!list.some((f) => f && f.path === path)) {
+      list.push({ path, name });
+      localStorage.setItem(key, JSON.stringify(list));
+    }
+  };
+  ensurePath("octacard_favorites_source_default", "/Alpha", "Alpha");
+  ensurePath("octacard_favorites_dest_default", "/Beta", "Beta");
+  try {
+    const v2raw = localStorage.getItem("octacard_favorites_store_v2");
+    if (v2raw) {
+      const v2 = JSON.parse(v2raw);
+      const src = v2?.favoritesByVolume?.source__default;
+      if (!Array.isArray(src) || src.length === 0) {
+        localStorage.removeItem("octacard_favorites_store_v2");
+      }
+    }
+  } catch {
+    localStorage.removeItem("octacard_favorites_store_v2");
   }
   window.addEventListener("octacard-test-drop", async (e) => {
     const d = e.detail;

@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import {
   favoritesStore,
+  getFavoritesVolumeKey,
   type AddFavoriteInput,
   type Favorite,
   useFavoritesSelector,
@@ -16,7 +17,7 @@ const EMPTY_FAVORITES: Favorite[] = [];
  * Backed by a centralized persisted store.
  */
 export function useFavorites(paneType: FavoritePaneType, volumeId: string) {
-  const volumeKey = `${paneType}__${volumeId || "_default"}`;
+  const volumeKey = getFavoritesVolumeKey(paneType, volumeId);
   const favorites = useFavoritesSelector(
     (state) => state.favoritesByVolume[volumeKey] ?? EMPTY_FAVORITES,
   );

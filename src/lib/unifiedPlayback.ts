@@ -469,7 +469,7 @@ export async function startUnifiedPlayback(
       const sampleId = pathToSampleId.get(path);
       if (!sampleId) return null;
       const s = sources.find((src) => src.path === path);
-      if (!s || !s.loopEnabled) return null;
+      if (!s?.loopEnabled) return null;
       const startTime = startTimes.get(sampleId);
       if (startTime == null) return null;
       const now = ctx.currentTime;

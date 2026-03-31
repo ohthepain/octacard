@@ -120,8 +120,8 @@ const initScript = `
     },
     revealInFinder: () => ({ success: true })
   };
-  localStorage.setItem("octacard_favorites_source__default", JSON.stringify([{ path: "/Alpha", name: "Alpha" }]));
-  localStorage.setItem("octacard_favorites_dest__default", JSON.stringify([{ path: "/Beta", name: "Beta" }]));
+  localStorage.setItem("octacard_favorites_source_default", JSON.stringify([{ path: "/Alpha", name: "Alpha" }]));
+  localStorage.setItem("octacard_favorites_dest_default", JSON.stringify([{ path: "/Beta", name: "Beta" }]));
 })();
 `;
 
