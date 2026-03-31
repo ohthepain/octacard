@@ -186,8 +186,10 @@ resource "aws_s3_bucket_public_access_block" "uploads" {
 resource "aws_db_instance" "postgres" {
   identifier     = "${local.name_prefix}-db"
   engine         = "postgres"
-  engine_version = "16"
+  engine_version = "18.1"
   instance_class = var.db_instance_class
+
+  allow_major_version_upgrade = true
 
   allocated_storage     = var.db_allocated_storage
   max_allocated_storage = var.db_max_allocated_storage
