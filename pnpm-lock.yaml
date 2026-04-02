@@ -35,8 +35,8 @@ importers:
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.9)(zod@4.3.6)
       '@liveblocks/client':
-        specifier: ^3.15.5
-        version: 3.15.5(@types/json-schema@7.0.15)
+        specifier: ^3.16.0
+        version: 3.16.0(@types/json-schema@7.0.15)
       '@prisma/adapter-pg':
         specifier: ^7.6.0
         version: 7.6.0
@@ -1701,11 +1701,11 @@ packages:
   '@kurkle/color@0.3.4':
     resolution: {integrity: sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w==}
 
-  '@liveblocks/client@3.15.5':
-    resolution: {integrity: sha512-t+Oo47ne8pbm8VJXjB+3ZFpjBnF2QNdsidQePXkRDJQ+pDCWQrWu0tC0+2n9C7Bvr6pHy5ucZYBuYzjPzNKVaw==}
+  '@liveblocks/client@3.16.0':
+    resolution: {integrity: sha512-38WLJFlwzclV60v9lv6PdYHarTyiVUEgNQe4STk5Ziz5hKcVXGCPBUDBz0q7iVRR0BVv1kfZTWSA8ZVphqAv/w==}
 
-  '@liveblocks/core@3.15.5':
-    resolution: {integrity: sha512-tbBVrHIb0nbjTTuKnix1v+HVXJo353Rb+hGvEMejotzgyrAXupEdWLhctLswIWa7PQP8g9bDPhpSKD7omF1clA==}
+  '@liveblocks/core@3.16.0':
+    resolution: {integrity: sha512-rSJ7113iJTOcARXgM1Dk+RKwBGAfGqFc5UpsQeTnQQuvvQMNlWs6A1bdFvuQOtMOYxtl992xKvWDC2EWidZAzA==}
     peerDependencies:
       '@types/json-schema': ^7
 
@@ -8697,13 +8697,13 @@ snapshots:
 
   '@kurkle/color@0.3.4': {}
 
-  '@liveblocks/client@3.15.5(@types/json-schema@7.0.15)':
+  '@liveblocks/client@3.16.0(@types/json-schema@7.0.15)':
     dependencies:
-      '@liveblocks/core': 3.15.5(@types/json-schema@7.0.15)
+      '@liveblocks/core': 3.16.0(@types/json-schema@7.0.15)
     transitivePeerDependencies:
       - '@types/json-schema'
 
-  '@liveblocks/core@3.15.5(@types/json-schema@7.0.15)':
+  '@liveblocks/core@3.16.0(@types/json-schema@7.0.15)':
     dependencies:
       '@types/json-schema': 7.0.15
 
