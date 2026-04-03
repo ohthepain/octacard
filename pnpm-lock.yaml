@@ -179,8 +179,8 @@ importers:
         specifier: ^12.15.0
         version: 12.15.0
       posthog-js:
-        specifier: ^1.364.2
-        version: 1.364.2
+        specifier: ^1.364.6
+        version: 1.364.6
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -1937,11 +1937,11 @@ packages:
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
 
-  '@posthog/core@1.24.4':
-    resolution: {integrity: sha512-S+TolwBHSSJz7WWtgaELQWQqXviSm3uf1e+qorWUts0bZcgPwWzhnmhCUZAhvn0NVpTQHDJ3epv+hHbPLl5dHg==}
+  '@posthog/core@1.24.6':
+    resolution: {integrity: sha512-9WkcRKqmXSWIJcca6m3VwA9YbFd4HiG2hKEtDq6FcwEHlvfDhQQUZ5/sJZ47Fw8OtyNMHQ6rW4+COttk4Bg5NQ==}
 
-  '@posthog/types@1.364.2':
-    resolution: {integrity: sha512-SMTdaYanvRmatgheXtu2XkewhuhdXe8C3JCi7m/Hd2n+sa2DaJphcwg3nAkPtfV69JHMxJLe/gyOt7yFtbQSjQ==}
+  '@posthog/types@1.364.6':
+    resolution: {integrity: sha512-bgw5FBgxiS+aBql0UxZApNgdIdhxjRuKAs/qWUHoRSNnE8tOLVewB/Hb5mzBQCbyQVSVDAkmHEZAa7ePgtqfhw==}
 
   '@prisma/adapter-pg@7.6.0':
     resolution: {integrity: sha512-BjHNmJqqa42NqJSDPnXUfwUofWo8LJY7Ui2gqxN4DmAOb+H/gGKv+hln2Xq/1kSJXPW5AXMXuNiPDMpywvyIOw==}
@@ -5974,8 +5974,8 @@ packages:
     resolution: {integrity: sha512-Jtc2612XINuBjIl/QTWsV5UvE8UHuNblcO3vVADSrKsrc6RqGX6lOW1cEo3CM2v0XG4Nat8nI+YM7/f26VxXLw==}
     engines: {node: '>=12'}
 
-  posthog-js@1.364.2:
-    resolution: {integrity: sha512-ryeCFcaORLouVI5wsKxnraIDvKFM6RAxbbKlKuqo+A8VFZ9JvvRpwzfiMQR2trGsJUYcn6B3R4Rn0Xht9NrhAQ==}
+  posthog-js@1.364.6:
+    resolution: {integrity: sha512-igc1nGc7J3njFZyQBMMGbFgjz6zx/0wxumHNW/MizJgslLFvSmoH8nfNIi1JM6bX1QhuUa7KCTaTtzZADzG9lA==}
 
   preact@10.29.0:
     resolution: {integrity: sha512-wSAGyk2bYR1c7t3SZ3jHcM6xy0lcBcDel6lODcs9ME6Th++Dx2KU+6D3HD8wMMKGA8Wpw7OMd3/4RGzYRpzwRg==}
@@ -8923,11 +8923,9 @@ snapshots:
 
   '@poppinss/exception@1.2.3': {}
 
-  '@posthog/core@1.24.4':
-    dependencies:
-      cross-spawn: 7.0.6
+  '@posthog/core@1.24.6': {}
 
-  '@posthog/types@1.364.2': {}
+  '@posthog/types@1.364.6': {}
 
   '@prisma/adapter-pg@7.6.0':
     dependencies:
@@ -13772,15 +13770,15 @@ snapshots:
 
   postgres@3.4.7: {}
 
-  posthog-js@1.364.2:
+  posthog-js@1.364.6:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.208.0
       '@opentelemetry/exporter-logs-otlp-http': 0.208.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-logs': 0.208.0(@opentelemetry/api@1.9.1)
-      '@posthog/core': 1.24.4
-      '@posthog/types': 1.364.2
+      '@posthog/core': 1.24.6
+      '@posthog/types': 1.364.6
       core-js: 3.49.0
       dompurify: 3.3.3
       fflate: 0.4.8
