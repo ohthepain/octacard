@@ -153,7 +153,7 @@
   "devDependencies": {
     "@bgotink/playwright-coverage": "^0.3.2",
     "@biomejs/biome": "^2.4.10",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
