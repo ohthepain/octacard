@@ -30,7 +30,11 @@ importers:
         version: 0.12.2
       '@hono/node-server':
         specifier: ^1.19.12
+<<<<<<< HEAD
         version: 1.19.12(hono@4.12.12)
+=======
+        version: 1.19.12(hono@4.12.9)
+>>>>>>> f72e417bffe28f4bdff7d9905cb4184db13942e3
       '@hono/zod-validator':
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.12)(zod@4.3.6)
@@ -8789,7 +8793,15 @@ snapshots:
     dependencies:
       hono: 4.12.12
 
+<<<<<<< HEAD
   '@hono/node-server@1.19.12(hono@4.12.12)':
+=======
+  '@hono/node-server@1.19.12(hono@4.12.9)':
+    dependencies:
+      hono: 4.12.9
+
+  '@hono/zod-validator@0.7.6(hono@4.12.9)(zod@4.3.6)':
+>>>>>>> f72e417bffe28f4bdff7d9905cb4184db13942e3
     dependencies:
       hono: 4.12.12
 
