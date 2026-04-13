@@ -118,7 +118,7 @@
     "@tanstack/react-router": "^1.168.10",
     "@tanstack/react-query": "^5.96.2",
     "@tanstack/router-plugin": "^1.167.12",
-    "@tanstack/router-vite-plugin": "^1.166.24",
+    "@tanstack/router-vite-plugin": "^1.166.35",
     "@tanstack/start": "^1.120.20",
     "@tanstack/start-plugin": "^1.111.2",
     "@vitest/coverage-v8": "^4.0.18",
