@@ -83,14 +83,14 @@
     "build:push:production": "./scripts/docker-build-push.sh production"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1029.0",
+    "@aws-sdk/client-s3": "^3.1030.0",
     "@aws-sdk/client-sesv2": "^3.1029.0",
-    "@aws-sdk/s3-request-presigner": "^3.1029.0",
+    "@aws-sdk/s3-request-presigner": "^3.1030.0",
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@hono/node-server": "^1.19.14",
     "@hono/zod-validator": "^0.7.6",
-    "@liveblocks/client": "^3.18.0",
+    "@liveblocks/client": "^3.18.1",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -117,7 +117,7 @@
     "@tanstack/react-hotkeys": "^0.9.1",
     "@tanstack/react-router": "^1.168.10",
     "@tanstack/react-query": "^5.99.0",
-    "@tanstack/router-plugin": "^1.167.12",
+    "@tanstack/router-plugin": "^1.167.22",
     "@tanstack/router-vite-plugin": "^1.166.35",
     "@tanstack/start": "^1.120.20",
     "@tanstack/start-plugin": "^1.111.2",
@@ -134,11 +134,11 @@
     "hono": "^4.12.12",
     "idb-keyval": "^6.2.2",
     "jszip": "^3.10.1",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.8.0",
     "next-themes": "^0.4.6",
     "pg": "^8.13.1",
     "pg-boss": "^12.15.0",
-    "posthog-js": "^1.365.1",
+    "posthog-js": "^1.368.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-resizable-panels": "^4.10.0",
@@ -176,7 +176,7 @@
     "typescript": "^6.0.2",
     "vite": "^7.3.1",
     "vitest": "^4.0.18",
-    "wait-on": "^9.0.4"
+    "wait-on": "^9.0.5"
   },
   "pnpm": {
     "patchedDependencies": {
