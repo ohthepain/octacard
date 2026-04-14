@@ -20,8 +20,8 @@ importers:
         specifier: ^3.1029.0
         version: 3.1029.0
       '@aws-sdk/s3-request-presigner':
-        specifier: ^3.1029.0
-        version: 3.1029.0
+        specifier: ^3.1030.0
+        version: 3.1030.0
       '@ffmpeg/ffmpeg':
         specifier: 0.12.15
         version: 0.12.15
@@ -427,8 +427,8 @@ packages:
     resolution: {integrity: sha512-6Q8B1dcx6BBqUTY1Mc/eROKA0FImEEY5VPSd6AGPEUf0ErjExz4snVqa9kNJSoVDV1rKaNf3qrWojgcKW+SdDg==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/s3-request-presigner@3.1029.0':
-    resolution: {integrity: sha512-YbHPaha4DYgJWdPorGV5ZSCCqHafGj4GiyqXmXFlCJSsqlOd3xEcemhOZGjrB9epdiVEUtB3DDJXGYYj55ITdQ==}
+  '@aws-sdk/s3-request-presigner@3.1030.0':
+    resolution: {integrity: sha512-rLM1DjBb9QlQwijKGtVSfWGi2gEz8yYj244RRWsPoGAhl57xKS0OGq6MygP/UYTPVc6r5qr4a8Gq1wos4QxnVw==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/signature-v4-multi-region@3.996.16':
@@ -8033,7 +8033,7 @@ snapshots:
       '@smithy/types': 4.14.0
       tslib: 2.8.1
 
-  '@aws-sdk/s3-request-presigner@3.1029.0':
+  '@aws-sdk/s3-request-presigner@3.1030.0':
     dependencies:
       '@aws-sdk/signature-v4-multi-region': 3.996.16
       '@aws-sdk/types': 3.973.7
