@@ -161,7 +161,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/wavesurfer.js": "^6.0.12",
     "@vitejs/plugin-react": "^5.2.0",
-    "autoprefixer": "^10.4.27",
+    "autoprefixer": "^10.5.0",
     "concurrently": "^9.2.1",
     "esbuild": "^0.28.0",
     "istanbul-merge": "^2.0.0",
