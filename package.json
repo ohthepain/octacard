@@ -173,7 +173,7 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.19.2",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.18",
     "wait-on": "^9.0.4"
