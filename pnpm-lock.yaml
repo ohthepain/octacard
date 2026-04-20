@@ -35,8 +35,8 @@ importers:
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.12)(zod@4.3.6)
       '@liveblocks/client':
-        specifier: ^3.18.0
-        version: 3.18.0(@types/json-schema@7.0.15)
+        specifier: ^3.18.3
+        version: 3.18.3(@types/json-schema@7.0.15)
       '@prisma/adapter-pg':
         specifier: ^7.7.0
         version: 7.7.0
@@ -1864,11 +1864,11 @@ packages:
   '@kurkle/color@0.3.4':
     resolution: {integrity: sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w==}
 
-  '@liveblocks/client@3.18.0':
-    resolution: {integrity: sha512-pr9Os4P/Rc9tB4/7rEaVk64CVKF16S3+i/OjklxCvVV37DwTyslyyLEtQiyaT54CiNJDKVi4s6VywPTpp/yCOg==}
+  '@liveblocks/client@3.18.3':
+    resolution: {integrity: sha512-u6gBavD+sjYDjIukz7gEdnzJo/tHs44Q1bfQXXhhqwlUBMtfWmlu3xl8Kdy+r1A5ObUl7gtSvpb25zS44lsrJQ==}
 
-  '@liveblocks/core@3.18.0':
-    resolution: {integrity: sha512-PXpcxvmc1+AOcp7v7qZD+eboIBjrZNySYKAxFJ8CJd9ElWQtK8fRKjzmlbU6ejbotem2X0qvxw5sltDkvEO4+Q==}
+  '@liveblocks/core@3.18.3':
+    resolution: {integrity: sha512-1wQBW0vPc/Squ1tz7gjyIsbCo/n/nPaDe3OdoWKcJuIMaLFnhABZ/SBoC+wE6RBCd/VWc65tFWMta3V6DJIrmw==}
     peerDependencies:
       '@types/json-schema': ^7
 
@@ -1877,8 +1877,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@mongodb-js/saslprep@1.4.6':
-    resolution: {integrity: sha512-y+x3H1xBZd38n10NZF/rEBlvDOOMQ6LKUTHqr8R9VkJ+mmQOYtJFxIlkkK8fZrtOiL6VixbOBWMbZGBdal3Z1g==}
+  '@mongodb-js/saslprep@1.4.8':
+    resolution: {integrity: sha512-kpjr2jy2w71w0oqAMI8oibBmiF9lXxWkEQs5gMkW4hVE48bsqINGLxnCSYW62ck/NHXJQpQEfA9WlJ1sY0eqBg==}
 
   '@noble/ciphers@2.2.0':
     resolution: {integrity: sha512-Z6pjIZ/8IJcCGzb2S/0Px5J81yij85xASuk1teLNeg75bfT07MV3a/O2Mtn1I2se43k3lkVEcFaR10N4cgQcZA==}
@@ -9095,13 +9095,13 @@ snapshots:
 
   '@kurkle/color@0.3.4': {}
 
-  '@liveblocks/client@3.18.0(@types/json-schema@7.0.15)':
+  '@liveblocks/client@3.18.3(@types/json-schema@7.0.15)':
     dependencies:
-      '@liveblocks/core': 3.18.0(@types/json-schema@7.0.15)
+      '@liveblocks/core': 3.18.3(@types/json-schema@7.0.15)
     transitivePeerDependencies:
       - '@types/json-schema'
 
-  '@liveblocks/core@3.18.0(@types/json-schema@7.0.15)':
+  '@liveblocks/core@3.18.3(@types/json-schema@7.0.15)':
     dependencies:
       '@types/json-schema': 7.0.15
 
@@ -9118,7 +9118,7 @@ snapshots:
       - encoding
       - supports-color
 
-  '@mongodb-js/saslprep@1.4.6':
+  '@mongodb-js/saslprep@1.4.8':
     dependencies:
       sparse-bitfield: 3.0.3
     optional: true
@@ -13762,7 +13762,7 @@ snapshots:
 
   mongodb@7.1.0:
     dependencies:
-      '@mongodb-js/saslprep': 1.4.6
+      '@mongodb-js/saslprep': 1.4.8
       bson: 7.2.0
       mongodb-connection-string-url: 7.0.1
     optional: true
