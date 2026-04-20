@@ -176,7 +176,7 @@
     "typescript": "^6.0.2",
     "vite": "^7.3.1",
     "vitest": "^4.0.18",
-    "wait-on": "^9.0.4"
+    "wait-on": "^9.0.5"
   },
   "pnpm": {
     "patchedDependencies": {
